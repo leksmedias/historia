@@ -112,6 +112,8 @@ Use the **"Test All Connections"** button to verify each key works.
 | `/projects/:id` | Project status, stats, scene cards |
 | `/projects/:id/preview` | Cinematic preview player |
 | `/settings` | API keys, provider config, health checks |
+| `/errors` | Error log viewer |
+| `/text-splitter` | Smart text splitter — split by sentences or exact word count |
 
 ## Error Handling
 
