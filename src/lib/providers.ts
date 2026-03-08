@@ -394,13 +394,10 @@ export async function regenerateImagePrompt(
     historicalLook: "realistic period atmosphere, grounded environments",
   };
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${groqApiKey}`,
-    },
-    body: JSON.stringify({
+  const result = await whiskProxy({
+    action: "groq-chat",
+    apiKey: groqApiKey,
+    payload: {
       model: "llama-3.3-70b-versatile",
       messages: [
         {
@@ -413,16 +410,18 @@ export async function regenerateImagePrompt(
         },
       ],
       temperature: 0.4,
-    }),
+    },
   });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Groq error: ${response.status} - ${errText}`);
+  if (result.status && result.status >= 400) {
+    const errText = typeof result.data === "string"
+      ? result.data
+      : JSON.stringify(result.data || {}).substring(0, 500);
+    throw new Error(`Groq error: ${result.status} - ${errText}`);
   }
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
+  const data = result.data;
+  const content = data?.choices?.[0]?.message?.content;
   if (!content) throw new Error("No content from Groq");
   return content.trim();
 }
