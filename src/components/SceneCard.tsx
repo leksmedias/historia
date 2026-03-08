@@ -46,7 +46,7 @@ export default function SceneCard({ scene, projectId, onRefresh }: Props) {
   const handleRegenImage = async () => {
     setRegenImage(true);
     try {
-      await regenerateImage(projectId, scene.scene_number);
+      await regenerateAssetFrontend(projectId, scene.scene_number, "image");
       toast.success(`Scene ${scene.scene_number} image regenerated`);
       onRefresh();
     } catch (e: any) {
