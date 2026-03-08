@@ -18,6 +18,8 @@ export default function ProjectForm() {
   const [script, setScript] = useState("");
   const [style1, setStyle1] = useState<File | null>(null);
   const [style2, setStyle2] = useState<File | null>(null);
+  const [voiceId, setVoiceId] = useState("Dennis");
+  const [splitMode, setSplitMode] = useState<"smart" | "exact">("smart");
   const [loading, setLoading] = useState(false);
   const [phase, setPhase] = useState("");
   const [progress, setProgress] = useState(0);
