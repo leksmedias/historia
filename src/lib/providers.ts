@@ -353,7 +353,9 @@ export async function generateInworldAudio(
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Inworld TTS failed: ${response.status} - ${errText}`);
+    if (response.status === 429) throw new Error("Inworld rate limited — wait and retry.");
+    if (response.status === 401 || response.status === 403) throw new Error("Inworld API key is invalid. Update it in Settings.");
+    throw new Error(`Inworld TTS failed (HTTP ${response.status}): ${errText.substring(0, 200)}`);
   }
 
   const data = await response.json();
