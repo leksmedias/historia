@@ -95,7 +95,7 @@ export async function createProjectFrontend(
 
   let scenes: SceneManifest[];
   try {
-    scenes = await generateSceneManifest(title, script, styleSummary, settings.groqApiKey);
+    scenes = await generateSceneManifest(title, script, styleSummary, settings.groqApiKey, options.splitMode);
   } catch (e: any) {
     await supabase.from("projects").update({ status: "failed" }).eq("id", projectId);
     throw new Error(`Scene generation failed: ${e.message}`);
