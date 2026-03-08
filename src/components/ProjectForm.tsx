@@ -6,8 +6,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createProjectFrontend } from "@/lib/api";
-import { loadProviderSettings } from "@/lib/providers";
+import { loadProviderSettings, INWORLD_VOICES } from "@/lib/providers";
 import { Upload, Scroll, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
