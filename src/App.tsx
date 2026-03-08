@@ -7,6 +7,7 @@ import AppLayout from "@/components/AppLayout";
 import Index from "./pages/Index";
 import Projects from "./pages/Projects";
 import ProjectStatus from "./pages/ProjectStatus";
+import ProjectPreview from "./pages/ProjectPreview";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -23,6 +24,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:projectId" element={<ProjectStatus />} />
+            <Route path="/projects/:projectId/preview" element={<ProjectPreview />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

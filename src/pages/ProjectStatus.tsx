@@ -11,7 +11,7 @@ import SceneCard from "@/components/SceneCard";
 import Timeline from "@/components/Timeline";
 import {
   ArrowLeft, Download, Image as ImageIcon, Volume2, AlertTriangle,
-  CheckCircle2, Loader2, Scroll, RefreshCw,
+  CheckCircle2, Loader2, Scroll, RefreshCw, Play,
 } from "lucide-react";
 
 function StatusBadge({ status }: { status: string }) {
@@ -122,9 +122,16 @@ export default function ProjectStatus() {
               <p className="text-sm text-muted-foreground mt-1">Created {new Date(project.created_at).toLocaleString()}</p>
             </div>
           </div>
-          <Button variant="outline" onClick={() => window.open(getDownloadUrl(project.id), "_blank")}>
-            <Download className="h-4 w-4 mr-2" />Download ZIP
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link to={`/projects/${project.id}/preview`}>
+              <Button variant="default">
+                <Play className="h-4 w-4 mr-2" />Preview
+              </Button>
+            </Link>
+            <Button variant="outline" onClick={() => window.open(getDownloadUrl(project.id), "_blank")}>
+              <Download className="h-4 w-4 mr-2" />Download ZIP
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}
