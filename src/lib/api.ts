@@ -130,6 +130,12 @@ export async function createProjectFrontend(
   callbacks.onPhase("Generating assets...");
   let imagesCompleted = 0, audioCompleted = 0, imagesFailed = 0, audioFailed = 0;
 
+  // Build style reference URLs for Whisk
+  const styleUrls = [
+    getAssetUrl(projectId, "style", "style1.png"),
+    getAssetUrl(projectId, "style", "style2.png"),
+  ];
+
   for (const scene of scenes) {
     const num = scene.scene_number;
 
@@ -143,7 +149,7 @@ export async function createProjectFrontend(
         let success = false;
         for (const prompt of allPrompts) {
           try {
-            imageBlob = await generateWhiskImage(prompt, settings.whiskCookie);
+            imageBlob = await generateWhiskImage(prompt, settings.whiskCookie, styleUrls);
             success = true;
             break;
           } catch (e: any) {
