@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getAssetUrl, regenerateImage, regenerateAudio } from "@/lib/api";
+import { getAssetUrl } from "@/lib/api";
+import { regenerateAssetFrontend } from "@/lib/api";
 import type { Scene } from "@/lib/types";
 import AudioPlayer from "@/components/AudioPlayer";
 import {
@@ -45,7 +46,7 @@ export default function SceneCard({ scene, projectId, onRefresh }: Props) {
   const handleRegenImage = async () => {
     setRegenImage(true);
     try {
-      await regenerateImage(projectId, scene.scene_number);
+      await regenerateAssetFrontend(projectId, scene.scene_number, "image");
       toast.success(`Scene ${scene.scene_number} image regenerated`);
       onRefresh();
     } catch (e: any) {
@@ -58,7 +59,7 @@ export default function SceneCard({ scene, projectId, onRefresh }: Props) {
   const handleRegenAudio = async () => {
     setRegenAudio(true);
     try {
-      await regenerateAudio(projectId, scene.scene_number);
+      await regenerateAssetFrontend(projectId, scene.scene_number, "audio");
       toast.success(`Scene ${scene.scene_number} audio regenerated`);
       onRefresh();
     } catch (e: any) {

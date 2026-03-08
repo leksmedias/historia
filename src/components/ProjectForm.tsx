@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { createProject } from "@/lib/api";
+import { Progress } from "@/components/ui/progress";
+import { createProjectFrontend } from "@/lib/api";
+import { loadProviderSettings } from "@/lib/providers";
 import { Upload, Scroll, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
@@ -16,6 +18,8 @@ export default function ProjectForm() {
   const [style1, setStyle1] = useState<File | null>(null);
   const [style2, setStyle2] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState("");
+  const [progress, setProgress] = useState(0);
   const file1Ref = useRef<HTMLInputElement>(null);
   const file2Ref = useRef<HTMLInputElement>(null);
 
@@ -23,29 +27,43 @@ export default function ProjectForm() {
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
-    setLoading(true);
-    try {
-      const fd = new FormData();
-      fd.append("title", title.trim());
-      fd.append("script", script.trim());
-      fd.append("style1", style1!);
-      fd.append("style2", style2!);
-      // Pass all settings from localStorage
-      try {
-        const settings = JSON.parse(localStorage.getItem("historia-settings") || "{}");
-        if (settings.imageProvider) fd.append("imageProvider", settings.imageProvider);
-        if (settings.ttsProvider) fd.append("ttsProvider", settings.ttsProvider);
-        if (settings.voiceId) fd.append("voiceId", settings.voiceId);
-        if (settings.modelId) fd.append("modelId", settings.modelId);
-      } catch {}
 
-      const projectId = await createProject(fd);
-      toast.success("Project created! Generating scenes...");
+    const settings = loadProviderSettings();
+    if (!settings.groqApiKey) {
+      toast.error("Groq API key required. Go to Settings to configure it.");
+      return;
+    }
+
+    setLoading(true);
+    setPhase("Starting...");
+    setProgress(0);
+
+    try {
+      const projectId = await createProjectFrontend(
+        title.trim(),
+        script.trim(),
+        style1,
+        style2,
+        {
+          onPhase: (p) => setPhase(p),
+          onSceneProgress: (num, type, status) => {
+            setPhase(`Scene ${num}: ${type} ${status}`);
+          },
+          onStats: (stats) => {
+            const done = stats.imagesCompleted + stats.audioCompleted + stats.imagesFailed + stats.audioFailed;
+            const total = stats.total * 2;
+            setProgress(total > 0 ? (done / total) * 100 : 0);
+          },
+        }
+      );
+      toast.success("Project created!");
       navigate(`/projects/${projectId}`);
     } catch (e: any) {
       toast.error(e.message || "Failed to create project");
     } finally {
       setLoading(false);
+      setPhase("");
+      setProgress(0);
     }
   };
 
@@ -133,6 +151,13 @@ export default function ProjectForm() {
                 </div>
               ))}
             </div>
+
+            {loading && (
+              <div className="space-y-2">
+                <Progress value={progress} className="h-2" />
+                <p className="text-xs text-muted-foreground text-center animate-pulse">{phase}</p>
+              </div>
+            )}
 
             <Button
               onClick={handleSubmit}
