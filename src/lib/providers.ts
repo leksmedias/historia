@@ -141,7 +141,9 @@ export async function generateSceneManifest(
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Groq API error: ${response.status} - ${errText}`);
+    if (response.status === 429) throw new Error("Groq rate limited — wait a moment and try again.");
+    if (response.status === 401) throw new Error("Groq API key is invalid. Update it in Settings.");
+    throw new Error(`Groq API error (HTTP ${response.status}): ${errText.substring(0, 200)}`);
   }
 
   const data = await response.json();
