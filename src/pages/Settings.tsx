@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 import { Save, Eye, EyeOff } from "lucide-react";
-import { loadProviderSettings, saveProviderSettings, type ProviderSettings } from "@/lib/providers";
+import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, type ProviderSettings } from "@/lib/providers";
 
 export default function Settings() {
   const [settings, setSettings] = useState<ProviderSettings>(loadProviderSettings);
