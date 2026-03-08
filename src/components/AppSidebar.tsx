@@ -1,4 +1,4 @@
-import { Scroll, Plus, FolderOpen, Settings, Image as ImageIcon } from "lucide-react";
+import { Scroll, Plus, FolderOpen, Settings, AlertTriangle } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import {
