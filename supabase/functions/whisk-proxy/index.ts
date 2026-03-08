@@ -6,6 +6,11 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// tRPC endpoints return nested result.data.json — unwrap it
+function unwrapTrpc(json: any): any {
+  return json?.result?.data?.json?.result || json?.result?.data?.json || json;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -28,18 +33,74 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Action: upload — upload image to Whisk
-    if (action === "upload") {
-      console.log("[whisk-proxy] upload request");
-      const res = await fetch("https://labs.google/fx/api/trpc/backbone.uploadImage?batch=1", {
+    // Action: create-project — create a Whisk workflow/project
+    if (action === "create-project") {
+      console.log("[whisk-proxy] create-project request");
+      const res = await fetch("https://labs.google/fx/api/trpc/media.createOrUpdateWorkflow", {
         method: "POST",
         headers: { "Content-Type": "application/json", cookie },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          json: { workflowMetadata: { workflowName: payload?.name || "Historia Project" } },
+        }),
+      });
+      const text = await res.text();
+      console.log(`[whisk-proxy] create-project status=${res.status} body=${text.substring(0, 500)}`);
+      let data;
+      try { data = unwrapTrpc(JSON.parse(text)); } catch { data = { raw: text.substring(0, 1000) }; }
+      return new Response(JSON.stringify({ status: res.status, data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Action: caption-image — generate caption for an image
+    if (action === "caption-image") {
+      console.log("[whisk-proxy] caption-image request");
+      const res = await fetch("https://labs.google/fx/api/trpc/backbone.captionImage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", cookie },
+        body: JSON.stringify({
+          json: {
+            clientContext: { workflowId: payload?.workflowId || "" },
+            captionInput: {
+              candidatesCount: 1,
+              mediaInput: {
+                mediaCategory: payload?.mediaCategory || "MEDIA_CATEGORY_STYLE",
+                rawBytes: payload?.rawBytes,
+              },
+            },
+          },
+        }),
+      });
+      const text = await res.text();
+      console.log(`[whisk-proxy] caption-image status=${res.status} body=${text.substring(0, 500)}`);
+      let data;
+      try { data = unwrapTrpc(JSON.parse(text)); } catch { data = { raw: text.substring(0, 1000) }; }
+      return new Response(JSON.stringify({ status: res.status, data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Action: upload — upload image to Whisk (correct endpoint, no ?batch=1)
+    if (action === "upload") {
+      console.log("[whisk-proxy] upload request");
+      const res = await fetch("https://labs.google/fx/api/trpc/backbone.uploadImage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", cookie },
+        body: JSON.stringify({
+          json: {
+            clientContext: { workflowId: payload?.workflowId || "" },
+            uploadMediaInput: {
+              mediaCategory: payload?.mediaCategory || "MEDIA_CATEGORY_STYLE",
+              rawBytes: payload?.rawBytes,
+              caption: payload?.caption || "",
+            },
+          },
+        }),
       });
       const text = await res.text();
       console.log(`[whisk-proxy] upload status=${res.status} body=${text.substring(0, 500)}`);
       let data;
-      try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
+      try { data = unwrapTrpc(JSON.parse(text)); } catch { data = { raw: text.substring(0, 1000) }; }
       return new Response(JSON.stringify({ status: res.status, data }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -85,7 +146,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Action: groq-chat — proxy scene/prompt generation to avoid browser CORS/network failures
+    // Action: groq-chat — proxy scene/prompt generation
     if (action === "groq-chat") {
       const key = body.apiKey || Deno.env.get("GROQ_API_KEY");
       if (!key) {
