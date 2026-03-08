@@ -86,35 +86,7 @@ export async function createProjectFrontend(
     );
   }
 
-  // 3. Analyze style from reference images using AI vision
-  callbacks.onPhase("Analyzing style from reference images...");
-  let styleSummary = DEFAULT_STYLE_SUMMARY as any;
-  try {
-    const styleUrls = [
-      getAssetUrl(projectId, "style", "style1.png"),
-      getAssetUrl(projectId, "style", "style2.png"),
-    ];
-    const analyzeRes = await fetch(fnUrl("analyze-style"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-      },
-      body: JSON.stringify({ imageUrls: styleUrls }),
-    });
-    if (analyzeRes.ok) {
-      const analyzeData = await analyzeRes.json();
-      if (analyzeData.styleSummary) {
-        styleSummary = analyzeData.styleSummary;
-        // Save extracted style to project
-        await supabase.from("projects").update({ style_summary: styleSummary }).eq("id", projectId);
-      }
-    } else {
-      console.warn("Style analysis failed, using defaults");
-    }
-  } catch (e: any) {
-    console.warn("Style analysis error:", e.message);
-  }
+  // 3. Generate scene manifest via Groq (style_summary from defaults for prompt generation)
 
   // 4. Generate scene manifest via Groq
   callbacks.onPhase("Generating scene manifest via Groq...");

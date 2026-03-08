@@ -260,13 +260,6 @@ async function uploadToWhisk(
   return mediaId;
 }
 
-async function blobToBase64(blob: Blob): Promise<string> {
-  const buf = await blob.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
 
 // Fetch a style reference image from Supabase storage as a Blob
 async function fetchStyleBlob(projectId: string, filename: string): Promise<Blob | null> {
