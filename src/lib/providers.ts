@@ -307,7 +307,9 @@ export async function generateWhiskImage(
 
     if (!genRes.ok) {
       const errText = await genRes.text();
-      throw new Error(`Whisk generation failed: ${genRes.status} - ${errText}`);
+      if (genRes.status === 429) throw new Error("Whisk rate limited — wait a minute and try again.");
+      if (genRes.status === 401 || genRes.status === 403) throw new Error("Whisk auth expired. Update your Whisk Cookie in Settings.");
+      throw new Error(`Whisk generation failed (HTTP ${genRes.status}): ${errText.substring(0, 200)}`);
     }
 
     const genData = await genRes.json();
