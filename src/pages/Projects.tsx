@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getProjects } from "@/lib/api";
+import { getProjects, deleteProject } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FolderOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Loader2, FolderOpen, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; className: string }> = {
@@ -13,6 +19,7 @@ function StatusBadge({ status }: { status: string }) {
     completed: { label: "Completed", className: "bg-success/20 text-success border-success/30" },
     partial: { label: "Partial", className: "bg-warning/20 text-warning border-warning/30" },
     failed: { label: "Failed", className: "bg-destructive/20 text-destructive border-destructive/30" },
+    stopped: { label: "Stopped", className: "bg-muted text-muted-foreground border-border" },
   };
   const s = map[status] || map.created;
   return <Badge className={s.className}>{s.label}</Badge>;
@@ -21,10 +28,26 @@ function StatusBadge({ status }: { status: string }) {
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     getProjects().then(setProjects).finally(() => setLoading(false));
   }, []);
+
+  const handleDelete = async (e: React.MouseEvent, projectId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleting(projectId);
+    try {
+      await deleteProject(projectId);
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      toast.success("Project deleted");
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -52,7 +75,35 @@ export default function Projects() {
                 <CardContent className="p-5 space-y-3">
                   <div className="flex items-start justify-between">
                     <h3 className="font-display text-foreground font-medium truncate">{p.title}</h3>
-                    <StatusBadge status={p.status} />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <StatusBadge status={p.status} />
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={(e) => e.preventDefault()}
+                          >
+                            {deleting === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete "{p.title}"?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently delete the project, all scenes, and all generated assets. This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={(e) => handleDelete(e, p.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </div>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span>{p.stats.sceneCount} scenes</span>

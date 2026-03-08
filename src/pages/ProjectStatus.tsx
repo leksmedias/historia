@@ -1,18 +1,23 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, Link } from "react-router-dom";
-import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed } from "@/lib/api";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, deleteProject, stopProject, resumeProject, type PipelineCallbacks } from "@/lib/api";
 import type { Project, Scene } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import SceneCard from "@/components/SceneCard";
 import Timeline from "@/components/Timeline";
 import {
   ArrowLeft, Download, Image as ImageIcon, Volume2, AlertTriangle,
-  CheckCircle2, Loader2, Scroll, RefreshCw, Play,
+  CheckCircle2, Loader2, Scroll, RefreshCw, Play, Trash2, Square, RotateCw,
 } from "lucide-react";
+import { toast } from "sonner";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; className: string }> = {
@@ -21,6 +26,7 @@ function StatusBadge({ status }: { status: string }) {
     completed: { label: "Completed", className: "bg-success/20 text-success border-success/30" },
     partial: { label: "Partial", className: "bg-warning/20 text-warning border-warning/30" },
     failed: { label: "Failed", className: "bg-destructive/20 text-destructive border-destructive/30" },
+    stopped: { label: "Stopped", className: "bg-muted text-muted-foreground border-border" },
   };
   const s = map[status] || map.created;
   return <Badge className={s.className}>{s.label}</Badge>;
@@ -28,6 +34,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function ProjectStatus() {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +42,8 @@ export default function ProjectStatus() {
   const [activeScene, setActiveScene] = useState<number | undefined>();
   const [bulkRetrying, setBulkRetrying] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
+  const [isResuming, setIsResuming] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const sceneRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const fetchData = useCallback(async () => {
@@ -65,6 +74,7 @@ export default function ProjectStatus() {
   };
 
   const failedScenes = scenes.filter(s => s.image_status === "failed" || s.audio_status === "failed");
+  const hasPendingWork = scenes.some(s => s.image_status === "pending" || s.audio_status === "pending" || s.image_status === "failed" || s.audio_status === "failed");
 
   const handleBulkRetry = async () => {
     if (!projectId) return;
@@ -76,6 +86,50 @@ export default function ProjectStatus() {
       });
     } finally {
       setBulkRetrying(false);
+      fetchData();
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!projectId) return;
+    try {
+      await deleteProject(projectId);
+      toast.success("Project deleted");
+      navigate("/projects");
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleStop = async () => {
+    if (!projectId) return;
+    setIsStopping(true);
+    try {
+      await stopProject(projectId);
+      toast.success("Project stopped");
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsStopping(false);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!projectId) return;
+    setIsResuming(true);
+    const callbacks: PipelineCallbacks = {
+      onPhase: (phase) => toast.info(phase),
+      onSceneProgress: () => {},
+      onStats: () => {},
+    };
+    try {
+      await resumeProject(projectId, callbacks);
+      toast.success("Processing complete");
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsResuming(false);
       fetchData();
     }
   };
@@ -105,6 +159,7 @@ export default function ProjectStatus() {
   const stats = project.stats;
   const imgProgress = stats.sceneCount > 0 ? (stats.imagesCompleted / stats.sceneCount) * 100 : 0;
   const audioProgress = stats.sceneCount > 0 ? (stats.audioCompleted / stats.sceneCount) * 100 : 0;
+  const canResume = (project.status === "stopped" || project.status === "partial" || project.status === "failed") && hasPendingWork;
 
   return (
     <div className="p-6 md:p-12">
@@ -123,6 +178,24 @@ export default function ProjectStatus() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Stop button */}
+            {(project.status === "processing" || isResuming) && (
+              <Button variant="outline" onClick={handleStop} disabled={isStopping}>
+                {isStopping ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Square className="h-4 w-4 mr-2" />}
+                Stop
+              </Button>
+            )}
+            {/* Resume button */}
+            {canResume && !isResuming && (
+              <Button variant="default" onClick={handleResume}>
+                <RotateCw className="h-4 w-4 mr-2" />Resume
+              </Button>
+            )}
+            {isResuming && (
+              <Button variant="default" disabled>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />Resuming...
+              </Button>
+            )}
             <Link to={`/projects/${project.id}/preview`}>
               <Button variant="default">
                 <Play className="h-4 w-4 mr-2" />Preview
@@ -131,6 +204,28 @@ export default function ProjectStatus() {
             <Button variant="outline" onClick={() => window.open(getDownloadUrl(project.id), "_blank")}>
               <Download className="h-4 w-4 mr-2" />Download ZIP
             </Button>
+            {/* Delete button */}
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="icon" className="text-muted-foreground hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete "{project.title}"?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete the project, all scenes, and all generated assets. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
 
