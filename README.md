@@ -154,7 +154,9 @@ The app provides contextual error messages for common failure scenarios:
 │   │   ├── Projects.tsx
 │   │   ├── ProjectStatus.tsx
 │   │   ├── ProjectPreview.tsx # Cinematic preview player
-│   │   └── Settings.tsx      # Config + health checks
+│   │   ├── Settings.tsx      # Config + health checks
+│   │   ├── ErrorLog.tsx      # Error log viewer
+│   │   └── TextSplitter.tsx  # Smart text splitter utility
 │   └── integrations/
 │       └── supabase/         # Auto-generated client
 └── supabase/
