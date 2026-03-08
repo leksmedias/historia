@@ -253,16 +253,22 @@ export async function regenerateAssetFrontend(
       if (settings.imageProvider === "whisk" && settings.whiskCookie) {
         const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
         let success = false;
+        let lastError = "";
         for (const prompt of allPrompts) {
           try {
             imageBlob = await generateWhiskImage(prompt, settings.whiskCookie, styleUrls);
             success = true;
             break;
           } catch (e: any) {
+            lastError = e.message;
             console.error(`Whisk prompt failed: ${e.message}`);
+            // Stop trying fallbacks if it's an auth/rate-limit issue
+            if (e.message.includes("expired") || e.message.includes("rate limited") || e.message.includes("CORS")) break;
           }
         }
-        if (!success) throw new Error("All Whisk prompts failed");
+        if (!success) throw new Error(lastError || "All image generation attempts failed. Check your Whisk Cookie in Settings.");
+      } else if (settings.imageProvider === "whisk" && !settings.whiskCookie) {
+        throw new Error("Whisk Cookie not configured. Go to Settings to add it.");
       } else {
         imageBlob = generateMockSVG(sceneNumber, scene.image_prompt || "");
       }
