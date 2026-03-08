@@ -59,7 +59,7 @@ export default function SceneCard({ scene, projectId, onRefresh }: Props) {
   const handleRegenAudio = async () => {
     setRegenAudio(true);
     try {
-      await regenerateAudio(projectId, scene.scene_number);
+      await regenerateAssetFrontend(projectId, scene.scene_number, "audio");
       toast.success(`Scene ${scene.scene_number} audio regenerated`);
       onRefresh();
     } catch (e: any) {
