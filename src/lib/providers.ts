@@ -225,20 +225,15 @@ export async function generateWhiskImage(
   cookie: string,
   styleImageUrls?: string[]
 ): Promise<Blob> {
-  // Step 1: Get auth token
-  const sessionRes = await fetch("https://labs.google/fx/api/auth/session", {
-    headers: { cookie },
-  }).catch((e) => {
-    throw new Error(`Whisk connection failed — this is likely a CORS issue. Whisk API calls must be made from a browser with the correct cookie. Details: ${e.message}`);
-  });
-  if (sessionRes.status === 401 || sessionRes.status === 403) {
+  // Step 1: Get auth token via proxy
+  const sessionResult = await whiskProxy({ action: "session", cookie });
+  if (sessionResult.status === 401 || sessionResult.status === 403) {
     throw new Error("Whisk cookie expired or invalid. Go to Settings and update your Whisk Cookie (copy fresh from labs.google).");
   }
-  if (!sessionRes.ok) {
-    throw new Error(`Whisk session failed (HTTP ${sessionRes.status}). Check your Whisk Cookie in Settings.`);
+  if (sessionResult.status && sessionResult.status >= 400) {
+    throw new Error(`Whisk session failed (HTTP ${sessionResult.status}). Check your Whisk Cookie in Settings.`);
   }
-  const session = await sessionRes.json();
-  const accessToken = session?.access_token;
+  const accessToken = sessionResult?.data?.access_token;
   if (!accessToken) throw new Error("No access_token in Whisk session — cookie may be expired. Update it in Settings.");
 
   // Step 2: Upload style reference images if provided
