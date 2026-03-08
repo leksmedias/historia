@@ -11,7 +11,7 @@ import SceneCard from "@/components/SceneCard";
 import Timeline from "@/components/Timeline";
 import {
   ArrowLeft, Download, Image as ImageIcon, Volume2, AlertTriangle,
-  CheckCircle2, Loader2, Scroll, RefreshCw,
+  CheckCircle2, Loader2, Scroll, RefreshCw, Play,
 } from "lucide-react";
 
 function StatusBadge({ status }: { status: string }) {
