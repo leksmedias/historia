@@ -5,40 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Save } from "lucide-react";
-
-interface AppSettings {
-  imageProvider: string;
-  ttsProvider: string;
-  voiceId: string;
-  modelId: string;
-  imageConcurrency: number;
-  audioConcurrency: number;
-}
-
-const DEFAULTS: AppSettings = {
-  imageProvider: "ai",
-  ttsProvider: "inworld",
-  voiceId: "Dennis",
-  modelId: "inworld-tts-1.5-max",
-  imageConcurrency: 2,
-  audioConcurrency: 2,
-};
-
-function loadSettings(): AppSettings {
-  try {
-    const raw = localStorage.getItem("historia-settings");
-    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
-  } catch {
-    return DEFAULTS;
-  }
-}
+import { Save, Eye, EyeOff } from "lucide-react";
+import { loadProviderSettings, saveProviderSettings, type ProviderSettings } from "@/lib/providers";
 
 export default function Settings() {
-  const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const [settings, setSettings] = useState<ProviderSettings>(loadProviderSettings);
+  const [showGroq, setShowGroq] = useState(false);
+  const [showWhisk, setShowWhisk] = useState(false);
+  const [showInworld, setShowInworld] = useState(false);
 
   const save = () => {
-    localStorage.setItem("historia-settings", JSON.stringify(settings));
+    saveProviderSettings(settings);
     toast.success("Settings saved");
   };
 
@@ -46,6 +23,72 @@ export default function Settings() {
     <div className="p-6 md:p-12 max-w-3xl mx-auto space-y-6">
       <h1 className="text-2xl font-display text-foreground">Settings</h1>
 
+      {/* API Keys */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg font-display">API Keys</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">Groq API Key</label>
+            <div className="flex gap-2">
+              <Input
+                type={showGroq ? "text" : "password"}
+                placeholder="gsk_..."
+                value={settings.groqApiKey}
+                onChange={(e) => setSettings((s) => ({ ...s, groqApiKey: e.target.value }))}
+                className="bg-secondary flex-1"
+              />
+              <Button variant="ghost" size="icon" onClick={() => setShowGroq(!showGroq)}>
+                {showGroq ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Used for scene manifest generation. Get one at console.groq.com
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">Whisk Cookie</label>
+            <div className="flex gap-2">
+              <Input
+                type={showWhisk ? "text" : "password"}
+                placeholder="Cookie from labs.google"
+                value={settings.whiskCookie}
+                onChange={(e) => setSettings((s) => ({ ...s, whiskCookie: e.target.value }))}
+                className="bg-secondary flex-1"
+              />
+              <Button variant="ghost" size="icon" onClick={() => setShowWhisk(!showWhisk)}>
+                {showWhisk ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Google account cookie from labs.google for Imagen 3.5 image generation
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">Inworld API Key</label>
+            <div className="flex gap-2">
+              <Input
+                type={showInworld ? "text" : "password"}
+                placeholder="Base64 encoded key"
+                value={settings.inworldApiKey}
+                onChange={(e) => setSettings((s) => ({ ...s, inworldApiKey: e.target.value }))}
+                className="bg-secondary flex-1"
+              />
+              <Button variant="ghost" size="icon" onClick={() => setShowInworld(!showInworld)}>
+                {showInworld ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Inworld TTS API key (Base64). Get one at inworld.ai
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Image Generation */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg font-display">Image Generation</CardTitle>
@@ -61,15 +104,12 @@ export default function Settings() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ai">Lovable AI (Gemini)</SelectItem>
                 <SelectItem value="whisk">Whisk (Imagen 3.5)</SelectItem>
                 <SelectItem value="mock">Mock (SVG Placeholders)</SelectItem>
               </SelectContent>
             </Select>
-            {settings.imageProvider === "whisk" && (
-              <p className="text-xs text-muted-foreground">
-                Requires WHISK_COOKIE secret. Uses Google Imagen 3.5 via Labs.
-              </p>
+            {settings.imageProvider === "whisk" && !settings.whiskCookie && (
+              <p className="text-xs text-destructive">⚠ Whisk Cookie required above</p>
             )}
           </div>
           <div className="space-y-2">
@@ -87,6 +127,7 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* Voice / TTS */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg font-display">Voice / TTS</CardTitle>
@@ -106,10 +147,8 @@ export default function Settings() {
                 <SelectItem value="mock">Mock (Silent Audio)</SelectItem>
               </SelectContent>
             </Select>
-            {settings.ttsProvider === "inworld" && (
-              <p className="text-xs text-muted-foreground">
-                Requires INWORLD_API_KEY secret. Uses Inworld TTS 1.5 Max.
-              </p>
+            {settings.ttsProvider === "inworld" && !settings.inworldApiKey && (
+              <p className="text-xs text-destructive">⚠ Inworld API Key required above</p>
             )}
           </div>
           <div className="space-y-2">
