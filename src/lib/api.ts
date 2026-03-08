@@ -225,7 +225,8 @@ export async function createProjectFrontend(
 export async function regenerateAssetFrontend(
   projectId: string,
   sceneNumber: number,
-  type: "image" | "audio"
+  type: "image" | "audio",
+  voiceOverride?: string
 ): Promise<void> {
   const settings = loadProviderSettings();
 
@@ -277,7 +278,7 @@ export async function regenerateAssetFrontend(
         audioBlob = await generateInworldAudio(
           scene.tts_text || scene.script_text || "",
           settings.inworldApiKey,
-          settings.voiceId || "Dennis",
+          voiceOverride || (scene as any).voice_id || settings.voiceId || "Dennis",
           settings.modelId || "inworld-tts-1.5-max"
         );
       } else {
@@ -346,4 +347,89 @@ export async function getProjects(): Promise<Project[]> {
 
 export function getDownloadUrl(projectId: string): string {
   return `${fnUrl("download-project")}?projectId=${projectId}&apikey=${SUPABASE_KEY}`;
+}
+
+// Split a scene at a sentence boundary
+export async function splitScene(projectId: string, sceneNumber: number, splitAfterSentence: number): Promise<void> {
+  const { data: scene, error } = await supabase.from("scenes").select("*")
+    .eq("project_id", projectId).eq("scene_number", sceneNumber).single();
+  if (error || !scene) throw new Error("Scene not found");
+
+  const sentences = scene.script_text.match(/[^.!?]+[.!?]+/g)?.map((s: string) => s.trim()) || [scene.script_text];
+  const ttsSentences = scene.tts_text.match(/[^.!?]+[.!?]+/g)?.map((s: string) => s.trim()) || [scene.tts_text];
+
+  const firstScript = sentences.slice(0, splitAfterSentence).join(" ");
+  const secondScript = sentences.slice(splitAfterSentence).join(" ");
+  const firstTts = ttsSentences.slice(0, splitAfterSentence).join(" ");
+  const secondTts = ttsSentences.slice(splitAfterSentence).join(" ");
+
+  // Update current scene
+  await supabase.from("scenes").update({
+    script_text: firstScript,
+    tts_text: firstTts,
+  }).eq("project_id", projectId).eq("scene_number", sceneNumber);
+
+  // Shift all subsequent scenes up by 1
+  const { data: laterScenes } = await supabase.from("scenes").select("id, scene_number")
+    .eq("project_id", projectId).gt("scene_number", sceneNumber).order("scene_number", { ascending: false });
+
+  if (laterScenes) {
+    for (const s of laterScenes) {
+      await supabase.from("scenes").update({ scene_number: s.scene_number + 1 }).eq("id", s.id);
+    }
+  }
+
+  // Insert new scene
+  const newNum = sceneNumber + 1;
+  await supabase.from("scenes").insert({
+    project_id: projectId,
+    scene_number: newNum,
+    scene_type: scene.scene_type,
+    historical_period: scene.historical_period,
+    visual_priority: scene.visual_priority,
+    script_text: secondScript,
+    tts_text: secondTts,
+    image_prompt: scene.image_prompt,
+    fallback_prompts: scene.fallback_prompts,
+    image_file: `${newNum}.png`,
+    audio_file: `${newNum}.mp3`,
+    image_status: "pending",
+    audio_status: "pending",
+  });
+
+  // Update project stats
+  const { data: allScenes } = await supabase.from("scenes").select("image_status, audio_status, needs_review").eq("project_id", projectId);
+  if (allScenes) {
+    await supabase.from("projects").update({
+      stats: {
+        sceneCount: allScenes.length,
+        imagesCompleted: allScenes.filter(s => s.image_status === "completed").length,
+        audioCompleted: allScenes.filter(s => s.audio_status === "completed").length,
+        imagesFailed: allScenes.filter(s => s.image_status === "failed").length,
+        audioFailed: allScenes.filter(s => s.audio_status === "failed").length,
+        needsReviewCount: allScenes.filter(s => s.needs_review).length,
+      },
+    }).eq("id", projectId);
+  }
+}
+
+// Bulk regenerate all failed scenes
+export async function bulkRegenerateFailed(
+  projectId: string,
+  failedScenes: Array<{ scene_number: number; image_status: string; audio_status: string; voice_id?: string | null }>,
+  onProgress: (done: number, total: number) => void
+): Promise<void> {
+  let done = 0;
+  for (const scene of failedScenes) {
+    const tasks: Promise<void>[] = [];
+    if (scene.image_status === "failed") {
+      tasks.push(regenerateAssetFrontend(projectId, scene.scene_number, "image").catch(console.error) as Promise<void>);
+    }
+    if (scene.audio_status === "failed") {
+      tasks.push(regenerateAssetFrontend(projectId, scene.scene_number, "audio", scene.voice_id || undefined).catch(console.error) as Promise<void>);
+    }
+    await Promise.all(tasks);
+    done++;
+    onProgress(done, failedScenes.length);
+  }
 }

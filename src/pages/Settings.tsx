@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 import { Save, Eye, EyeOff } from "lucide-react";
-import { loadProviderSettings, saveProviderSettings, type ProviderSettings } from "@/lib/providers";
+import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, type ProviderSettings } from "@/lib/providers";
 
 export default function Settings() {
   const [settings, setSettings] = useState<ProviderSettings>(loadProviderSettings);
@@ -152,15 +152,24 @@ export default function Settings() {
             )}
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Voice ID</label>
-            <Input
-              placeholder="Dennis"
+            <label className="text-sm font-medium text-foreground">Voice</label>
+            <Select
               value={settings.voiceId}
-              onChange={(e) => setSettings((s) => ({ ...s, voiceId: e.target.value }))}
-              className="bg-secondary"
-            />
+              onValueChange={(v) => setSettings((s) => ({ ...s, voiceId: v }))}
+            >
+              <SelectTrigger className="bg-secondary">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INWORLD_VOICES.map(v => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.name} — {v.description}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="text-xs text-muted-foreground">
-              Inworld voice name (e.g. Dennis, Eleanor, James)
+              Default voice for new scenes. Can be overridden per scene.
             </p>
           </div>
           <div className="space-y-2">

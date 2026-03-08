@@ -73,6 +73,7 @@ export type Database = {
           tts_text: string
           updated_at: string
           visual_priority: string | null
+          voice_id: string | null
         }
         Insert: {
           audio_attempts?: number
@@ -96,6 +97,7 @@ export type Database = {
           tts_text: string
           updated_at?: string
           visual_priority?: string | null
+          voice_id?: string | null
         }
         Update: {
           audio_attempts?: number
@@ -119,6 +121,7 @@ export type Database = {
           tts_text?: string
           updated_at?: string
           visual_priority?: string | null
+          voice_id?: string | null
         }
         Relationships: [
           {
