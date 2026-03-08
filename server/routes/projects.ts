@@ -100,8 +100,6 @@ router.post("/", upload.fields([{ name: "style1", maxCount: 1 }, { name: "style2
     });
 
     res.json({ projectId });
-
-    runProjectPipeline(projectId, title, script, imageProvider || "mock", ttsProvider || "mock", voiceId || "Dennis", modelId || "inworld-tts-1.5-max").catch(console.error);
   } catch (e: any) {
     console.error("create-project error:", e.message);
     res.status(500).json({ error: e.message });
@@ -196,54 +194,36 @@ router.post("/:id/split-scene", async (req: Request, res: Response) => {
   }
 });
 
-async function runProjectPipeline(
-  projectId: string,
-  title: string,
-  script: string,
-  imageProvider: string,
-  ttsProvider: string,
-  voiceId: string,
-  modelId: string
-) {
+async function runAssetPipeline(projectId: string) {
   try {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (!groqKey) throw new Error("GROQ_API_KEY not configured on server");
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+    if (!project) return;
 
-    let sceneList: any[];
-    try {
-      sceneList = await callGroqForSceneManifest(title, script, DEFAULT_STYLE_SUMMARY, groqKey);
-    } catch (e: any) {
-      console.error(`${projectId}: AI manifest failed:`, e.message);
-      await db.update(projects).set({ status: "failed" }).where(eq(projects.id, projectId));
+    const settings = (project.settings as any) || {};
+    const imageProvider: string = settings.imageProvider || "mock";
+    const ttsProvider: string = settings.ttsProvider || "mock";
+    const voiceId: string = settings.voiceId || "Dennis";
+    const modelId: string = settings.modelId || "inworld-tts-1.5-max";
+
+    const sceneList = await db.select().from(scenes)
+      .where(eq(scenes.project_id, projectId))
+      .orderBy(scenes.scene_number);
+
+    if (sceneList.length === 0) {
+      console.log(`${projectId}: No scenes to process`);
       return;
     }
 
-    const sceneRows = sceneList.map((s: any, i: number) => ({
-      project_id: projectId,
-      scene_number: s.scene_number || i + 1,
-      scene_type: s.scene_type || "location",
-      historical_period: s.historical_period || "generic historical",
-      visual_priority: s.visual_priority || "environment",
-      script_text: s.script_text || "",
-      tts_text: s.tts_text || s.script_text || "",
-      image_prompt: s.image_prompt || "",
-      fallback_prompts: s.fallback_prompts || [],
-      image_file: s.image_file || `${s.scene_number || i + 1}.png`,
-      audio_file: s.audio_file || `${s.scene_number || i + 1}.mp3`,
-      image_status: "pending",
-      audio_status: "pending",
-    }));
-
-    await db.insert(scenes).values(sceneRows);
-    await db.update(projects).set({
-      stats: { sceneCount: sceneList.length, imagesCompleted: 0, audioCompleted: 0, imagesFailed: 0, audioFailed: 0, needsReviewCount: 0 },
-    }).where(eq(projects.id, projectId));
+    console.log(`${projectId}: Starting asset pipeline for ${sceneList.length} scenes (image=${imageProvider}, tts=${ttsProvider})`);
 
     let imagesCompleted = 0, audioCompleted = 0, imagesFailed = 0, audioFailed = 0;
 
     for (const scene of sceneList) {
       const [projCheck] = await db.select({ status: projects.status }).from(projects).where(eq(projects.id, projectId));
-      if (projCheck?.status === "stopped") return;
+      if (projCheck?.status === "stopped") {
+        console.log(`${projectId}: Pipeline stopped by user`);
+        return;
+      }
 
       const num = scene.scene_number;
       const imgDir = path.join("uploads", projectId, "images");
@@ -254,12 +234,17 @@ async function runProjectPipeline(
       try {
         if (imageProvider === "whisk") {
           const cookie = process.env.WHISK_COOKIE;
-          if (!cookie) throw new Error("WHISK_COOKIE not configured");
+          if (!cookie) throw new Error("WHISK_COOKIE not set in environment");
           const stylePaths = getStyleImagePaths(projectId);
-          const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts || [])];
+          const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])].filter(Boolean);
           let bytes: Uint8Array | null = null;
           for (const prompt of allPrompts) {
-            try { bytes = await generateWhiskImageWithRefs(prompt, cookie, stylePaths); break; } catch (e: any) { console.error(`Whisk prompt failed: ${e.message}`); }
+            try {
+              bytes = await generateWhiskImageWithRefs(prompt, cookie, stylePaths);
+              break;
+            } catch (e: any) {
+              console.error(`${projectId} scene ${num}: Whisk prompt failed: ${e.message}`);
+            }
           }
           if (!bytes) throw new Error("All Whisk prompts failed");
           fs.writeFileSync(path.join(imgDir, `${num}.png`), bytes);
@@ -270,7 +255,9 @@ async function runProjectPipeline(
         await db.update(scenes).set({ image_status: "completed", image_attempts: 1 })
           .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
         imagesCompleted++;
+        console.log(`${projectId}: Scene ${num} image done (${imagesCompleted}/${sceneList.length})`);
       } catch (e: any) {
+        console.error(`${projectId} scene ${num}: Image failed: ${e.message}`);
         await db.update(scenes).set({ image_status: "failed", image_attempts: 1, image_error: e.message, needs_review: true })
           .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
         imagesFailed++;
@@ -289,6 +276,7 @@ async function runProjectPipeline(
           .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
         audioCompleted++;
       } catch (e: any) {
+        console.error(`${projectId} scene ${num}: Audio failed: ${e.message}`);
         await db.update(scenes).set({ audio_status: "failed", audio_attempts: 1, audio_error: e.message, needs_review: true })
           .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
         audioFailed++;
@@ -301,48 +289,12 @@ async function runProjectPipeline(
 
     const finalStatus = (imagesFailed > 0 || audioFailed > 0) ? "partial" : "completed";
     await db.update(projects).set({ status: finalStatus }).where(eq(projects.id, projectId));
-    console.log(`${projectId}: Pipeline complete. Status: ${finalStatus}`);
+    console.log(`${projectId}: Asset pipeline complete. Status: ${finalStatus} (img ok=${imagesCompleted} fail=${imagesFailed}, aud ok=${audioCompleted} fail=${audioFailed})`);
   } catch (e: any) {
-    console.error(`${projectId}: Pipeline error:`, e.message);
+    console.error(`${projectId}: Asset pipeline error:`, e.message);
     await db.update(projects).set({ status: "failed" }).where(eq(projects.id, projectId));
   }
 }
-
-async function callGroqForSceneManifest(title: string, script: string, styleSummary: any, groqKey: string): Promise<any[]> {
-  const systemPrompt = `You are a cinematic scene breakdown specialist for historical documentary content.
-Given a title, script, and style summary, split the script into visual narrative scenes.
-Rules:
-- Create 1 scene per 2-4 sentences
-- Keep scene_number sequential from 1
-- Keep people anonymous
-- Generate cinematic, realistic image prompts
-- Produce 3 fallback prompts per scene
-- Assign scene_type: character | location | crowd | battle_light | artifact | transition
-- Assign historical_period and visual_priority
-- tts_text should be the narration for that scene
-Return ONLY valid JSON matching this schema: {"scenes": [...]}`;
-
-  const userPrompt = `Title: ${title}\nStyle Summary:\n${JSON.stringify(styleSummary, null, 2)}\n\nScript:\n${script}\n\nReturn ONLY the JSON.`;
-
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      temperature: 0.3,
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  if (!res.ok) throw new Error(`Groq API error: ${res.status}`);
-  const data = await res.json();
-  let content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("No content from Groq");
-  content = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-  return JSON.parse(content).scenes || [];
-}
-
 
 async function generateInworldAudio(text: string, apiKey: string, voiceId: string, modelId: string): Promise<Buffer> {
   const res = await fetch("https://api.inworld.ai/tts/v1/voice", {
@@ -409,10 +361,25 @@ router.post("/:id/scenes", async (req: Request, res: Response) => {
 
     await db.insert(scenes).values(sceneRows);
     await db.update(projects).set({
+      status: "processing",
       stats: { sceneCount: sceneList.length, imagesCompleted: 0, audioCompleted: 0, imagesFailed: 0, audioFailed: 0, needsReviewCount: 0 },
     }).where(eq(projects.id, projectId));
 
-    res.json({ success: true });
+    const hasWhiskCookie = !!process.env.WHISK_COOKIE;
+    const hasInworldKey = !!process.env.INWORLD_API_KEY;
+    const projectSettings = (await db.select({ settings: projects.settings }).from(projects).where(eq(projects.id, projectId)))[0]?.settings as any;
+    const imageProvider = projectSettings?.imageProvider || "mock";
+    const ttsProvider = projectSettings?.ttsProvider || "mock";
+
+    const serverCanHandleImages = imageProvider === "mock" || (imageProvider === "whisk" && hasWhiskCookie);
+    const serverCanHandleAudio = ttsProvider === "mock" || (ttsProvider === "inworld" && hasInworldKey);
+    const serverPipeline = serverCanHandleImages && serverCanHandleAudio;
+
+    res.json({ success: true, serverPipeline });
+
+    if (serverPipeline) {
+      runAssetPipeline(projectId).catch(console.error);
+    }
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -441,5 +408,5 @@ router.patch("/:id", async (req: Request, res: Response) => {
   }
 });
 
-export { runProjectPipeline, generateWhiskImage, generateInworldAudio, generateMockSVG, generateMockAudio };
+export { runAssetPipeline, generateInworldAudio, generateMockSVG, generateMockAudio };
 export default router;

@@ -36,6 +36,47 @@ async function apiRequest(path: string, options?: RequestInit) {
   return res.json();
 }
 
+async function pollUntilComplete(projectId: string, totalScenes: number, callbacks: PipelineCallbacks): Promise<void> {
+  const POLL_INTERVAL = 4000;
+  const MAX_WAIT_MS = 30 * 60 * 1000;
+  const started = Date.now();
+
+  while (Date.now() - started < MAX_WAIT_MS) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL));
+
+    const data = await fetch(`${API_BASE}/projects/${projectId}`).then(r => r.json()).catch(() => null);
+    if (!data) continue;
+
+    const { project, scenes: sceneList } = data;
+    const stats = (project?.stats as any) || {};
+    const imagesCompleted = stats.imagesCompleted || 0;
+    const audioCompleted = stats.audioCompleted || 0;
+    const imagesFailed = stats.imagesFailed || 0;
+    const audioFailed = stats.audioFailed || 0;
+
+    callbacks.onStats({ imagesCompleted, audioCompleted, imagesFailed, audioFailed, total: totalScenes });
+
+    if (sceneList) {
+      for (const s of sceneList) {
+        if (s.image_status === "completed") callbacks.onSceneProgress(s.scene_number, "image", "done");
+        else if (s.image_status === "failed") callbacks.onSceneProgress(s.scene_number, "image", "failed");
+        if (s.audio_status === "completed") callbacks.onSceneProgress(s.scene_number, "audio", "done");
+        else if (s.audio_status === "failed") callbacks.onSceneProgress(s.scene_number, "audio", "failed");
+      }
+    }
+
+    const status = project?.status;
+    if (status === "completed" || status === "partial" || status === "failed" || status === "stopped") {
+      callbacks.onPhase(status === "completed" ? "Done!" : `Finished with status: ${status}`);
+      return;
+    }
+
+    callbacks.onPhase(`Server generating... (${imagesCompleted}/${totalScenes} images, ${audioCompleted}/${totalScenes} audio)`);
+  }
+
+  callbacks.onPhase("Generation timed out — check Projects page for status.");
+}
+
 export interface PipelineCallbacks {
   onPhase: (phase: string) => void;
   onSceneProgress: (sceneNum: number, type: "image" | "audio", status: "generating" | "done" | "failed") => void;
@@ -89,11 +130,17 @@ export async function createProjectFrontend(
     return r.json();
   }).then(d => d.projectId);
 
-  await fetch(`${API_BASE}/projects/${serverProjectId}/scenes`, {
+  const scenesRes = await fetch(`${API_BASE}/projects/${serverProjectId}/scenes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scenes }),
-  }).catch(() => {});
+  }).then(r => r.json()).catch(() => ({ success: true, serverPipeline: false }));
+
+  if (scenesRes.serverPipeline) {
+    callbacks.onPhase("Generating assets on server (background)...");
+    await pollUntilComplete(serverProjectId, scenes.length, callbacks);
+    return serverProjectId;
+  }
 
   callbacks.onPhase("Generating assets...");
 
@@ -117,7 +164,7 @@ export async function createProjectFrontend(
     try {
       let imageBlob: Blob;
       if (settings.imageProvider === "whisk") {
-        if (!settings.whiskCookie) throw new Error("Whisk cookie not configured");
+        if (!settings.whiskCookie) throw new Error("Whisk cookie not configured. Add it in Settings.");
         const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts || [])];
         let success = false;
         for (const prompt of allPrompts) {
