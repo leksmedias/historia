@@ -90,7 +90,7 @@ export default function Projects() {
   }
 
   return (
-    <div className="p-6 md:p-12 max-w-5xl mx-auto space-y-6">
+    <div className="h-full overflow-y-auto p-6 md:p-12 max-w-5xl mx-auto space-y-6">
       <h1 className="text-2xl font-display text-foreground">Projects</h1>
       {projects.length === 0 ? (
         <Card>

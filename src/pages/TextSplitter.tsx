@@ -118,7 +118,7 @@ export default function TextSplitter() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="h-full overflow-y-auto p-6 max-w-6xl mx-auto space-y-6">
       <h1 className="text-2xl font-display font-bold text-foreground">Smart Text Splitter</h1>
       <p className="text-sm text-muted-foreground max-w-3xl">
         Smart mode keeps sentences together and breaks at natural punctuation. Exact mode splits strictly by word count.

@@ -73,7 +73,7 @@ export default function ProjectForm() {
   };
 
   return (
-    <div className="p-6 md:p-12">
+    <div className="h-full overflow-y-auto p-6 md:p-12">
       <div className="mx-auto max-w-3xl space-y-8">
         <div className="text-center space-y-3">
           <div className="flex items-center justify-center gap-3">

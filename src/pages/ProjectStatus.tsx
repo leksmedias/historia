@@ -211,7 +211,7 @@ export default function ProjectStatus() {
   const canResume = (project.status === "stopped" || project.status === "partial" || project.status === "failed") && hasPendingWork;
 
   return (
-    <div className="p-6 md:p-12">
+    <div className="h-full overflow-y-auto p-6 md:p-12">
       <div className="mx-auto max-w-5xl space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
