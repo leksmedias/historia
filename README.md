@@ -95,6 +95,57 @@ npm run db:push        # create database tables
 npm run dev
 ```
 
+### VPS Deployment (Ubuntu / Debian)
+
+Use the included `deploy.sh` for a fully automated setup — PostgreSQL, database creation, systemd service, and port selection all handled for you.
+
+```bash
+# On your VPS (as root or with sudo):
+git clone <YOUR_GIT_URL> historia
+cd historia
+sudo bash deploy.sh --port 3001 --dir /opt/historia
+```
+
+You'll be prompted for the port if you don't pass `--port`. Pick any free port that doesn't conflict with your existing services (e.g. `3001`, `3002`, `8080`).
+
+What the script does automatically:
+- Installs **Node.js 20** via nvm (if not installed)
+- Installs **PostgreSQL** (if not installed)
+- Creates a database user and database named `historia`
+- Writes a `.env` with `PORT` and `DATABASE_URL`
+- Runs `npm install`, `npm run build`, and `npm run db:push`
+- Creates and starts a **systemd service** (`historia-<port>`) so it survives reboots
+
+**Multiple instances on the same VPS** — just run the script again with a different port and directory:
+
+```bash
+sudo bash deploy.sh --port 3002 --dir /opt/historia-v2
+```
+
+**Useful commands after deploy:**
+
+```bash
+journalctl -u historia-3001 -f      # live logs
+systemctl restart historia-3001     # restart
+systemctl stop historia-3001        # stop
+nano /opt/historia/.env             # edit config
+```
+
+**Nginx reverse proxy** — the script prints the config block at the end. Example for a subdomain:
+
+```nginx
+server {
+    listen 80;
+    server_name historia.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        client_max_body_size 50M;
+    }
+}
+```
+
 ### Environment Variables
 
 Create a `.env` file (or set these in your host's environment):
