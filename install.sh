@@ -85,26 +85,18 @@ ok "PostgreSQL $(psql --version | awk '{print $3}')"
 info "Setting up database..."
 PG_EXISTING=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" 2>/dev/null || true)
 
+# Always generate a fresh password — ensures DATABASE_URL is always valid
+DB_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)
+DB_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}"
+
 if [ -z "$PG_EXISTING" ]; then
-  DB_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)
   sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';" >/dev/null
   sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" >/dev/null
-  DB_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}"
   ok "Database created: ${DB_NAME}  user: ${DB_USER}"
 else
-  # Preserve existing DATABASE_URL if .env already has one
-  if grep -q "^DATABASE_URL=" "${APP_DIR}/.env" 2>/dev/null; then
-    DB_URL=$(grep "^DATABASE_URL=" "${APP_DIR}/.env" | head -1 | cut -d= -f2-)
-    info "Preserving existing DATABASE_URL"
-  else
-    warn "DB user already exists but no DATABASE_URL found in .env"
-    warn "Enter the existing postgres password for user '${DB_USER}':"
-    DB_PASS=$(ask "  Password: " "")
-    if [ -z "$DB_PASS" ]; then
-      die "Password cannot be empty. Re-run the installer and enter the password."
-    fi
-    DB_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}"
-  fi
+  # Reset password so DATABASE_URL is always valid (no stale placeholders)
+  sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';" >/dev/null
+  ok "Database password rotated"
 fi
 
 # ── 4. Clone / update app ─────────────────────────────────────────────────────
