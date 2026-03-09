@@ -1,1 +1,0 @@
-ALTER TABLE public.scenes ADD COLUMN voice_id text DEFAULT NULL;

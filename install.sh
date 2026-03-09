@@ -61,10 +61,12 @@ npm install
 
 # ── Environment setup ──────────────────────────────────────────────────────────
 
-if [ ! -f ".env" ]; then
+if [ -f ".env" ] && grep -q "^DATABASE_URL=" .env; then
+  echo "✅  DATABASE_URL already found in .env"
+else
   echo ""
-  echo "⚙️   Creating .env file..."
-  cat > .env << 'EOF'
+  echo "⚙️   Creating or updating .env file with DATABASE_URL..."
+  cat >> .env << 'EOF'
 # PostgreSQL connection string — required
 # Local example:  postgresql://postgres:password@localhost:5432/historia
 # Replit/cloud:   copy the DATABASE_URL from your environment

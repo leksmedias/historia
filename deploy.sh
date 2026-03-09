@@ -144,8 +144,19 @@ DATABASE_URL=${DB_URL}
 EOF
   ok ".env created"
 else
-  warn ".env already exists — updating PORT only"
-  sed -i "s/^PORT=.*/PORT=${APP_PORT}/" "$ENV_FILE" || echo "PORT=${APP_PORT}" >> "$ENV_FILE"
+  warn ".env already exists — updating PORT and DATABASE_URL"
+  if grep -q "^PORT=" "$ENV_FILE"; then
+    sed -i "s/^PORT=.*/PORT=${APP_PORT}/" "$ENV_FILE"
+  else
+    echo "PORT=${APP_PORT}" >> "$ENV_FILE"
+  fi
+  
+  if grep -q "^DATABASE_URL=" "$ENV_FILE"; then
+    # Use | as delimiter for sed to avoid escaping slashes in DB_URL
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DB_URL}|" "$ENV_FILE"
+  else
+    echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE"
+  fi
 fi
 
 # ── 6. Install dependencies & build ───────────────────────────────────────────

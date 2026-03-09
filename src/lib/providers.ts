@@ -417,21 +417,7 @@ async function uploadToWhisk(
 }
 
 
-// Fetch a style reference image from Supabase storage as a Blob
-async function fetchStyleBlob(projectId: string, filename: string): Promise<Blob | null> {
-  try {
-    const url = getStyleRefUrl(projectId, filename);
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return await res.blob();
-  } catch {
-    return null;
-  }
-}
 
-function getStyleRefUrl(projectId: string, filename: string): string {
-  return `/api/assets/${projectId}/style/${filename}`;
-}
 
 export async function generateWhiskImage(
   prompt: string,
