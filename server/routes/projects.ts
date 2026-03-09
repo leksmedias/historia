@@ -364,10 +364,6 @@ router.post("/:id/scenes", async (req: Request, res: Response) => {
     }));
 
     await db.insert(scenes).values(sceneRows);
-    await db.update(projects).set({
-      status: "processing",
-      stats: { sceneCount: sceneList.length, imagesCompleted: 0, audioCompleted: 0, imagesFailed: 0, audioFailed: 0, needsReviewCount: 0 },
-    }).where(eq(projects.id, projectId));
 
     const hasWhiskCookie = !!process.env.WHISK_COOKIE;
     const hasInworldKey = !!process.env.INWORLD_API_KEY;
@@ -378,6 +374,11 @@ router.post("/:id/scenes", async (req: Request, res: Response) => {
     const serverCanHandleImages = imageProvider === "mock" || (imageProvider === "whisk" && hasWhiskCookie);
     const serverCanHandleAudio = ttsProvider === "mock" || (ttsProvider === "inworld" && hasInworldKey);
     const serverPipeline = serverCanHandleImages && serverCanHandleAudio;
+
+    await db.update(projects).set({
+      status: "processing",
+      stats: { sceneCount: sceneList.length, imagesCompleted: 0, audioCompleted: 0, imagesFailed: 0, audioFailed: 0, needsReviewCount: 0, serverPipeline },
+    }).where(eq(projects.id, projectId));
 
     res.json({ success: true, serverPipeline });
 

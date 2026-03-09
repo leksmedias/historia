@@ -79,12 +79,22 @@ export default function ProjectStatus() {
     if (!project || !projectId) return;
     const isActive = project.status === "processing" || project.status === "created";
     if (!isActive) return;
-    const allPending = scenes.length > 0 && scenes.every(s => s.image_status === "pending" && s.audio_status === "pending");
-    if (!allPending) return;
+
+    const stats = (project.stats as any) || {};
+    const isServerPipeline = stats.serverPipeline === true;
+    if (isServerPipeline) return;
+
+    const hasPendingScenes = scenes.length > 0 && scenes.some(
+      s => s.image_status === "pending" || s.audio_status === "pending"
+    );
+    if (!hasPendingScenes) return;
 
     const settings = loadProviderSettings();
-    const canRunClient = !!(settings.whiskCookie || settings.inworldApiKey || settings.imageProvider === "mock");
-    if (!canRunClient) return;
+    const canRunClient = settings.imageProvider !== "whisk" || !!settings.whiskCookie;
+    if (!canRunClient) {
+      toast.error("Whisk cookie not configured. Add it in Settings to generate images.");
+      return;
+    }
 
     clientPipelineStarted.current = true;
     setClientPipelineRunning(true);

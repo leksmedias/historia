@@ -146,7 +146,9 @@ export async function runClientSidePipeline(
 
   callbacks.onPhase("Generating assets...");
 
-  let imagesCompleted = 0, audioCompleted = 0, imagesFailed = 0, audioFailed = 0;
+  let imagesCompleted = scenes.filter((s: any) => s.image_status === "completed").length;
+  let audioCompleted = scenes.filter((s: any) => s.audio_status === "completed").length;
+  let imagesFailed = 0, audioFailed = 0;
 
   const styleUrls = [
     getAssetUrl(serverProjectId, "style", "style1.png"),
@@ -161,83 +163,96 @@ export async function runClientSidePipeline(
     }
 
     const num = scene.scene_number;
+    const sceneAny = scene as any;
+    const imageAlreadyDone = sceneAny.image_status === "completed";
+    const audioAlreadyDone = sceneAny.audio_status === "completed";
 
-    callbacks.onSceneProgress(num, "image", "generating");
-    try {
-      let imageBlob: Blob;
-      if (settings.imageProvider === "whisk") {
-        if (!settings.whiskCookie) throw new Error("Whisk cookie not configured. Add it in Settings.");
-        const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts || [])];
-        let success = false;
-        for (const prompt of allPrompts) {
-          try {
-            imageBlob = await generateWhiskImage(prompt, settings.whiskCookie, styleUrls);
-            success = true;
-            break;
-          } catch (e: any) { console.error(`Whisk prompt failed: ${e.message}`); }
+    if (!imageAlreadyDone) {
+      callbacks.onSceneProgress(num, "image", "generating");
+      try {
+        let imageBlob: Blob;
+        if (settings.imageProvider === "whisk") {
+          if (!settings.whiskCookie) throw new Error("Whisk cookie not configured. Add it in Settings.");
+          const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts || [])];
+          let success = false;
+          for (const prompt of allPrompts) {
+            try {
+              imageBlob = await generateWhiskImage(prompt, settings.whiskCookie, styleUrls);
+              success = true;
+              break;
+            } catch (e: any) { console.error(`Whisk prompt failed: ${e.message}`); }
+          }
+          if (!success) throw new Error("All Whisk prompts failed");
+        } else {
+          imageBlob = generateMockSVG(num, scene.image_prompt || "");
         }
-        if (!success) throw new Error("All Whisk prompts failed");
-      } else {
-        imageBlob = generateMockSVG(num, scene.image_prompt || "");
+
+        const fd = new FormData();
+        fd.append("file", imageBlob!, `${num}.png`);
+        const ext = settings.imageProvider === "whisk" ? "png" : "svg";
+        await fetch(`${API_BASE}/assets/${serverProjectId}/images/${num}.${ext}`, { method: "POST", body: fd });
+
+        await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_status: "completed", image_attempts: 1 }),
+        });
+        imagesCompleted++;
+        callbacks.onSceneProgress(num, "image", "done");
+      } catch (e: any) {
+        console.error(`Image ${num} failed:`, e.message);
+        await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_status: "failed", image_attempts: 1, image_error: e.message, needs_review: true }),
+        });
+        imagesFailed++;
+        callbacks.onSceneProgress(num, "image", "failed");
       }
-
-      const fd = new FormData();
-      fd.append("file", imageBlob!, `${num}.png`);
-      const ext = settings.imageProvider === "whisk" ? "png" : "svg";
-      await fetch(`${API_BASE}/assets/${serverProjectId}/images/${num}.${ext}`, { method: "POST", body: fd });
-
-      await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_status: "completed", image_attempts: 1 }),
-      });
+    } else {
       imagesCompleted++;
       callbacks.onSceneProgress(num, "image", "done");
-    } catch (e: any) {
-      console.error(`Image ${num} failed:`, e.message);
-      await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_status: "failed", image_attempts: 1, image_error: e.message, needs_review: true }),
-      });
-      imagesFailed++;
-      callbacks.onSceneProgress(num, "image", "failed");
     }
 
-    callbacks.onSceneProgress(num, "audio", "generating");
-    try {
-      let audioBlob: Blob;
-      if (settings.ttsProvider === "inworld" && settings.inworldApiKey) {
-        audioBlob = await generateInworldAudio(
-          scene.tts_text || scene.script_text || "",
-          settings.inworldApiKey,
-          options.voiceId || settings.voiceId,
-          settings.modelId
-        );
-      } else {
-        audioBlob = generateMockAudio();
+    if (!audioAlreadyDone) {
+      callbacks.onSceneProgress(num, "audio", "generating");
+      try {
+        let audioBlob: Blob;
+        if (settings.ttsProvider === "inworld" && settings.inworldApiKey) {
+          audioBlob = await generateInworldAudio(
+            scene.tts_text || scene.script_text || "",
+            settings.inworldApiKey,
+            options.voiceId || settings.voiceId,
+            settings.modelId
+          );
+        } else {
+          audioBlob = generateMockAudio();
+        }
+
+        const fd = new FormData();
+        fd.append("file", audioBlob, `${num}.mp3`);
+        await fetch(`${API_BASE}/assets/${serverProjectId}/audio/${num}.mp3`, { method: "POST", body: fd });
+
+        await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio_status: "completed", audio_attempts: 1 }),
+        });
+        audioCompleted++;
+        callbacks.onSceneProgress(num, "audio", "done");
+      } catch (e: any) {
+        console.error(`Audio ${num} failed:`, e.message);
+        await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio_status: "failed", audio_attempts: 1, audio_error: e.message, needs_review: true }),
+        });
+        audioFailed++;
+        callbacks.onSceneProgress(num, "audio", "failed");
       }
-
-      const fd = new FormData();
-      fd.append("file", audioBlob, `${num}.mp3`);
-      await fetch(`${API_BASE}/assets/${serverProjectId}/audio/${num}.mp3`, { method: "POST", body: fd });
-
-      await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio_status: "completed", audio_attempts: 1 }),
-      });
+    } else {
       audioCompleted++;
       callbacks.onSceneProgress(num, "audio", "done");
-    } catch (e: any) {
-      console.error(`Audio ${num} failed:`, e.message);
-      await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio_status: "failed", audio_attempts: 1, audio_error: e.message, needs_review: true }),
-      });
-      audioFailed++;
-      callbacks.onSceneProgress(num, "audio", "failed");
     }
 
     callbacks.onStats({ imagesCompleted, audioCompleted, imagesFailed, audioFailed, total: scenes.length });
