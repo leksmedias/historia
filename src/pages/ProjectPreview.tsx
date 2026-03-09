@@ -3,7 +3,6 @@ import { useParams, Link } from "react-router-dom";
 import { getProject, getAssetUrl, regenerateAssetFrontend } from "@/lib/api";
 import { regenerateImagePrompt } from "@/lib/providers";
 import type { Scene } from "@/lib/types";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -282,9 +281,9 @@ export default function ProjectPreview() {
         </div>
 
         {/* Horizontal timeline */}
-        <div className="border-t border-border bg-card px-2 py-2">
-          <ScrollArea className="w-full">
-            <div className="flex gap-2 pb-2 px-1 w-max" ref={timelineRef}>
+        <div className="border-t border-border bg-card px-2 py-2 overflow-hidden">
+          <div className="overflow-x-auto overflow-y-hidden pb-1" ref={timelineRef}>
+            <div className="flex gap-2 px-1" style={{ width: "max-content" }}>
               {scenes.map((s, idx) => {
                 const thumbUrl = s.image_status === "completed" ? getAssetUrl(projectId, "images", s.image_file) : null;
                 const isActive = idx === activeIndex;
@@ -312,8 +311,7 @@ export default function ProjectPreview() {
                 );
               })}
             </div>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
+          </div>
         </div>
       </div>
 
