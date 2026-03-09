@@ -98,7 +98,14 @@ export async function createProjectFrontend(
 
   let scenes: SceneManifest[];
   try {
-    scenes = await generateSceneManifest(title, script, DEFAULT_STYLE_SUMMARY, settings.groqApiKey, options.splitMode);
+    scenes = await generateSceneManifest(
+      title,
+      script,
+      DEFAULT_STYLE_SUMMARY,
+      settings.groqApiKey,
+      options.splitMode,
+      (current, total) => callbacks.onPhase(`Generating scenes (chunk ${current} of ${total})...`)
+    );
   } catch (e: any) {
     throw new Error(`Scene generation failed: ${e.message}`);
   }
