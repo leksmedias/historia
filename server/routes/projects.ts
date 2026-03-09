@@ -294,7 +294,10 @@ async function runAssetPipeline(projectId: string) {
       }
     }
 
-    const finalStatus = (imagesFailed > 0 || audioFailed > 0) ? "partial" : "completed";
+    const allImagesAccountedFor = (imagesCompleted + imagesFailed) === sceneList.length;
+    const allAudioAccountedFor = (audioCompleted + audioFailed) === sceneList.length;
+    const hasFailures = imagesFailed > 0 || audioFailed > 0;
+    const finalStatus = (allImagesAccountedFor && allAudioAccountedFor && !hasFailures) ? "completed" : "partial";
     await db.update(projects).set({ status: finalStatus }).where(eq(projects.id, projectId));
     console.log(`${projectId}: Asset pipeline complete. Status: ${finalStatus} (img ok=${imagesCompleted} fail=${imagesFailed}, aud ok=${audioCompleted} fail=${audioFailed})`);
   } catch (e: any) {

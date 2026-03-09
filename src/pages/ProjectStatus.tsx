@@ -135,6 +135,7 @@ export default function ProjectStatus() {
     try {
       await bulkRegenerateFailed(projectId, failedScenes, (done, total) => {
         setBulkProgress({ done, total });
+        fetchData();
       });
     } finally {
       setBulkRetrying(false);
@@ -149,6 +150,7 @@ export default function ProjectStatus() {
     try {
       await bulkGenerateImages(projectId, pendingImageScenes, (done, total) => {
         setPendingProgress({ done, total });
+        fetchData();
       });
     } finally {
       setBulkGeneratingPending(false);

@@ -200,11 +200,11 @@ export default function ProjectPreview() {
     try {
       await bulkGenerateImages(projectId, missing, (done, total) => {
         setBulkProgress({ done, total });
+        fetchData();
       });
       toast.success("All missing images generated");
-      fetchData();
     } catch (e: any) { toast.error(e.message); }
-    finally { setBulkGenerating(false); }
+    finally { setBulkGenerating(false); fetchData(); }
   };
 
   if (loading) {

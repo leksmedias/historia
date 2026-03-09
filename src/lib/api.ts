@@ -424,7 +424,11 @@ export async function regenerateAssetFrontend(
     audioFailed: allScenes.filter(s => s.audio_status === "failed").length,
     needsReviewCount: allScenes.filter(s => s.needs_review).length,
   };
-  const status = (stats.imagesFailed > 0 || stats.audioFailed > 0) ? "partial" : "completed";
+  const allImagesAccountedFor = (stats.imagesCompleted + stats.imagesFailed) === stats.sceneCount;
+  const allAudioAccountedFor = (stats.audioCompleted + stats.audioFailed) === stats.sceneCount;
+  const allDone = allImagesAccountedFor && allAudioAccountedFor;
+  const hasFailures = stats.imagesFailed > 0 || stats.audioFailed > 0;
+  const status = allDone && !hasFailures ? "completed" : "partial";
   await fetch(`${API_BASE}/projects/${projectId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
