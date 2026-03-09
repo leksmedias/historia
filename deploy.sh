@@ -110,8 +110,14 @@ if [ -z "$PG_EXISTING" ]; then
   DB_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}"
 else
   warn "User '${DB_USER}' already exists — skipping DB creation"
-  warn "If this is a fresh install, manually set DATABASE_URL in ${APP_DIR}/.env"
-  DB_URL="postgresql://${DB_USER}:<EXISTING_PASSWORD>@localhost:5432/${DB_NAME}"
+  # Try to preserve existing DATABASE_URL from .env; only use placeholder if none exists
+  if grep -q "^DATABASE_URL=" "${APP_DIR}/.env" 2>/dev/null; then
+    DB_URL=$(grep "^DATABASE_URL=" "${APP_DIR}/.env" | head -1 | cut -d= -f2-)
+    info "Preserving existing DATABASE_URL from .env"
+  else
+    warn "No DATABASE_URL found in .env — set it manually: nano ${APP_DIR}/.env"
+    DB_URL=""
+  fi
 fi
 
 # ── 4. Clone or update app ─────────────────────────────────────────────────────
@@ -151,11 +157,13 @@ else
     echo "PORT=${APP_PORT}" >> "$ENV_FILE"
   fi
   
-  if grep -q "^DATABASE_URL=" "$ENV_FILE"; then
-    # Use | as delimiter for sed to avoid escaping slashes in DB_URL
-    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DB_URL}|" "$ENV_FILE"
-  else
-    echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE"
+  if [ -n "$DB_URL" ]; then
+    if grep -q "^DATABASE_URL=" "$ENV_FILE"; then
+      # Use | as delimiter for sed to avoid escaping slashes in DB_URL
+      sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${DB_URL}|" "$ENV_FILE"
+    else
+      echo "DATABASE_URL=${DB_URL}" >> "$ENV_FILE"
+    fi
   fi
 fi
 
