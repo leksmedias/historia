@@ -481,6 +481,20 @@ export async function bulkRegenerateFailed(
   }
 }
 
+export async function bulkGenerateImages(
+  projectId: string,
+  scenes: Array<{ scene_number: number; image_status: string }>,
+  onProgress: (done: number, total: number) => void
+): Promise<void> {
+  const targets = scenes.filter(s => s.image_status !== "completed");
+  let done = 0;
+  for (const scene of targets) {
+    await regenerateAssetFrontend(projectId, scene.scene_number, "image").catch(console.error);
+    done++;
+    onProgress(done, targets.length);
+  }
+}
+
 export async function deleteProject(projectId: string): Promise<void> {
   await apiRequest(`/projects/${projectId}`, { method: "DELETE" });
 }

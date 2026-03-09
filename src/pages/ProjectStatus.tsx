@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, deleteProject, stopProject, resumeProject, runClientSidePipeline, type PipelineCallbacks } from "@/lib/api";
+import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, bulkGenerateImages, deleteProject, stopProject, resumeProject, runClientSidePipeline, type PipelineCallbacks } from "@/lib/api";
 import type { Project, Scene } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +43,8 @@ export default function ProjectStatus() {
   const [activeScene, setActiveScene] = useState<number | undefined>();
   const [bulkRetrying, setBulkRetrying] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
+  const [bulkGeneratingPending, setBulkGeneratingPending] = useState(false);
+  const [pendingProgress, setPendingProgress] = useState({ done: 0, total: 0 });
   const [isResuming, setIsResuming] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [clientPipelineRunning, setClientPipelineRunning] = useState(false);
@@ -123,6 +125,7 @@ export default function ProjectStatus() {
   };
 
   const failedScenes = scenes.filter(s => s.image_status === "failed" || s.audio_status === "failed");
+  const pendingImageScenes = scenes.filter(s => s.image_status !== "completed");
   const hasPendingWork = scenes.some(s => s.image_status === "pending" || s.audio_status === "pending" || s.image_status === "failed" || s.audio_status === "failed");
 
   const handleBulkRetry = async () => {
@@ -135,6 +138,20 @@ export default function ProjectStatus() {
       });
     } finally {
       setBulkRetrying(false);
+      fetchData();
+    }
+  };
+
+  const handleGeneratePending = async () => {
+    if (!projectId) return;
+    setBulkGeneratingPending(true);
+    setPendingProgress({ done: 0, total: pendingImageScenes.length });
+    try {
+      await bulkGenerateImages(projectId, pendingImageScenes, (done, total) => {
+        setPendingProgress({ done, total });
+      });
+    } finally {
+      setBulkGeneratingPending(false);
       fetchData();
     }
   };
@@ -340,17 +357,28 @@ export default function ProjectStatus() {
 
         {/* Scenes */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="text-xl font-display text-foreground">Scenes ({scenes.length})</h2>
-            {failedScenes.length > 0 && (
-              <Button variant="outline" onClick={handleBulkRetry} disabled={bulkRetrying} className="text-sm">
-                {bulkRetrying ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Retrying {bulkProgress.done}/{bulkProgress.total}</>
-                ) : (
-                  <><RefreshCw className="h-4 w-4 mr-2" /> Retry All Failed ({failedScenes.length})</>
-                )}
-              </Button>
-            )}
+            <div className="flex gap-2 flex-wrap">
+              {pendingImageScenes.length > 0 && (
+                <Button variant="default" onClick={handleGeneratePending} disabled={bulkGeneratingPending || bulkRetrying} className="text-sm">
+                  {bulkGeneratingPending ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Generating {pendingProgress.done}/{pendingProgress.total}</>
+                  ) : (
+                    <><RefreshCw className="h-4 w-4 mr-2" /> Generate All Missing Images ({pendingImageScenes.length})</>
+                  )}
+                </Button>
+              )}
+              {failedScenes.length > 0 && (
+                <Button variant="outline" onClick={handleBulkRetry} disabled={bulkRetrying || bulkGeneratingPending} className="text-sm">
+                  {bulkRetrying ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Retrying {bulkProgress.done}/{bulkProgress.total}</>
+                  ) : (
+                    <><RefreshCw className="h-4 w-4 mr-2" /> Retry All Failed ({failedScenes.length})</>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
           {scenes.length === 0 && project.status === "processing" && (
             <Card>

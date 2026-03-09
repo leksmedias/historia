@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getProject, getAssetUrl, regenerateAssetFrontend } from "@/lib/api";
+import { getProject, getAssetUrl, regenerateAssetFrontend, bulkGenerateImages } from "@/lib/api";
 import { regenerateImagePrompt } from "@/lib/providers";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,8 @@ export default function ProjectPreview() {
   const [saving, setSaving] = useState(false);
   const [regenPrompt, setRegenPrompt] = useState(false);
   const [regenImage, setRegenImage] = useState(false);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -190,6 +192,21 @@ export default function ProjectPreview() {
     finally { setRegenImage(false); }
   };
 
+  const handleBulkGenerateImages = async () => {
+    if (!projectId) return;
+    const missing = scenes.filter(s => s.image_status !== "completed");
+    setBulkGenerating(true);
+    setBulkProgress({ done: 0, total: missing.length });
+    try {
+      await bulkGenerateImages(projectId, missing, (done, total) => {
+        setBulkProgress({ done, total });
+      });
+      toast.success("All missing images generated");
+      fetchData();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setBulkGenerating(false); }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -221,7 +238,16 @@ export default function ProjectPreview() {
           </Link>
           <h1 className="text-sm font-display text-foreground truncate">{projectTitle}</h1>
           <span className="text-xs text-muted-foreground">Scene {scene.scene_number} / {scenes.length}</span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {scenes.filter(s => s.image_status !== "completed").length > 0 && (
+              <Button size="sm" variant="secondary" onClick={handleBulkGenerateImages} disabled={bulkGenerating}>
+                {bulkGenerating ? (
+                  <><Loader2 className="h-3 w-3 animate-spin mr-1" />{bulkProgress.done}/{bulkProgress.total}</>
+                ) : (
+                  <><RefreshCw className="h-3 w-3 mr-1" />Generate Missing ({scenes.filter(s => s.image_status !== "completed").length})</>
+                )}
+              </Button>
+            )}
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
               {sidebarOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
             </Button>
