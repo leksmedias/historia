@@ -222,14 +222,19 @@ export async function runClientSidePipeline(
           if (!settings.whiskCookie) throw new Error("Whisk cookie not configured. Add it in Settings.");
           const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts || [])];
           let success = false;
+          let lastWhiskError = "All Whisk prompts failed";
           for (const prompt of allPrompts) {
             try {
               imageBlob = await generateWhiskImage(prompt, settings.whiskCookie, styleUrls, serverProjectId);
               success = true;
               break;
-            } catch (e: any) { console.error(`Whisk prompt failed: ${e.message}`); }
+            } catch (e: any) {
+              lastWhiskError = e.message;
+              console.error(`Whisk prompt failed: ${e.message}`);
+              if (e.message.includes("auth expired") || e.message.includes("Unauthorized") || e.message.includes("expired")) break;
+            }
           }
-          if (!success) throw new Error("All Whisk prompts failed");
+          if (!success) throw new Error(lastWhiskError);
         } else {
           imageBlob = generateMockSVG(num, scene.image_prompt || "");
         }
@@ -528,16 +533,18 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
         if (settings.imageProvider === "whisk" && settings.whiskCookie) {
           const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
           let success = false;
+          let lastWhiskError = "All Whisk prompts failed";
           for (const prompt of allPrompts) {
             try {
               imageBlob = await generateWhiskImage(prompt, settings.whiskCookie, styleUrls, projectId);
               success = true;
               break;
             } catch (e: any) {
-              if (e.message.includes("expired") || e.message.includes("rate limited")) break;
+              lastWhiskError = e.message;
+              if (e.message.includes("expired") || e.message.includes("Unauthorized") || e.message.includes("rate limited")) break;
             }
           }
-          if (!success) throw new Error("All Whisk prompts failed");
+          if (!success) throw new Error(lastWhiskError);
         } else {
           imageBlob = generateMockSVG(num, scene.image_prompt || "");
         }

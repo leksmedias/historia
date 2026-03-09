@@ -238,15 +238,18 @@ async function runAssetPipeline(projectId: string) {
           const stylePaths = getStyleImagePaths(projectId);
           const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])].filter(Boolean);
           let bytes: Uint8Array | null = null;
+          let lastWhiskError = "All Whisk prompts failed";
           for (const prompt of allPrompts) {
             try {
               bytes = await generateWhiskImageWithRefs(prompt, cookie, stylePaths);
               break;
             } catch (e: any) {
+              lastWhiskError = e.message;
               console.error(`${projectId} scene ${num}: Whisk prompt failed: ${e.message}`);
+              if (e.message.includes("auth expired") || e.message.includes("Unauthorized") || e.message.includes("expired")) break;
             }
           }
-          if (!bytes) throw new Error("All Whisk prompts failed");
+          if (!bytes) throw new Error(lastWhiskError);
           fs.writeFileSync(path.join(imgDir, `${num}.png`), bytes);
         } else {
           const svg = generateMockSVG(num, scene.image_prompt || "");
