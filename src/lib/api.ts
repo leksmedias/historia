@@ -271,18 +271,29 @@ export async function runClientSidePipeline(
       try {
         let audioBlob: Blob;
         if (settings.ttsProvider === "inworld" && settings.inworldApiKey) {
-          audioBlob = await generateInworldAudio(
-            scene.tts_text || scene.script_text || "",
-            settings.inworldApiKey,
-            options.voiceId || settings.voiceId,
-            settings.modelId
-          );
+          const text = scene.tts_text || scene.script_text || "";
+          let lastAudioError = "";
+          const MAX_AUDIO_ATTEMPTS = 3;
+          for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
+            try {
+              audioBlob = await generateInworldAudio(text, settings.inworldApiKey, options.voiceId || settings.voiceId, settings.modelId);
+              break;
+            } catch (e: any) {
+              lastAudioError = e.message;
+              const isAuthError = e.message?.includes("401") || e.message?.includes("403") || e.message?.includes("invalid");
+              if (isAuthError || attempt === MAX_AUDIO_ATTEMPTS) break;
+              const waitMs = 2000 * attempt; // Inworld is 100 RPS — rate limits clear quickly
+              console.warn(`Audio ${num} attempt ${attempt} failed, retrying in ${waitMs}ms...`);
+              await new Promise(r => setTimeout(r, waitMs));
+            }
+          }
+          if (!audioBlob!) throw new Error(lastAudioError);
         } else {
           audioBlob = generateMockAudio();
         }
 
         const fd = new FormData();
-        fd.append("file", audioBlob, `${num}.mp3`);
+        fd.append("file", audioBlob!, `${num}.mp3`);
         await fetch(`${API_BASE}/assets/${serverProjectId}/audio/${num}.mp3`, { method: "POST", body: fd });
 
         await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {

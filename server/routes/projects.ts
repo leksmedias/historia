@@ -31,6 +31,10 @@ const DEFAULT_STYLE_SUMMARY = {
   historicalLook: "realistic period atmosphere, grounded environments, era-appropriate architecture, clothing, and objects",
 };
 
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function generateProjectId(): string {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let result = "proj_";
@@ -269,7 +273,24 @@ async function runAssetPipeline(projectId: string) {
       try {
         const inworldKey = process.env.INWORLD_API_KEY;
         if (ttsProvider === "inworld" && inworldKey) {
-          const bytes = await generateInworldAudio(scene.tts_text || scene.script_text || "", inworldKey, voiceId, modelId);
+          const text = scene.tts_text || scene.script_text || "";
+          let bytes: Buffer | null = null;
+          let lastAudioError = "";
+          const MAX_AUDIO_ATTEMPTS = 3;
+          for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
+            try {
+              bytes = await generateInworldAudio(text, inworldKey, voiceId, modelId);
+              break;
+            } catch (e: any) {
+              lastAudioError = e.message;
+              const isAuthError = e.message?.includes("401") || e.message?.includes("403") || e.message?.includes("invalid");
+              if (isAuthError || attempt === MAX_AUDIO_ATTEMPTS) break;
+              const waitMs = 2000 * attempt; // Inworld is 100 RPS — rate limits clear quickly
+              console.log(`${projectId} scene ${num}: Audio attempt ${attempt} failed, retrying in ${waitMs}ms...`);
+              await delay(waitMs);
+            }
+          }
+          if (!bytes) throw new Error(lastAudioError);
           fs.writeFileSync(path.join(audioDir, `${num}.mp3`), bytes);
         } else {
           const bytes = generateMockAudio();

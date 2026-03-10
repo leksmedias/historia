@@ -43,6 +43,8 @@ export default function ProjectStatus() {
   const [activeScene, setActiveScene] = useState<number | undefined>();
   const [bulkRetrying, setBulkRetrying] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
+  const [bulkRetryingAudio, setBulkRetryingAudio] = useState(false);
+  const [bulkAudioProgress, setBulkAudioProgress] = useState({ done: 0, total: 0 });
   const [isResuming, setIsResuming] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [clientPipelineRunning, setClientPipelineRunning] = useState(false);
@@ -123,6 +125,7 @@ export default function ProjectStatus() {
   };
 
   const failedScenes = scenes.filter(s => s.image_status === "failed" || s.audio_status === "failed");
+  const failedAudioScenes = scenes.filter(s => s.audio_status === "failed");
   const pendingImageScenes = scenes.filter(s => s.image_status !== "completed");
   const hasPendingWork = scenes.some(s => s.image_status === "pending" || s.audio_status === "pending" || s.image_status === "failed" || s.audio_status === "failed");
 
@@ -137,6 +140,21 @@ export default function ProjectStatus() {
       });
     } finally {
       setBulkRetrying(false);
+      fetchData();
+    }
+  };
+
+  const handleBulkRetryAudio = async () => {
+    if (!projectId) return;
+    setBulkRetryingAudio(true);
+    setBulkAudioProgress({ done: 0, total: failedAudioScenes.length });
+    try {
+      await bulkRegenerateFailed(projectId, failedAudioScenes, (done, total) => {
+        setBulkAudioProgress({ done, total });
+        fetchData();
+      });
+    } finally {
+      setBulkRetryingAudio(false);
       fetchData();
     }
   };
@@ -371,6 +389,15 @@ export default function ProjectStatus() {
                     <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Retrying {bulkProgress.done}/{bulkProgress.total}</>
                   ) : (
                     <><RefreshCw className="h-4 w-4 mr-2" /> Retry All Failed ({failedScenes.length})</>
+                  )}
+                </Button>
+              )}
+              {failedAudioScenes.length > 0 && (
+                <Button variant="outline" onClick={handleBulkRetryAudio} disabled={bulkRetryingAudio || project.status === "processing"} className="text-sm">
+                  {bulkRetryingAudio ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Retrying Audio {bulkAudioProgress.done}/{bulkAudioProgress.total}</>
+                  ) : (
+                    <><Volume2 className="h-4 w-4 mr-2" /> Retry Failed Audio ({failedAudioScenes.length})</>
                   )}
                 </Button>
               )}
