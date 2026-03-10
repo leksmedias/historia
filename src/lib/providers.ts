@@ -166,18 +166,21 @@ function extractSentences(text: string): string[] {
   return sentences.length > 0 ? sentences : [text];
 }
 
-/** Split script into scenes — 3 sentences per scene (smart) or 1 sentence (exact) */
+/** Split script into scenes — random 2-3 sentences per scene (smart) or 1 sentence (exact) */
 export function splitScriptIntoScenes(
   script: string,
-  sentencesPerScene: number = 3
+  splitMode: "smart" | "exact" = "smart"
 ): Array<{ scene_number: number; script_text: string }> {
   const sentences = extractSentences(script);
   const scenes: Array<{ scene_number: number; script_text: string }> = [];
   let sceneNum = 1;
 
-  for (let i = 0; i < sentences.length; i += sentencesPerScene) {
-    const group = sentences.slice(i, i + sentencesPerScene).join("").trim();
+  let i = 0;
+  while (i < sentences.length) {
+    const sentencesPerScene = splitMode === "exact" ? 1 : Math.floor(Math.random() * 2) + 2; // 2 or 3 sentences
+    const group = sentences.slice(i, i + sentencesPerScene).join(" ").trim();
     if (group) scenes.push({ scene_number: sceneNum++, script_text: group });
+    i += sentencesPerScene;
   }
   return scenes.length > 0 ? scenes : [{ scene_number: 1, script_text: script }];
 }
@@ -317,7 +320,7 @@ export async function generateScenesForChunk(
 ): Promise<SceneManifest[]> {
   const sceneChunks = (splitMode === "duration"
     ? splitScriptByDuration(chunk)
-    : splitScriptIntoScenes(chunk, splitMode === "exact" ? 1 : 3)
+    : splitScriptIntoScenes(chunk, splitMode === "exact" ? "exact" : "smart")
   ).map((s, idx) => ({ ...s, scene_number: startSceneNumber + idx }));
 
   const prompts = await callGroqForBatch(title, sceneChunks, groqApiKey);
@@ -349,7 +352,7 @@ export async function generateSceneManifest(
 ): Promise<SceneManifest[]> {
   const sceneChunks = splitMode === "duration"
     ? splitScriptByDuration(script)
-    : splitScriptIntoScenes(script, splitMode === "exact" ? 1 : 3);
+    : splitScriptIntoScenes(script, splitMode === "exact" ? "exact" : "smart");
 
   const BATCH_SIZE = 30;
   const totalBatches = Math.ceil(sceneChunks.length / BATCH_SIZE);
