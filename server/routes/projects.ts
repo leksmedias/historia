@@ -5,7 +5,7 @@ import { eq, desc, or, gt } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { generateWhiskImageWithRefs, getStyleImagePaths } from "../lib/whisk";
+import { generateWhiskImageWithRefs, createWhiskProject, generateImageFromProject, getStyleImagePaths } from "../lib/whisk";
 
 const router = Router();
 
@@ -221,55 +221,89 @@ async function runAssetPipeline(projectId: string) {
     console.log(`${projectId}: Starting asset pipeline for ${sceneList.length} scenes (image=${imageProvider}, tts=${ttsProvider})`);
 
     let imagesCompleted = 0, audioCompleted = 0, imagesFailed = 0, audioFailed = 0;
+    let stopped = false;
 
-    for (const scene of sceneList) {
+    const updateStats = () => db.update(projects).set({
+      stats: { sceneCount: sceneList.length, imagesCompleted, audioCompleted, imagesFailed, audioFailed, needsReviewCount: imagesFailed + audioFailed },
+    }).where(eq(projects.id, projectId));
+
+    const checkStopped = async (): Promise<boolean> => {
+      if (stopped) return true;
       const [projCheck] = await db.select({ status: projects.status }).from(projects).where(eq(projects.id, projectId));
       if (projCheck?.status === "stopped") {
+        stopped = true;
         console.log(`${projectId}: Pipeline stopped by user`);
-        return;
+        return true;
       }
+      return false;
+    };
 
-      const num = scene.scene_number;
-      const imgDir = path.join("uploads", projectId, "images");
-      const audioDir = path.join("uploads", projectId, "audio");
-      fs.mkdirSync(imgDir, { recursive: true });
-      fs.mkdirSync(audioDir, { recursive: true });
+    // Create Whisk project once and reuse for all scenes (avoids N×3 redundant setup API calls)
+    let whiskProject: any = null;
+    let whiskRefsAdded = 0;
+    if (imageProvider === "whisk") {
+      const cookie = process.env.WHISK_COOKIE;
+      if (!cookie) throw new Error("WHISK_COOKIE not set in environment");
+      const stylePaths = getStyleImagePaths(projectId);
+      ({ project: whiskProject, refsAdded: whiskRefsAdded } = await createWhiskProject(cookie, stylePaths));
+      console.log(`${projectId}: Whisk project created, reusing for all ${sceneList.length} scenes`);
+    }
 
-      try {
-        if (imageProvider === "whisk") {
-          const cookie = process.env.WHISK_COOKIE;
-          if (!cookie) throw new Error("WHISK_COOKIE not set in environment");
-          const stylePaths = getStyleImagePaths(projectId);
-          const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])].filter(Boolean);
-          let bytes: Uint8Array | null = null;
-          let lastWhiskError = "All Whisk prompts failed";
-          for (const prompt of allPrompts) {
-            try {
-              bytes = await generateWhiskImageWithRefs(prompt, cookie, stylePaths);
-              break;
-            } catch (e: any) {
-              lastWhiskError = e.message;
-              console.error(`${projectId} scene ${num}: Whisk prompt failed: ${e.message}`);
-              if (e.message.includes("auth expired") || e.message.includes("Unauthorized") || e.message.includes("expired")) break;
+    // Phase 1: Generate images — 3 at a time
+    const imgDir = path.join("uploads", projectId, "images");
+    fs.mkdirSync(imgDir, { recursive: true });
+
+    const imageQueue = [...sceneList];
+    const imageWorkers = Array(Math.min(3, sceneList.length)).fill(null).map(async () => {
+      while (imageQueue.length > 0) {
+        if (await checkStopped()) return;
+        const scene = imageQueue.shift()!;
+        const num = scene.scene_number;
+        try {
+          if (imageProvider === "whisk") {
+            const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])].filter(Boolean);
+            let bytes: Uint8Array | null = null;
+            let lastWhiskError = "All Whisk prompts failed";
+            for (const prompt of allPrompts) {
+              try {
+                bytes = await generateImageFromProject(whiskProject, prompt, whiskRefsAdded);
+                break;
+              } catch (e: any) {
+                lastWhiskError = e.message;
+                console.error(`${projectId} scene ${num}: Whisk prompt failed: ${e.message}`);
+                if (e.message.includes("auth expired") || e.message.includes("Unauthorized") || e.message.includes("expired")) break;
+              }
             }
+            if (!bytes) throw new Error(lastWhiskError);
+            fs.writeFileSync(path.join(imgDir, `${num}.png`), bytes);
+          } else {
+            const svg = generateMockSVG(num, scene.image_prompt || "");
+            fs.writeFileSync(path.join(imgDir, `${num}.svg`), svg);
           }
-          if (!bytes) throw new Error(lastWhiskError);
-          fs.writeFileSync(path.join(imgDir, `${num}.png`), bytes);
-        } else {
-          const svg = generateMockSVG(num, scene.image_prompt || "");
-          fs.writeFileSync(path.join(imgDir, `${num}.svg`), svg);
+          await db.update(scenes).set({ image_status: "completed", image_attempts: 1 })
+            .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
+          imagesCompleted++;
+          console.log(`${projectId}: Scene ${num} image done (${imagesCompleted}/${sceneList.length})`);
+        } catch (e: any) {
+          console.error(`${projectId} scene ${num}: Image failed: ${e.message}`);
+          await db.update(scenes).set({ image_status: "failed", image_attempts: 1, image_error: e.message, needs_review: true })
+            .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
+          imagesFailed++;
         }
-        await db.update(scenes).set({ image_status: "completed", image_attempts: 1 })
-          .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
-        imagesCompleted++;
-        console.log(`${projectId}: Scene ${num} image done (${imagesCompleted}/${sceneList.length})`);
-      } catch (e: any) {
-        console.error(`${projectId} scene ${num}: Image failed: ${e.message}`);
-        await db.update(scenes).set({ image_status: "failed", image_attempts: 1, image_error: e.message, needs_review: true })
-          .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
-        imagesFailed++;
+        await updateStats();
       }
+    });
+    await Promise.all(imageWorkers);
 
+    if (stopped) return;
+
+    // Phase 2: Generate audio — sequential (Inworld 100 RPS, no need to parallelize)
+    const audioDir = path.join("uploads", projectId, "audio");
+    fs.mkdirSync(audioDir, { recursive: true });
+
+    for (const scene of sceneList) {
+      if (await checkStopped()) return;
+      const num = scene.scene_number;
       try {
         const inworldKey = process.env.INWORLD_API_KEY;
         if (ttsProvider === "inworld" && inworldKey) {
@@ -305,14 +339,7 @@ async function runAssetPipeline(projectId: string) {
           .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
         audioFailed++;
       }
-
-      await db.update(projects).set({
-        stats: { sceneCount: sceneList.length, imagesCompleted, audioCompleted, imagesFailed, audioFailed, needsReviewCount: imagesFailed + audioFailed },
-      }).where(eq(projects.id, projectId));
-
-      if (imageProvider === "whisk" && sceneList.indexOf(scene) < sceneList.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      await updateStats();
     }
 
     const allImagesAccountedFor = (imagesCompleted + imagesFailed) === sceneList.length;

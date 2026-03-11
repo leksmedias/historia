@@ -19,11 +19,7 @@ function resolveExistingPath(base: string): string | null {
   return candidates.find(p => fs.existsSync(p)) || null;
 }
 
-export async function generateWhiskImageWithRefs(
-  prompt: string,
-  cookie: string,
-  styleImagePaths: string[]
-): Promise<Uint8Array> {
+export async function createWhiskProject(cookie: string, styleImagePaths: string[]): Promise<{ project: any; refsAdded: number }> {
   const whisk = new Whisk(cookie);
   const project = await whisk.newProject("Historia-" + Date.now());
 
@@ -51,7 +47,12 @@ export async function generateWhiskImageWithRefs(
     }
   }
 
-  console.log(`[whisk] Generating with ${refsAdded} reference(s): ${prompt.substring(0, 100)}...`);
+  console.log(`[whisk] Project ready with ${refsAdded} reference(s)`);
+  return { project, refsAdded };
+}
+
+export async function generateImageFromProject(project: any, prompt: string, refsAdded: number): Promise<Uint8Array> {
+  console.log(`[whisk] Generating: ${prompt.substring(0, 100)}...`);
 
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error("Whisk generation timed out after 60s")), 60000)
@@ -68,6 +69,15 @@ export async function generateWhiskImageWithRefs(
 
   console.log(`[whisk] Image generated successfully`);
   return decodeEncodedImage(encodedImage);
+}
+
+export async function generateWhiskImageWithRefs(
+  prompt: string,
+  cookie: string,
+  styleImagePaths: string[]
+): Promise<Uint8Array> {
+  const { project, refsAdded } = await createWhiskProject(cookie, styleImagePaths);
+  return generateImageFromProject(project, prompt, refsAdded);
 }
 
 export function getStyleImagePaths(projectId: string): string[] {
