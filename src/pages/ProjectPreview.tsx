@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getProject, getAssetUrl, regenerateAssetFrontend, bulkGenerateImages } from "@/lib/api";
+import { getProject, getAssetUrl, regenerateAssetFrontend, bulkRegeneratePending } from "@/lib/api";
 import { regenerateImagePrompt } from "@/lib/providers";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,8 @@ export default function ProjectPreview() {
   const [saving, setSaving] = useState(false);
   const [regenPrompt, setRegenPrompt] = useState(false);
   const [regenImage, setRegenImage] = useState(false);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
   const [projectStatus, setProjectStatus] = useState("");
 
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -200,11 +202,21 @@ export default function ProjectPreview() {
 
   const handleBulkGenerateImages = async () => {
     if (!projectId) return;
+    const pending = scenes.filter(s => s.image_status !== "completed");
+    if (pending.length === 0) return;
+    setBulkGenerating(true);
+    setBulkProgress({ done: 0, total: pending.length });
     try {
-      await bulkGenerateImages(projectId);
-      toast.success("Image generation started in background");
-      fetchData();
+      await bulkRegeneratePending(projectId, pending, (done, total) => {
+        setBulkProgress({ done, total });
+        fetchData();
+      });
+      toast.success("Images generated");
     } catch (e: any) { toast.error(e.message); }
+    finally {
+      setBulkGenerating(false);
+      fetchData();
+    }
   };
 
   if (loading) {
@@ -239,10 +251,10 @@ export default function ProjectPreview() {
           <h1 className="text-sm font-display text-foreground truncate">{projectTitle}</h1>
           <span className="text-xs text-muted-foreground">Scene {scene.scene_number} / {scenes.length}</span>
           <div className="ml-auto flex items-center gap-2">
-            {(scenes.filter(s => s.image_status !== "completed").length > 0 || projectStatus === "processing") && (
-              <Button size="sm" variant="secondary" onClick={handleBulkGenerateImages} disabled={projectStatus === "processing"}>
-                {projectStatus === "processing" ? (
-                  <><Loader2 className="h-3 w-3 animate-spin mr-1" />Generating in background…</>
+            {scenes.filter(s => s.image_status !== "completed").length > 0 && (
+              <Button size="sm" variant="secondary" onClick={handleBulkGenerateImages} disabled={bulkGenerating || regenImage}>
+                {bulkGenerating ? (
+                  <><Loader2 className="h-3 w-3 animate-spin mr-1" />Generating {bulkProgress.done}/{bulkProgress.total}</>
                 ) : (
                   <><RefreshCw className="h-3 w-3 mr-1" />Generate Missing ({scenes.filter(s => s.image_status !== "completed").length})</>
                 )}

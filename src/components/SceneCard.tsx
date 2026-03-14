@@ -4,16 +4,20 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getAssetUrl, regenerateAssetFrontend, splitScene } from "@/lib/api";
+import { getAssetUrl, regenerateAssetFrontend, splitScene, deleteScene } from "@/lib/api";
 import { getAvailableVoices, loadProviderSettings } from "@/lib/providers";
 import type { Scene } from "@/lib/types";
 import AudioPlayer from "@/components/AudioPlayer";
 import SplitSceneDialog from "@/components/SplitSceneDialog";
 import {
   Image as ImageIcon, Volume2, RefreshCw, AlertTriangle, CheckCircle2,
-  Clock, Copy, Loader2, Pencil, Save, X, Scissors,
+  Clock, Copy, Loader2, Pencil, Save, X, Scissors, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface Props {
   scene: Scene;
@@ -104,6 +108,14 @@ export default function SceneCard({ scene, projectId, onRefresh }: Props) {
     } catch (e: any) { toast.error(e.message); }
   };
 
+  const handleDelete = async () => {
+    try {
+      await deleteScene(projectId, scene.scene_number);
+      toast.success(`Scene ${scene.scene_number} deleted`);
+      onRefresh();
+    } catch (e: any) { toast.error(e.message); }
+  };
+
   const renderEditable = (label: string, field: "script" | "tts" | "prompt", value: string, mono = false) => {
     const isEditing = editingField === field;
     return (
@@ -158,6 +170,27 @@ export default function SceneCard({ scene, projectId, onRefresh }: Props) {
                   <AlertTriangle className="h-3 w-3 mr-1" />Review
                 </Badge>
               )}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="ghost" className="text-xs text-muted-foreground hover:text-destructive">
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Scene {scene.scene_number}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete this scene and its generated assets. This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
 

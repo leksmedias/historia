@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, bulkGenerateImages, deleteProject, stopProject, resumeProject, runClientSidePipeline, type PipelineCallbacks } from "@/lib/api";
+import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, bulkRegeneratePending, deleteProject, stopProject, resumeProject, runClientSidePipeline, type PipelineCallbacks } from "@/lib/api";
 import type { Project, Scene } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,8 @@ export default function ProjectStatus() {
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
   const [bulkRetryingAudio, setBulkRetryingAudio] = useState(false);
   const [bulkAudioProgress, setBulkAudioProgress] = useState({ done: 0, total: 0 });
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkGenerateProgress, setBulkGenerateProgress] = useState({ done: 0, total: 0 });
   const [isResuming, setIsResuming] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [clientPipelineRunning, setClientPipelineRunning] = useState(false);
@@ -161,8 +163,20 @@ export default function ProjectStatus() {
 
   const handleGeneratePending = async () => {
     if (!projectId) return;
-    await bulkGenerateImages(projectId);
-    fetchData();
+    setBulkGenerating(true);
+    setBulkGenerateProgress({ done: 0, total: pendingImageScenes.length });
+    try {
+      await bulkRegeneratePending(projectId, pendingImageScenes, (done, total) => {
+        setBulkGenerateProgress({ done, total });
+        fetchData();
+      });
+      toast.success("Images generated");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setBulkGenerating(false);
+      fetchData();
+    }
   };
 
   const handleDelete = async () => {
@@ -369,15 +383,15 @@ export default function ProjectStatus() {
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="text-xl font-display text-foreground">Scenes ({scenes.length})</h2>
             <div className="flex gap-2 flex-wrap">
-              {(pendingImageScenes.length > 0 || project.status === "processing") && (
+              {pendingImageScenes.length > 0 && (
                 <Button
                   variant="default"
                   onClick={handleGeneratePending}
-                  disabled={project.status === "processing" || bulkRetrying}
+                  disabled={bulkGenerating || bulkRetrying || project.status === "processing"}
                   className="text-sm"
                 >
-                  {project.status === "processing" ? (
-                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Generating in background…</>
+                  {bulkGenerating ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Generating {bulkGenerateProgress.done}/{bulkGenerateProgress.total}</>
                   ) : (
                     <><RefreshCw className="h-4 w-4 mr-2" /> Generate All Missing Images ({pendingImageScenes.length})</>
                   )}

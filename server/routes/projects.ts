@@ -603,6 +603,41 @@ router.post("/:id/scenes", async (req: Request, res: Response) => {
   }
 });
 
+router.delete("/:id/scenes/:sceneNumber", async (req: Request, res: Response) => {
+  try {
+    const { id: projectId, sceneNumber } = req.params;
+    const num = Number(sceneNumber);
+
+    await db.delete(scenes)
+      .where(eq(scenes.project_id, projectId))
+      .where(eq(scenes.scene_number, num));
+
+    const imgDir = path.join("uploads", projectId, "images");
+    const audioDir = path.join("uploads", projectId, "audio");
+    for (const ext of ["png", "svg"]) {
+      const p = path.join(imgDir, `${num}.${ext}`);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
+    const audioPath = path.join(audioDir, `${num}.mp3`);
+    if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+
+    const allScenes = await db.select().from(scenes).where(eq(scenes.project_id, projectId));
+    const stats = {
+      sceneCount: allScenes.length,
+      imagesCompleted: allScenes.filter((s: any) => s.image_status === "completed").length,
+      audioCompleted: allScenes.filter((s: any) => s.audio_status === "completed").length,
+      imagesFailed: allScenes.filter((s: any) => s.image_status === "failed").length,
+      audioFailed: allScenes.filter((s: any) => s.audio_status === "failed").length,
+      needsReviewCount: allScenes.filter((s: any) => s.needs_review).length,
+    };
+    await db.update(projects).set({ stats }).where(eq(projects.id, projectId));
+
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.patch("/:id/scenes/:sceneNumber", async (req: Request, res: Response) => {
   try {
     const { id: projectId, sceneNumber } = req.params;

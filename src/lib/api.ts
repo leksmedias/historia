@@ -383,7 +383,7 @@ export async function regenerateAssetFrontend(
       await fetch(`${API_BASE}/projects/${projectId}/scenes/${sceneNumber}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_status: "completed", image_attempts: (scene.image_attempts || 0) + 1, image_error: null, needs_review: false }),
+        body: JSON.stringify({ image_status: "completed", image_file: `${sceneNumber}.${ext}`, image_attempts: (scene.image_attempts || 0) + 1, image_error: null, needs_review: false }),
       });
     } catch (e: any) {
       await fetch(`${API_BASE}/projects/${projectId}/scenes/${sceneNumber}`, {
@@ -502,6 +502,23 @@ export async function bulkGenerateImages(projectId: string): Promise<void> {
 
 export async function deleteProject(projectId: string): Promise<void> {
   await apiRequest(`/projects/${projectId}`, { method: "DELETE" });
+}
+
+export async function deleteScene(projectId: string, sceneNumber: number): Promise<void> {
+  await apiRequest(`/projects/${projectId}/scenes/${sceneNumber}`, { method: "DELETE" });
+}
+
+export async function bulkRegeneratePending(
+  projectId: string,
+  pendingScenes: Array<{ scene_number: number }>,
+  onProgress: (done: number, total: number) => void
+): Promise<void> {
+  let done = 0;
+  for (const scene of pendingScenes) {
+    await regenerateAssetFrontend(projectId, scene.scene_number, "image").catch(console.error);
+    done++;
+    onProgress(done, pendingScenes.length);
+  }
 }
 
 export async function stopProject(projectId: string): Promise<void> {
