@@ -1,6 +1,6 @@
 # Historia — Cinematic Historical Documentary Generator
 
-A self-hosted web application that transforms historical scripts into cinematic documentary-style asset packs — AI-generated images via Google Whisk (Imagen 3.5) and professional voice narration via Inworld TTS.
+A self-hosted web application that transforms historical scripts into cinematic documentary-style videos — AI-generated images via Google Whisk (Imagen 3.5), professional narration via Inworld TTS, Ken Burns animated clips, and optional Veo 3.1 image-to-video scenes.
 
 ## Quick Install (VPS — one command)
 
@@ -37,9 +37,11 @@ Historia automates the production pipeline for historical documentary content:
 2. **Upload style references** — provide 2 reference images to guide the visual style
 3. **Choose voice & split mode** — select a narration voice and how the script is divided into scenes
 4. **AI generates scenes** — Groq (openai/gpt-oss-120b) splits your script into visual scenes with cinematic image prompts (long scripts are batched progressively — you're redirected as soon as the first batch is ready)
-5. **Image generation** — Google Whisk (Imagen 3.5) creates historically-accurate images using your style references
+5. **Image generation** — Google Whisk (Imagen 3.5) creates historically-accurate images using your style references (or a text style prompt — no reference images required)
 6. **Voice narration** — Inworld AI generates professional text-to-speech audio per scene (up to 3 auto-retries on failure)
-7. **Preview & refine** — use the built-in cinematic player to review, edit prompts, and regenerate assets
+7. **Video clip generation** — each scene becomes an MP4 clip, exactly synced to its narration length; still images get a Ken Burns pan/zoom effect, or you can animate any scene with Google Veo 3.1 (image-to-video)
+8. **Export** — download individual clips as ZIP, download Veo-animated scenes only, or merge everything into a single documentary MP4
+9. **Preview & refine** — use the built-in cinematic player to review, edit prompts, and regenerate assets
 
 ## Features
 
@@ -50,6 +52,7 @@ Historia automates the production pipeline for historical documentary content:
   - **Exact** — one sentence per scene
   - **Duration** — groups sentences by speaking time (2.5 words/sec × scene duration), adapts to sentence length automatically
 - **Dual style references** — upload 2 images to anchor the visual tone across all generated scenes
+- **Style Prompt mode** — instead of reference images, paste a text style prompt (e.g. "19th-century oil painting, muted earth tones, dramatic chiaroscuro…") to guide all scene images without uploading any files
 - **Progressive batching** — long scripts are split into batches of 30; the project is created after the first batch so you're redirected immediately while remaining batches process in the background
 
 ### Scene Pipeline
@@ -60,6 +63,15 @@ Historia automates the production pipeline for historical documentary content:
 - **Auto-retry audio** — Inworld TTS retries up to 3 times per scene (2s → 4s backoff) before marking as failed
 - **Bulk retry** — one-click retry for all failed assets; dedicated **Retry Failed Audio** button for audio-only failures
 - **Background image generation** — "Generate All Missing Images" runs server-side; navigate away and generation continues uninterrupted; live progress polling updates every 3 seconds
+
+### Video Export Pipeline
+- **Two-phase render** — Phase 1 generates individual scene clips (stored in `clips/`); Phase 2 merges them into one video or you download as ZIP — independently
+- **Ken Burns effects** — six animated effects (zoom-in, zoom-out, pan-right, pan-left, pan-up, pan-down) applied to still images; effects rotate so no two consecutive scenes repeat
+- **Per-scene Veo animation** — click the video icon on any timeline thumbnail (or use the sidebar button) to mark a scene for Veo 3.1 image-to-video animation; click "Animate X with Veo" to generate
+- **Audio mixing** — narration at full volume; if Veo generates ambient audio it is mixed at 10% underneath
+- **Loop to fill** — Veo clips (~8s) are looped seamlessly to match the narration duration of each scene
+- **Download options** — all clips as ZIP, animated-scenes-only ZIP (`scene_N_animated.mp4`), or full merged documentary MP4
+- **Resolution** — 480p or 720p selectable before rendering
 
 ### Scene Preview Player
 - **Full-screen image viewer** with subtitle overlay showing script text
@@ -89,6 +101,7 @@ Historia automates the production pipeline for historical documentary content:
 | Database | PostgreSQL (via Drizzle ORM) |
 | AI — Script | Groq API (openai/gpt-oss-120b, 131k context) |
 | AI — Images | Google Whisk (Imagen 3.5) with style reference support |
+| AI — Video | Google Veo 3.1 (image-to-video, via Whisk API) |
 | AI — TTS | Inworld AI (TTS 1.5 Max, 100 RPS) |
 
 ## Setup
@@ -241,6 +254,10 @@ Go to [inworld.ai/studio](https://inworld.ai/studio), generate a new key, and up
 
 Click **"Retry Failed Audio"** on the project page. The pipeline retries each scene up to 3 times automatically — if audio is still failing, check your Inworld API key in Settings.
 
+### Veo animation fails / "only landscape images can be animated"
+
+Veo 3.1 only accepts landscape (16:9) images. Historia generates landscape images by default — if you see this error, regenerate the scene image first, then retry the animation.
+
 ### Database connection error
 
 Ensure `DATABASE_URL` is set correctly in your `.env` and PostgreSQL is running:
@@ -272,6 +289,7 @@ Mock mode is active. Make sure **Whisk** is selected as the image provider in Se
 │   │   ├── projects.ts        # Project + scene CRUD, asset pipeline
 │   │   ├── assets.ts          # File upload/download routes
 │   │   ├── regenerate.ts      # Per-scene asset regeneration
+│   │   ├── render.ts          # Video clip generation, merge, Veo animation routes
 │   │   └── whisk-proxy.ts     # Whisk API proxy (cookie forwarding)
 │   └── lib/
 │       └── whisk.ts           # Whisk SDK wrapper
