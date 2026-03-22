@@ -50,39 +50,47 @@ const KB_TO_API: Record<KBEffect, string> = {
 };
 
 /**
- * Ken Burns using scale+crop with FFmpeg `t` (timestamp) expressions.
- * Works reliably on both still images and video — unlike zoompan which
- * was designed for stills only and fails silently on video inputs.
+ * Ken Burns using fixed scale + per-frame crop with `t` expressions.
  *
- * @param maxZoom  max zoom factor: 1.3 for still images, 1.15 for Veo clips
+ * `scale` evaluates w/h only at init (no `t` support) — so we pre-scale
+ * to a fixed larger size, then use `crop` (which re-evaluates per frame
+ * and fully supports `t`) to produce the zoom/pan motion, then post-scale
+ * zoom clips back to the target resolution.
+ *
+ * @param maxZoom  zoom factor: 1.3 for stills, 1.15 for Veo clips
  */
 function buildKB(effect: KBEffect, dur: number, width: number, height: number, maxZoom = 1.3): string {
   const d = dur.toFixed(3);
-  const zm = maxZoom.toFixed(3);
-  const inc = (maxZoom - 1).toFixed(3);
-  const panW = Math.round(width * maxZoom / 2) * 2;
-  const panH = Math.round(height * maxZoom / 2) * 2;
+  // Pre-scaled dimensions — must be even for libx264
+  const pW = Math.round(width * maxZoom / 2) * 2;
+  const pH = Math.round(height * maxZoom / 2) * 2;
+  const dx = pW - width;   // extra horizontal pixels
+  const dy = pH - height;  // extra vertical pixels
   switch (effect) {
     case "zoom-in":
-      // Scale grows 1.0× → maxZoom× over the clip; crop holds center W×H
-      return `scale='${width}*(1+${inc}*min(t,${d})/${d})':'${height}*(1+${inc}*min(t,${d})/${d})':flags=lanczos,` +
-             `crop=${width}:${height}:'(iw-ow)/2':'(ih-oh)/2'`;
+      // Crop window shrinks pW×pH → W×H (shows progressively less = zooms in)
+      // then post-scale stretches back to W×H for consistent output size
+      return `scale=${pW}:${pH}:flags=lanczos,` +
+             `crop=${pW}-${dx}*min(t\,${d})/${d}:${pH}-${dy}*min(t\,${d})/${d}:(iw-out_w)/2:(ih-out_h)/2,` +
+             `scale=${width}:${height}:flags=lanczos`;
     case "zoom-out":
-      // Scale shrinks maxZoom× → 1.0×
-      return `scale='${width}*(${zm}-${inc}*min(t,${d})/${d})':'${height}*(${zm}-${inc}*min(t,${d})/${d})':flags=lanczos,` +
-             `crop=${width}:${height}:'(iw-ow)/2':'(ih-oh)/2'`;
+      // Crop window grows W×H → pW×pH (shows progressively more = zooms out)
+      return `scale=${pW}:${pH}:flags=lanczos,` +
+             `crop=${width}+${dx}*min(t\,${d})/${d}:${height}+${dy}*min(t\,${d})/${d}:(iw-out_w)/2:(ih-out_h)/2,` +
+             `scale=${width}:${height}:flags=lanczos`;
     case "pan-right":
-      return `scale=${panW}:${panH}:flags=lanczos,` +
-             `crop=${width}:${height}:'min((iw-ow)*min(t,${d})/${d},iw-ow)':'(ih-oh)/2'`;
+      // Crop x advances left→right; output is always W×H so no post-scale needed
+      return `scale=${pW}:${pH}:flags=lanczos,` +
+             `crop=${width}:${height}:min(${dx}*min(t\,${d})/${d}\,${dx}):${dy / 2}`;
     case "pan-left":
-      return `scale=${panW}:${panH}:flags=lanczos,` +
-             `crop=${width}:${height}:'max((iw-ow)*(1-min(t,${d})/${d}),0)':'(ih-oh)/2'`;
+      return `scale=${pW}:${pH}:flags=lanczos,` +
+             `crop=${width}:${height}:max(${dx}*(1-min(t\,${d})/${d})\,0):${dy / 2}`;
     case "pan-up":
-      return `scale=${panW}:${panH}:flags=lanczos,` +
-             `crop=${width}:${height}:'(iw-ow)/2':'max((ih-oh)*(1-min(t,${d})/${d}),0)'`;
+      return `scale=${pW}:${pH}:flags=lanczos,` +
+             `crop=${width}:${height}:${dx / 2}:max(${dy}*(1-min(t\,${d})/${d})\,0)`;
     case "pan-down":
-      return `scale=${panW}:${panH}:flags=lanczos,` +
-             `crop=${width}:${height}:'(iw-ow)/2':'min((ih-oh)*min(t,${d})/${d},ih-oh)'`;
+      return `scale=${pW}:${pH}:flags=lanczos,` +
+             `crop=${width}:${height}:${dx / 2}:min(${dy}*min(t\,${d})/${d}\,${dy})`;
   }
 }
 

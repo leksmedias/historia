@@ -456,7 +456,7 @@ export default function ProjectPreview() {
     );
   }
 
-  const imgUrl = scene.image_status === "completed" ? getAssetUrl(projectId, "images", scene.image_file) : null;
+  const imgUrl = scene.image_status === "completed" && scene.image_file ? getAssetUrl(projectId, "images", scene.image_file) : null;
 
   return (
     <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
@@ -678,7 +678,7 @@ export default function ProjectPreview() {
           <div className="overflow-x-auto overflow-y-hidden h-full" ref={timelineRef}>
             <div className="flex gap-2 px-1 items-center" style={{ width: "max-content", minHeight: "100%" }}>
               {scenes.map((s, idx) => {
-                const thumbUrl = s.image_status === "completed" ? getAssetUrl(projectId, "images", s.image_file) : null;
+                const thumbUrl = s.image_status === "completed" && s.image_file ? getAssetUrl(projectId, "images", s.image_file) : null;
                 const isActive = idx === activeIndex;
                 const dur = durations[s.scene_number];
                 return (
