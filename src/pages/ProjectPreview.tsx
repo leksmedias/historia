@@ -60,6 +60,12 @@ export default function ProjectPreview() {
   const [animateSceneErrors, setAnimateSceneErrors] = useState<Record<number, string>>({});
   const animatePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [showFailedPanel, setShowFailedPanel] = useState(false);
+  const [failedImageSelected, setFailedImageSelected] = useState<Set<number>>(new Set());
+  const [failedAudioSelected, setFailedAudioSelected] = useState<Set<number>>(new Set());
+  const [bulkRegenImageRunning, setBulkRegenImageRunning] = useState(false);
+  const [bulkRegenAudioRunning, setBulkRegenAudioRunning] = useState(false);
+
   const audioRef = useRef<HTMLAudioElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
@@ -442,6 +448,47 @@ export default function ProjectPreview() {
     });
   };
 
+  const failedImages = scenes.filter(s => s.image_status === "failed");
+  const failedAudios = scenes.filter(s => s.audio_status === "failed");
+
+  const handleBulkRegenImages = async () => {
+    if (!projectId || failedImageSelected.size === 0) return;
+    setBulkRegenImageRunning(true);
+    const nums = Array.from(failedImageSelected);
+    let ok = 0;
+    for (const num of nums) {
+      try {
+        await regenerateAssetFrontend(projectId, num, "image");
+        ok++;
+      } catch (e: any) {
+        toast.error(`Scene ${num}: ${e.message}`);
+      }
+      await fetchData();
+    }
+    setBulkRegenImageRunning(false);
+    setFailedImageSelected(new Set());
+    if (ok > 0) toast.success(`${ok} image(s) regenerated`);
+  };
+
+  const handleBulkRegenAudios = async () => {
+    if (!projectId || failedAudioSelected.size === 0) return;
+    setBulkRegenAudioRunning(true);
+    const nums = Array.from(failedAudioSelected);
+    let ok = 0;
+    for (const num of nums) {
+      try {
+        await regenerateAssetFrontend(projectId, num, "audio");
+        ok++;
+      } catch (e: any) {
+        toast.error(`Scene ${num}: ${e.message}`);
+      }
+      await fetchData();
+    }
+    setBulkRegenAudioRunning(false);
+    setFailedAudioSelected(new Set());
+    if (ok > 0) toast.success(`${ok} audio(s) regenerated`);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -481,6 +528,19 @@ export default function ProjectPreview() {
                 ) : (
                   <><RefreshCw className="h-3 w-3 mr-1" />Generate Missing ({scenes.filter(s => s.image_status !== "completed").length})</>
                 )}
+              </Button>
+            )}
+
+            {/* Failed scenes indicator */}
+            {(failedImages.length > 0 || failedAudios.length > 0) && (
+              <Button
+                size="sm"
+                variant={showFailedPanel ? "default" : "outline"}
+                className={`text-xs ${!showFailedPanel ? "text-destructive border-destructive/50" : ""}`}
+                onClick={() => setShowFailedPanel(v => !v)}
+              >
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                {failedImages.length + failedAudios.length} Failed
               </Button>
             )}
 
@@ -622,6 +682,80 @@ export default function ProjectPreview() {
             </Button>
           </div>
         </div>
+
+        {/* Failed scenes panel */}
+        {showFailedPanel && (failedImages.length > 0 || failedAudios.length > 0) && (
+          <div className="border-b border-destructive/20 bg-destructive/5 px-4 py-3 space-y-2 shrink-0">
+            {failedImages.length > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-destructive shrink-0">Images ({failedImages.length}):</span>
+                <div className="flex-1 flex flex-wrap gap-x-3 gap-y-1">
+                  {failedImages.map(s => (
+                    <label key={s.scene_number} className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                      <input
+                        type="checkbox"
+                        className="w-3 h-3 accent-primary"
+                        checked={failedImageSelected.has(s.scene_number)}
+                        onChange={e => setFailedImageSelected(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(s.scene_number); else next.delete(s.scene_number);
+                          return next;
+                        })}
+                      />
+                      #{s.scene_number}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" className="text-xs h-6 px-2"
+                    onClick={() => setFailedImageSelected(new Set(failedImages.map(s => s.scene_number)))}>
+                    All
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-xs h-6"
+                    disabled={failedImageSelected.size === 0 || bulkRegenImageRunning}
+                    onClick={handleBulkRegenImages}>
+                    {bulkRegenImageRunning ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                    Regen {failedImageSelected.size > 0 ? `(${failedImageSelected.size})` : "Images"}
+                  </Button>
+                </div>
+              </div>
+            )}
+            {failedAudios.length > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-destructive shrink-0">Audio ({failedAudios.length}):</span>
+                <div className="flex-1 flex flex-wrap gap-x-3 gap-y-1">
+                  {failedAudios.map(s => (
+                    <label key={s.scene_number} className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                      <input
+                        type="checkbox"
+                        className="w-3 h-3 accent-primary"
+                        checked={failedAudioSelected.has(s.scene_number)}
+                        onChange={e => setFailedAudioSelected(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(s.scene_number); else next.delete(s.scene_number);
+                          return next;
+                        })}
+                      />
+                      #{s.scene_number}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" className="text-xs h-6 px-2"
+                    onClick={() => setFailedAudioSelected(new Set(failedAudios.map(s => s.scene_number)))}>
+                    All
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-xs h-6"
+                    disabled={failedAudioSelected.size === 0 || bulkRegenAudioRunning}
+                    onClick={handleBulkRegenAudios}>
+                    {bulkRegenAudioRunning ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                    Regen {failedAudioSelected.size > 0 ? `(${failedAudioSelected.size})` : "Audio"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Image viewer */}
         <div className="flex-1 relative bg-background flex items-center justify-center overflow-hidden">
