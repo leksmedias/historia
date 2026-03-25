@@ -448,6 +448,16 @@ export default function ProjectPreview() {
     });
   };
 
+  const selectAllForVeo = () => {
+    // Select all scenes with completed images that haven't been animated yet
+    const eligible = scenes
+      .filter(s => s.image_status === "completed" && !animatedScenes.has(s.scene_number))
+      .map(s => s.scene_number);
+    setAnimateSelected(new Set(eligible));
+  };
+
+  const deselectAllVeo = () => setAnimateSelected(new Set());
+
   const failedImages = scenes.filter(s => s.image_status === "failed");
   const failedAudios = scenes.filter(s => s.audio_status === "failed");
 
@@ -557,11 +567,23 @@ export default function ProjectPreview() {
               ))}
             </div>
 
-            {/* Veo Animation — per-scene toggle driven; shown when idle or done */}
-            {animateStatus === "idle" && animateSelected.size > 0 && (
-              <Button size="sm" variant="secondary" onClick={handleAnimateScenes}>
-                <Video className="h-3 w-3 mr-1" />Animate {animateSelected.size} with Veo
-              </Button>
+            {/* Veo Animation — select scenes then animate */}
+            {animateStatus === "idle" && (
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="ghost" className="text-xs" onClick={selectAllForVeo}>
+                  Select All
+                </Button>
+                {animateSelected.size > 0 && (
+                  <>
+                    <Button size="sm" variant="ghost" className="text-xs" onClick={deselectAllVeo}>
+                      Deselect
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={handleAnimateScenes}>
+                      <Video className="h-3 w-3 mr-1" />Animate {animateSelected.size} with Veo
+                    </Button>
+                  </>
+                )}
+              </div>
             )}
             {animateStatus === "animating" && (
               <Button size="sm" variant="secondary" disabled>
