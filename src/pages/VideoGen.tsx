@@ -50,7 +50,14 @@ export default function VideoGen() {
           onStats: () => {},
         }
       );
-      // Server generates images + audio in background — safe to leave / close browser
+      // Kick off the full background pipeline (images → clips → merge) on the server
+      setPhaseLabel("Starting background pipeline...");
+      await fetch(`/api/render/${pid}/auto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolution }),
+      });
+      // Safe to leave / close browser — server handles everything
       navigate(`/projects/${pid}`);
     } catch (e: any) {
       setStep("settings");

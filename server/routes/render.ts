@@ -100,6 +100,13 @@ const RESOLUTIONS: Record<string, [number, number]> = {
 };
 
 // ── In-memory job stores ───────────────────────────────────────────────────
+type AutoJob = {
+  status: "waiting_assets" | "generating_clips" | "merging" | "done" | "failed";
+  resolution: string;
+  error?: string;
+};
+const autoJobs: Record<string, AutoJob> = {};
+
 type ClipJob = {
   status: "generating" | "done" | "failed";
   progress: number; // 0–100
@@ -362,6 +369,30 @@ router.get("/:id/animate/zip", (req: Request, res: Response) => {
     }
   }
   archive.finalize();
+});
+
+/**
+ * POST /api/render/:id/auto
+ * Full background pipeline: wait for assets → generate clips → merge.
+ * Returns immediately; runs entirely server-side.
+ */
+router.post("/:id/auto", async (req: Request, res: Response) => {
+  const projectId = req.params.id;
+  const resKey = req.body?.resolution === "480p" ? "480p" : "720p";
+  res.json({ success: true, message: "Auto pipeline started in background" });
+  runAutoPipeline(projectId, resKey).catch(e => {
+    console.error(`[auto] ${projectId} failed:`, e.message);
+    if (autoJobs[projectId]) autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: e.message };
+  });
+});
+
+/** GET /api/render/:id/auto/status */
+router.get("/:id/auto/status", (req: Request, res: Response) => {
+  const job = autoJobs[req.params.id];
+  if (job) return res.json(job);
+  const outPath = path.join("uploads", req.params.id, "render", "output.mp4");
+  if (fs.existsSync(outPath)) return res.json({ status: "done", resolution: "unknown" });
+  res.json({ status: "idle" });
 });
 
 /**
@@ -639,6 +670,55 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
 
   mergeJobs[projectId] = { status: "done", progress: 100, total: sceneList.length, resolution: mergeJobs[projectId].resolution };
   console.log(`[merge] ${projectId}: done → ${outPath}`);
+}
+
+/**
+ * Full auto-pipeline: poll until all assets ready → generate clips → merge.
+ * Runs entirely in-process; browser can be closed.
+ */
+async function runAutoPipeline(projectId: string, resKey: "480p" | "720p") {
+  const [W, H] = RESOLUTIONS[resKey];
+  autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
+  console.log(`[auto] ${projectId}: waiting for assets (${resKey})`);
+
+  // Poll up to 2 hours for all scenes to finish generating
+  const MAX_POLLS = 2400;
+  for (let i = 0; i < MAX_POLLS; i++) {
+    const allScenes = await db.select().from(scenes)
+      .where(eq(scenes.project_id, projectId))
+      .orderBy(scenes.scene_number);
+    if (allScenes.length > 0) {
+      const pending = allScenes.filter(s =>
+        s.image_status === "pending" || s.image_status === "generating" ||
+        s.audio_status === "pending" || s.audio_status === "generating"
+      );
+      if (pending.length === 0) break;
+    }
+    await new Promise(r => setTimeout(r, 3000));
+  }
+
+  const allScenes = await db.select().from(scenes)
+    .where(eq(scenes.project_id, projectId))
+    .orderBy(scenes.scene_number);
+  const ready = allScenes.filter(s => s.image_status === "completed" && s.audio_status === "completed");
+
+  if (ready.length === 0) {
+    autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: "No scenes ready" };
+    return;
+  }
+
+  console.log(`[auto] ${projectId}: ${ready.length} scenes ready → generating clips`);
+  autoJobs[projectId].status = "generating_clips";
+  clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
+  await generateClips(projectId, ready, W, H);
+
+  console.log(`[auto] ${projectId}: clips done → merging`);
+  autoJobs[projectId].status = "merging";
+  mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
+  await mergeVideo(projectId, ready, W, H);
+
+  autoJobs[projectId].status = "done";
+  console.log(`[auto] ${projectId}: pipeline complete`);
 }
 
 async function animateScenes(
