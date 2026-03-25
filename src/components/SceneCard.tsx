@@ -11,7 +11,7 @@ import AudioPlayer from "@/components/AudioPlayer";
 import SplitSceneDialog from "@/components/SplitSceneDialog";
 import {
   Image as ImageIcon, Volume2, RefreshCw, AlertTriangle, CheckCircle2,
-  Clock, Copy, Loader2, Pencil, Save, X, Scissors, Trash2,
+  Clock, Copy, Loader2, Pencil, Save, X, Scissors, Trash2, Video, VideoOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,6 +23,9 @@ interface Props {
   scene: Scene;
   projectId: string;
   onRefresh: () => void;
+  onAnimate?: (sceneNumber: number) => void;
+  isAnimating?: boolean;
+  isAnimated?: boolean;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -33,7 +36,7 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
 }
 
-export default function SceneCard({ scene, projectId, onRefresh }: Props) {
+export default function SceneCard({ scene, projectId, onRefresh, onAnimate, isAnimating, isAnimated }: Props) {
   const [regenImage, setRegenImage] = useState(false);
   const [regenAudio, setRegenAudio] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
@@ -213,6 +216,22 @@ export default function SceneCard({ scene, projectId, onRefresh }: Props) {
                 </Button>
                 <span className="text-xs text-muted-foreground">{scene.image_attempts} attempt{scene.image_attempts !== 1 ? "s" : ""}</span>
               </div>
+              {onAnimate && scene.image_status === "completed" && (
+                <Button
+                  size="sm"
+                  variant={isAnimated ? "secondary" : "outline"}
+                  disabled={isAnimating}
+                  onClick={() => onAnimate(scene.scene_number)}
+                  className="text-xs w-full"
+                >
+                  {isAnimating
+                    ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Animating…</>
+                    : isAnimated
+                      ? <><Video className="h-3 w-3 mr-1 text-emerald-400" />Re-animate with Veo</>
+                      : <><Video className="h-3 w-3 mr-1" />Animate with Veo</>
+                  }
+                </Button>
+              )}
               {scene.image_error && <p className="text-xs text-destructive">{scene.image_error}</p>}
             </div>
 

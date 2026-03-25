@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, bulkRegeneratePending, deleteProject, stopProject, resumeProject, runClientSidePipeline, type PipelineCallbacks } from "@/lib/api";
+import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, bulkRegeneratePending, deleteProject, stopProject, resumeProject, runClientSidePipeline, startAnimateScenes, getAnimateStatus, type PipelineCallbacks } from "@/lib/api";
 import type { Project, Scene } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +52,10 @@ export default function ProjectStatus() {
   const [clientPipelineRunning, setClientPipelineRunning] = useState(false);
   const sceneRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const clientPipelineStarted = useRef(false);
+
+  // Veo animation
+  const [animatingScenes, setAnimatingScenes] = useState<Set<number>>(new Set());
+  const [animatedScenes, setAnimatedScenes] = useState<Set<number>>(new Set());
 
   const fetchData = useCallback(async () => {
     if (!projectId) return;
@@ -176,6 +180,29 @@ export default function ProjectStatus() {
     } finally {
       setBulkGenerating(false);
       fetchData();
+    }
+  };
+
+  const handleAnimate = async (sceneNumber: number) => {
+    if (!projectId) return;
+    const settings = loadProviderSettings();
+    if (!settings.whiskCookie) { toast.error("Whisk cookie not configured in Settings"); return; }
+    setAnimatingScenes(prev => new Set(prev).add(sceneNumber));
+    try {
+      await startAnimateScenes(projectId, [sceneNumber], settings.whiskCookie);
+      // Poll until this scene's animation is done
+      for (let i = 0; i < 120; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        const s = await getAnimateStatus(projectId).catch(() => null);
+        if (!s) continue;
+        if (s.status === "done" || s.status === "idle") break;
+      }
+      setAnimatedScenes(prev => new Set(prev).add(sceneNumber));
+      toast.success(`Scene ${sceneNumber} animated with Veo`);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setAnimatingScenes(prev => { const n = new Set(prev); n.delete(sceneNumber); return n; });
     }
   };
 
@@ -427,7 +454,14 @@ export default function ProjectStatus() {
           )}
           {scenes.map((scene) => (
             <div key={scene.scene_number} ref={(el) => { sceneRefs.current[scene.scene_number] = el; }}>
-              <SceneCard scene={scene} projectId={project.id} onRefresh={fetchData} />
+              <SceneCard
+                scene={scene}
+                projectId={project.id}
+                onRefresh={fetchData}
+                onAnimate={handleAnimate}
+                isAnimating={animatingScenes.has(scene.scene_number)}
+                isAnimated={animatedScenes.has(scene.scene_number)}
+              />
             </div>
           ))}
         </div>

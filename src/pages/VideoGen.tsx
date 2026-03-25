@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   CheckCircle2,
   Loader2,
@@ -102,6 +103,7 @@ export default function VideoGen() {
 
   // step 1 — script
   const [script, setScript] = useState("");
+  const [splitMode, setSplitMode] = useState<"smart" | "exact" | "duration">("smart");
   const [targetWords, setTargetWords] = useState(80);
 
   // step 2 — settings
@@ -183,7 +185,7 @@ export default function VideoGen() {
         script,
         null,
         null,
-        { splitMode: "smart", stylePrompt: stylePrompt || undefined },
+        { splitMode, stylePrompt: stylePrompt || undefined },
         {
           onPhase: (msg) => setPhaseLabel(msg),
           onSceneProgress: () => {},
@@ -257,21 +259,42 @@ export default function VideoGen() {
                 value={script}
                 onChange={e => setScript(e.target.value)}
               />
-              <div className="flex items-center gap-4">
-                <div className="flex-1 space-y-1">
-                  <Label>Words per scene: {targetWords}</Label>
-                  <input
-                    type="range" min={40} max={200} step={10}
-                    value={targetWords}
-                    onChange={e => setTargetWords(Number(e.target.value))}
-                    className="w-full"
-                  />
-                </div>
-                <div className="text-sm text-muted-foreground text-right shrink-0">
-                  <span className="text-foreground font-medium">{scenes.length}</span> scenes
-                  {script && <><br />{script.trim().match(/\S+/g)?.length ?? 0} words</>}
-                </div>
+              <div className="space-y-1">
+                <Label>Script Split Mode</Label>
+                <Select value={splitMode} onValueChange={(v) => setSplitMode(v as "smart" | "exact" | "duration")}>
+                  <SelectTrigger className="bg-secondary border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="smart">Smart — 3 sentences per scene</SelectItem>
+                    <SelectItem value="exact">Exact — 1 sentence per scene</SelectItem>
+                    <SelectItem value="duration">Duration — adapts to speaking pace</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+
+              {splitMode === "smart" && (
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 space-y-1">
+                    <Label>Words per scene: {targetWords}</Label>
+                    <input
+                      type="range" min={40} max={200} step={10}
+                      value={targetWords}
+                      onChange={e => setTargetWords(Number(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="text-sm text-muted-foreground text-right shrink-0">
+                    <span className="text-foreground font-medium">{scenes.length}</span> scenes
+                    {script && <><br />{script.trim().match(/\S+/g)?.length ?? 0} words</>}
+                  </div>
+                </div>
+              )}
+              {splitMode !== "smart" && script && (
+                <p className="text-sm text-muted-foreground">
+                  ~{script.trim().match(/\S+/g)?.length ?? 0} words total · scenes determined by server at creation
+                </p>
+              )}
             </CardContent>
           </Card>
 
