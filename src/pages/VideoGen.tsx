@@ -1,71 +1,30 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  CheckCircle2,
-  Loader2,
-  AlertTriangle,
-  Download,
-  ExternalLink,
-  Film,
-  ChevronRight,
-  ChevronLeft,
-} from "lucide-react";
-import {
-  createProjectFrontend,
-  startClipGeneration,
-  getClipStatus,
-  startRender,
-  getRenderStatus,
-  getRenderDownloadUrl,
-} from "@/lib/api";
+import { Loader2, AlertTriangle, Film, ChevronRight, ChevronLeft } from "lucide-react";
+import { createProjectFrontend } from "@/lib/api";
 import { loadProviderSettings, splitScriptIntoScenes, splitScriptByDuration } from "@/lib/providers";
 
-type Step = "script" | "settings" | "progress";
-type Phase = "idle" | "creating" | "assets" | "clips" | "merging" | "done" | "error";
-
-const PHASE_LABELS: Record<Phase, string> = {
-  idle: "",
-  creating: "Creating project & scenes...",
-  assets: "Generating images & audio...",
-  clips: "Generating video clips...",
-  merging: "Merging final video...",
-  done: "Done!",
-  error: "Error",
-};
-
-const PHASE_ORDER: Phase[] = ["creating", "assets", "clips", "merging", "done"];
+type Step = "script" | "settings" | "creating";
 
 export default function VideoGen() {
   const navigate = useNavigate();
   const settings = loadProviderSettings();
 
-  // step state
   const [step, setStep] = useState<Step>("script");
-
-  // step 1 — script
   const [script, setScript] = useState("");
   const [splitMode, setSplitMode] = useState<"smart" | "exact" | "duration">("smart");
-  // step 2 — settings
   const [title, setTitle] = useState("");
   const [resolution, setResolution] = useState<"480p" | "720p">("720p");
   const [stylePrompt, setStylePrompt] = useState("");
-
-  // step 3 — progress
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [creating, setCreating] = useState(false);
   const [phaseLabel, setPhaseLabel] = useState("");
-  const [assetsProgress, setAssetsProgress] = useState(0);  // 0–100
-  const [clipsProgress, setClipsProgress] = useState(0);
-  const [mergeProgress, setMergeProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const abortRef = useRef(false);
 
   const scenes = useMemo(() => {
     if (!script.trim()) return [];
@@ -73,63 +32,12 @@ export default function VideoGen() {
     return splitScriptIntoScenes(script, splitMode === "exact" ? "exact" : "smart").map(s => s.script_text);
   }, [script, splitMode]);
 
-  // ── polling helpers ────────────────────────────────────────────────────────
-  async function pollAssets(pid: string): Promise<void> {
-    while (!abortRef.current) {
-      const res = await fetch(`/api/projects/${pid}`).then(r => r.json()).catch(() => null);
-      if (!res?.project) { await delay(3000); continue; }
-      const { project, scenes: sceneList } = res;
-      const total = sceneList?.length ?? 0;
-      if (total > 0) {
-        const imgDone = sceneList.filter((s: any) => s.image_status === "completed" || s.image_status === "failed").length;
-        const audDone = sceneList.filter((s: any) => s.audio_status === "completed" || s.audio_status === "failed").length;
-        const pct = Math.round(((imgDone + audDone) / (total * 2)) * 100);
-        setAssetsProgress(pct);
-        setPhaseLabel(`Images & audio: ${Math.round(pct)}%`);
-        if (imgDone === total && audDone === total) return;
-      }
-      if (project.status === "completed" || project.status === "failed") return;
-      await delay(3000);
-    }
-  }
-
-  async function pollClips(pid: string): Promise<void> {
-    while (!abortRef.current) {
-      const s = await getClipStatus(pid).catch(() => null);
-      if (!s) { await delay(2000); continue; }
-      setClipsProgress(s.progress ?? 0);
-      setPhaseLabel(`Clips: ${s.done ?? 0}/${s.total ?? "?"}`);
-      if (s.status === "done") return;
-      if (s.status === "failed") throw new Error(s.error ?? "Clip generation failed");
-      await delay(2000);
-    }
-  }
-
-  async function pollMerge(pid: string): Promise<void> {
-    while (!abortRef.current) {
-      const s = await getRenderStatus(pid).catch(() => null);
-      if (!s) { await delay(2000); continue; }
-      setMergeProgress(s.progress ?? 0);
-      setPhaseLabel(`Merging: ${s.progress ?? 0}%`);
-      if (s.status === "done") return;
-      if (s.status === "failed") throw new Error(s.error ?? "Merge failed");
-      await delay(2000);
-    }
-  }
-
-  // ── main orchestration ─────────────────────────────────────────────────────
   async function handleGenerate() {
-    abortRef.current = false;
-    setStep("progress");
-    setPhase("creating");
-    setPhaseLabel("Creating project...");
+    setStep("creating");
+    setCreating(true);
+    setPhaseLabel("Generating scene manifest...");
     setErrorMsg("");
-    setAssetsProgress(0);
-    setClipsProgress(0);
-    setMergeProgress(0);
-
     try {
-      // 1. Create project + scenes
       const { projectId: pid } = await createProjectFrontend(
         title || "Untitled Video",
         script,
@@ -142,46 +50,13 @@ export default function VideoGen() {
           onStats: () => {},
         }
       );
-      setProjectId(pid);
-
-      // 2. Wait for images + audio
-      setPhase("assets");
-      setPhaseLabel("Generating images & audio...");
-      await pollAssets(pid);
-      if (abortRef.current) return;
-
-      // 3. Generate clips
-      setPhase("clips");
-      setPhaseLabel("Starting clip generation...");
-      await startClipGeneration(pid, resolution);
-      await pollClips(pid);
-      if (abortRef.current) return;
-
-      // 4. Merge
-      setPhase("merging");
-      setPhaseLabel("Starting merge...");
-      await startRender(pid, resolution);
-      await pollMerge(pid);
-      if (abortRef.current) return;
-
-      setPhase("done");
-      setPhaseLabel("Video ready! Opening preview...");
-      // Navigate to full project preview after a short delay
-      setTimeout(() => navigate(`/projects/${pid}/preview`), 1500);
+      // Server generates images + audio in background — safe to leave / close browser
+      navigate(`/projects/${pid}`);
     } catch (e: any) {
-      setPhase("error");
+      setStep("settings");
+      setCreating(false);
       setErrorMsg(e.message ?? "Unknown error");
     }
-  }
-
-  // ── phase progress bar value ───────────────────────────────────────────────
-  function overallProgress(): number {
-    if (phase === "creating") return 5;
-    if (phase === "assets") return 5 + assetsProgress * 0.45;
-    if (phase === "clips") return 50 + clipsProgress * 0.35;
-    if (phase === "merging") return 85 + mergeProgress * 0.15;
-    if (phase === "done") return 100;
-    return 0;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -189,7 +64,7 @@ export default function VideoGen() {
     <div className="h-full overflow-y-auto p-6 max-w-2xl mx-auto">
       {/* Step indicator */}
       <div className="flex items-center gap-2 mb-6 text-sm">
-        {(["script", "settings", "progress"] as Step[]).map((s, i) => (
+        {(["script", "settings", "creating"] as Step[]).map((s, i) => (
           <span key={s} className="flex items-center gap-2">
             {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
             <span className={`font-medium ${step === s ? "text-foreground" : "text-muted-foreground"}`}>
@@ -309,105 +184,29 @@ export default function VideoGen() {
             </CardContent>
           </Card>
 
+          {errorMsg && <p className="text-sm text-destructive">{errorMsg}</p>}
           <div className="flex justify-between">
-            <Button variant="ghost" onClick={() => setStep("script")}>
+            <Button variant="ghost" onClick={() => setStep("script")} disabled={creating}>
               <ChevronLeft className="mr-1 h-4 w-4" /> Back
             </Button>
-            <Button onClick={handleGenerate}>
-              <Film className="mr-1 h-4 w-4" /> Generate Video
+            <Button onClick={handleGenerate} disabled={creating}>
+              {creating ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Film className="mr-1 h-4 w-4" />}
+              Generate Video
             </Button>
           </div>
         </div>
       )}
 
-      {/* ── Step 3: Progress ── */}
-      {step === "progress" && (
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                {phase === "done" && <CheckCircle2 className="h-5 w-5 text-green-500" />}
-                {phase === "error" && <AlertTriangle className="h-5 w-5 text-destructive" />}
-                {!["done", "error"].includes(phase) && <Loader2 className="h-5 w-5 animate-spin" />}
-                {phase === "done" ? "Video Ready" : phase === "error" ? "Generation Failed" : "Generating Video..."}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {phase !== "error" && (
-                <>
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">{phaseLabel}</span>
-                      <span>{Math.round(overallProgress())}%</span>
-                    </div>
-                    <Progress value={overallProgress()} />
-                  </div>
-
-                  <div className="space-y-3">
-                    {PHASE_ORDER.map((p) => {
-                      const idx = PHASE_ORDER.indexOf(p);
-                      const curIdx = PHASE_ORDER.indexOf(phase === "done" ? "done" : phase);
-                      const done = idx < curIdx || phase === "done";
-                      const active = p === phase && phase !== "done";
-                      return (
-                        <div key={p} className={`flex items-center gap-2 text-sm ${done ? "text-foreground" : active ? "text-foreground" : "text-muted-foreground"}`}>
-                          {done ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                          ) : active ? (
-                            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                          ) : (
-                            <div className="h-4 w-4 rounded-full border border-muted-foreground/40 shrink-0" />
-                          )}
-                          <span>{PHASE_LABELS[p]}</span>
-                          {active && p === "assets" && <span className="ml-auto text-muted-foreground">{assetsProgress}%</span>}
-                          {active && p === "clips" && <span className="ml-auto text-muted-foreground">{clipsProgress}%</span>}
-                          {active && p === "merging" && <span className="ml-auto text-muted-foreground">{mergeProgress}%</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              {phase === "error" && (
-                <div className="space-y-3">
-                  <p className="text-sm text-destructive">{errorMsg}</p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => { setStep("settings"); setPhase("idle"); }}>
-                      Back to Settings
-                    </Button>
-                    {projectId && (
-                      <Button variant="ghost" onClick={() => navigate(`/projects/${projectId}/preview`)}>
-                        <ExternalLink className="mr-1 h-4 w-4" /> Open Project
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {phase === "done" && projectId && (
-                <div className="flex flex-wrap gap-2 pt-2">
-                  <a href={getRenderDownloadUrl(projectId)} download>
-                    <Button>
-                      <Download className="mr-1 h-4 w-4" /> Download MP4
-                    </Button>
-                  </a>
-                  <Button variant="outline" onClick={() => navigate(`/projects/${projectId}/preview`)}>
-                    <ExternalLink className="mr-1 h-4 w-4" /> View Project
-                  </Button>
-                  <Button variant="ghost" onClick={() => { setStep("script"); setPhase("idle"); setProjectId(null); setScript(""); }}>
-                    New Video
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      {/* ── Creating spinner ── */}
+      {step === "creating" && (
+        <Card>
+          <CardContent className="py-12 flex flex-col items-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">{phaseLabel}</p>
+            <p className="text-xs text-muted-foreground">You'll be taken to the project page automatically.</p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
-}
-
-function delay(ms: number) {
-  return new Promise(r => setTimeout(r, ms));
 }
