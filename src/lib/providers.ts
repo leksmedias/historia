@@ -368,8 +368,15 @@ async function callGroqForBatch(
   let content = data?.choices?.[0]?.message?.content;
   if (!content) throw new Error("No content from Groq");
   content = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-  const parsed = JSON.parse(content);
-  return parsed.scenes || [];
+  
+  try {
+    const parsed = JSON.parse(content);
+    return parsed.scenes || [];
+  } catch (err: any) {
+    const recovered = recoverPartialScenes(content);
+    if (recovered.length > 0) return recovered;
+    throw new Error(`Groq returned malformed JSON (${content.length} chars): ${err.message}. Try reducing batch size.`);
+  }
 }
 
 /** Extract complete scene objects from a truncated JSON string */
@@ -707,17 +714,11 @@ export async function generateInworldAudio(
 export async function regenerateImagePrompt(
   scriptText: string,
   groqApiKey: string,
-  _styleSummary?: any
+  _styleSummary?: any,
+  anthropicApiKey?: string,
+  claudeModel?: string
 ): Promise<string> {
-  const result = await whiskProxy({
-    action: "groq-chat",
-    apiKey: groqApiKey,
-    payload: {
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        {
-          role: "system",
-          content: `You are a visual content director generating a single image prompt for a YouTube history documentary scene.
+  const systemPrompt = `You are a visual content director generating a single image prompt for a YouTube history documentary scene.
 
 PROMPT STRUCTURE (exactly one sentence):
 [Who is present] + [what they are doing] + [where they are] + [camera angle/framing] + [lighting and mood]
@@ -725,7 +726,6 @@ PROMPT STRUCTURE (exactly one sentence):
 STYLE RULES:
 - Cinematic historical realism, photographic documentary, Caravaggio-level contrast
 - All figures anonymous: silhouettes, backs turned, faces obscured by helmets/hoods/shadow/dust
-- Historically grounded environments: dusty, sun-baked, battle-scarred, period-accurate details
 - Clear visible action — never a static description
 - Camera options: close-up of hands/weapons, medium shot, wide battlefield, over-the-shoulder, ground-level, high angle, silhouette shot
 - Lighting: harsh midday sun, pre-dawn blue, torch/fire glow, dust-filtered gold, sunset silhouette
@@ -733,16 +733,46 @@ STYLE RULES:
 
 RESTRICTIONS: No text overlays, no identifiable faces, no fantasy/sci-fi/modern elements.
 
-Return ONLY the prompt text — one sentence ending with a period. No JSON, no markdown, no explanation.`,
-        },
-        {
-          role: "user",
-          content: `Script text to visualize:\n${scriptText}\n\nGenerate one cinematic image prompt for this scene.`,
-        },
-      ],
-      temperature: 0.5,
-    },
-  });
+Return ONLY the prompt text — one sentence ending with a period. No JSON, no markdown, no explanation.`;
+
+  const userPrompt = `Script text to visualize:\n${scriptText}\n\nGenerate one cinematic image prompt for this scene.`;
+
+  if (anthropicApiKey) {
+    const result = await whiskProxy({
+      action: "claude-chat",
+      apiKey: anthropicApiKey,
+      payload: {
+        model: claudeModel || "claude-sonnet-4-6",
+        max_tokens: 200,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+      },
+    });
+
+    if (result.status && result.status >= 400) {
+      const errText = typeof result.data === "string"
+        ? result.data
+        : JSON.stringify(result.data || {}).substring(0, 500);
+      throw new Error(`Claude error: ${result.status} - ${errText}`);
+    }
+
+    const content = result.data?.content?.[0]?.text;
+    if (!content) throw new Error("No content from Claude");
+    return content.trim();
+  }
+
+  const result = await whiskProxy({
+    action: "groq-chat",
+    apiKey: groqApiKey,
+      payload: {
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.5,
+      },
+    });
 
   if (result.status && result.status >= 400) {
     const errText = typeof result.data === "string"

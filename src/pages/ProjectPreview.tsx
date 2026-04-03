@@ -262,10 +262,16 @@ export default function ProjectPreview() {
   const handleRegenPrompt = async () => {
     if (!scene) return;
     const settings = loadProviderSettings();
-    if (!settings.groqApiKey) { toast.error("Groq API key not configured"); return; }
+    if (!settings.groqApiKey && !settings.anthropicApiKey) { toast.error("No API key configured for prompt generation"); return; }
     setRegenPrompt(true);
     try {
-      const newPrompt = await regenerateImagePrompt(scene.script_text, settings.groqApiKey);
+      const newPrompt = await regenerateImagePrompt(
+        scene.script_text, 
+        settings.groqApiKey, 
+        null, 
+        settings.anthropicApiKey,
+        settings.claudeModel
+      );
       setEditPrompt(newPrompt);
       toast.success("New prompt generated");
     } catch (e: any) { toast.error(e.message); }
