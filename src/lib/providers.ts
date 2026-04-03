@@ -330,7 +330,9 @@ async function callGroqForBatch(
   retryOnRateLimit = true,
   stylePrompt?: string
 ): Promise<BatchPromptResult[]> {
-  const systemPrompt = stylePrompt ? STYLE_PROMPT_BATCH_IMAGE_PROMPT : BATCH_IMAGE_PROMPT;
+  const systemPrompt = stylePrompt
+    ? `${BATCH_IMAGE_PROMPT}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
+    : BATCH_IMAGE_PROMPT;
   const scenesText = scenes
     .map(s => `Scene ${s.scene_number}: "${s.script_text}"`)
     .join("\n");
@@ -384,7 +386,9 @@ async function callClaudeForBatch(
   stylePrompt?: string,
   claudeModel = "claude-sonnet-4-6"
 ): Promise<BatchPromptResult[]> {
-  const systemPrompt = stylePrompt ? STYLE_PROMPT_BATCH_IMAGE_PROMPT : BATCH_IMAGE_PROMPT;
+  const systemPrompt = stylePrompt
+    ? `${BATCH_IMAGE_PROMPT}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
+    : BATCH_IMAGE_PROMPT;
   const scenesText = scenes
     .map(s => `Scene ${s.scene_number}: "${s.script_text}"`)
     .join("\n");
@@ -422,7 +426,8 @@ async function callClaudeForBatch(
   if (!content) throw new Error("No content from Claude");
   const cleaned = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
   const match = cleaned.match(/\{[\s\S]*\}/);
-  const parsed = JSON.parse(match ? match[0] : cleaned);
+  if (!match) throw new Error(`Claude did not return valid JSON. Response: ${cleaned.substring(0, 300)}`);
+  const parsed = JSON.parse(match[0]);
   return parsed.scenes || [];
 }
 
