@@ -252,15 +252,15 @@ export default function Settings() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Claude Model</label>
                   <Select
-                    value={settings.claudeModel || "claude-sonnet-4-6"}
+                    value={settings.claudeModel || "claude-haiku-4-5-20251001"}
                     onValueChange={(v) => setSettings(s => ({ ...s, claudeModel: v }))}
                   >
                     <SelectTrigger className="bg-secondary">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="claude-sonnet-4-6">Sonnet 4.6 — Best quality</SelectItem>
-                      <SelectItem value="claude-haiku-4-5-20251001">Haiku 4.5 — Faster &amp; cheaper</SelectItem>
+                      <SelectItem value="claude-haiku-4-5-20251001">Haiku 4.5 — Latest &amp; faster</SelectItem>
+                      <SelectItem value="claude-haiku-3-5-20241022">Haiku 3 — Classic &amp; cheaper</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

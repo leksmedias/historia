@@ -67,7 +67,7 @@ const DEFAULTS: ProviderSettings = {
   audioConcurrency: 2,
   groqApiKey: "",
   anthropicApiKey: "",
-  claudeModel: "claude-sonnet-4-6",
+  claudeModel: "claude-haiku-4-5-20251001",
   whiskCookie: "",
   inworldApiKey: "",
   customVoices: [],
@@ -396,7 +396,7 @@ async function callClaudeForBatch(
   anthropicApiKey: string,
   retryOnRateLimit = true,
   stylePrompt?: string,
-  claudeModel = "claude-sonnet-4-6"
+  claudeModel = "claude-haiku-4-5-20251001"
 ): Promise<BatchPromptResult[]> {
   const systemPrompt = stylePrompt
     ? `${BATCH_IMAGE_PROMPT}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
@@ -742,7 +742,7 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
       action: "claude-chat",
       apiKey: anthropicApiKey,
       payload: {
-        model: claudeModel || "claude-sonnet-4-6",
+        model: claudeModel || "claude-haiku-4-5-20251001",
         max_tokens: 200,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
