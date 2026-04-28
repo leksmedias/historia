@@ -518,32 +518,29 @@ async function buildVeoClip(
   width: number, height: number, outPath: string
 ): Promise<void> {
   const veoDur = getAudioDuration(veoPath); // ffprobe format=duration works for video too
-  const speed  = veoDur / dur;              // < 1.0 means Veo clip is shorter than audio
-
-  // Slow down if within a reasonable range; loop only as last resort for very long audio
-  const useSlowdown = speed >= 0.5 && speed < 1.0;
-  const useLoop     = speed < 0.5; // audio > 2× clip length — fall back to original loop
+  const speed  = veoDur / dur;              // < 1.0 → Veo is shorter than audio → slow down
 
   const veoAudio = hasAudioStream(veoPath);
   const FPS = 25;
   const kbFilter = buildKB(pickEffect(), dur, width, height, 1.15);
 
-  // setpts stretches PTS so the clip fills the audio duration; fps normalises frame rate
-  const vScale = useSlowdown
+  // Always slow down to match audio — setpts has no lower limit so no looping needed.
+  // speed=0.8 → setpts=PTS/0.8=1.25×PTS → video runs 25% slower.
+  const vScale = speed < 1.0
     ? `setpts=PTS/${speed},fps=${FPS},${kbFilter},setsar=1,format=yuv420p`
     : `fps=${FPS},${kbFilter},setsar=1,format=yuv420p`;
 
-  const loopArgs: string[] = useLoop ? ["-stream_loop", "-1"] : [];
   const encArgs = [
     "-c:v", "libx264", "-preset", "fast", "-crf", "22",
     "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
   ];
 
   if (veoAudio) {
-    // Match Veo's ambient audio speed when slowing down so it stays in sync
-    const veoAudioFilter = useSlowdown ? `atempo=${speed},volume=0.1` : `volume=0.1`;
+    // atempo min is 0.5; clamp so Veo's ambient audio stays audibly in sync
+    const atempoSpeed = Math.max(speed, 0.5).toFixed(4);
+    const veoAudioFilter = speed < 1.0 ? `atempo=${atempoSpeed},volume=0.1` : `volume=0.1`;
     await ffmpeg([
-      "-y", ...loopArgs, "-i", veoPath, "-i", audioPath,
+      "-y", "-i", veoPath, "-i", audioPath,
       "-filter_complex",
         `[0:v]${vScale}[v];` +
         `[0:a]${veoAudioFilter}[va];[1:a]${AUDIO_FILTER}[na];[va][na]amix=inputs=2:duration=first[a]`,
@@ -552,7 +549,7 @@ async function buildVeoClip(
     ]);
   } else {
     await ffmpeg([
-      "-y", ...loopArgs, "-i", veoPath, "-i", audioPath,
+      "-y", "-i", veoPath, "-i", audioPath,
       "-filter_complex", `[0:v]${vScale}[v];[1:a]${AUDIO_FILTER}[a]`,
       "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
       ...encArgs, outPath,
@@ -590,44 +587,45 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
     const clipPath = path.join(clipsDir, `${num}.mp4`);
     const veoPath = path.join("uploads", projectId, "videos", `${num}.mp4`);
 
-    if (fs.existsSync(veoPath)) {
-      // Use Veo-generated video: loop to fill audio duration, mix narration over
-      console.log(`[clips] scene ${num}: using Veo video`);
-      await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath);
-    } else {
-      const effect = pickEffect(prevEffect);
-      prevEffect = effect;
-      const imgUrl   = `${SERVER_URL}/${img.replace(/\\/g, "/")}`;
-      const audioUrl = `${SERVER_URL}/uploads/${projectId}/audio/${s.audio_file ?? `${num}.mp3`}`;
-      console.log(`[clips] scene ${num}: calling render API (${KB_TO_API[effect]}, ${dur}s)`);
+    try {
+      if (fs.existsSync(veoPath)) {
+        console.log(`[clips] scene ${num}: using Veo video`);
+        await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath);
+      } else {
+        const effect = pickEffect(prevEffect);
+        prevEffect = effect;
+        const imgUrl   = `${SERVER_URL}/${img.replace(/\\/g, "/")}`;
+        const audioUrl = `${SERVER_URL}/uploads/${projectId}/audio/${s.audio_file ?? `${num}.mp3`}`;
+        console.log(`[clips] scene ${num}: calling render API (${KB_TO_API[effect]}, ${dur}s)`);
 
-      // 1. Animate still image with Ken Burns via external render API
-      const animRes = await callRenderApi("/animate", {
-        media_url:  imgUrl,
-        media_type: "image",
-        animation:  KB_TO_API[effect],
-        duration:   dur,
-        fps:        FPS,
-        resolution: `${width}x${height}`,
-        folder:     projectId,
-      });
+        const animRes = await callRenderApi("/animate", {
+          media_url:  imgUrl,
+          media_type: "image",
+          animation:  KB_TO_API[effect],
+          duration:   dur,
+          fps:        FPS,
+          resolution: `${width}x${height}`,
+          folder:     projectId,
+        });
 
-      // 2. Merge animated video with narration audio
-      const mergeRes = await callRenderApi("/merge", {
-        video_url: animRes.url,
-        audio_url: audioUrl,
-        strategy:  "trim_or_slow",
-        folder:    projectId,
-      });
+        const mergeRes = await callRenderApi("/merge", {
+          video_url: animRes.url,
+          audio_url: audioUrl,
+          strategy:  "trim_or_slow",
+          folder:    projectId,
+        });
 
-      // 3. Download finished clip locally
-      await downloadFile(mergeRes.url, clipPath);
+        await downloadFile(mergeRes.url, clipPath);
+      }
+
+      done++;
+      clipJobs[projectId].done = done;
+      console.log(`[clips] ${projectId}: scene ${num} done (${done}/${sceneList.length})`);
+    } catch (e: any) {
+      console.error(`[clips] scene ${num} failed — skipping:`, e.message);
     }
 
-    done++;
-    clipJobs[projectId].done = done;
     clipJobs[projectId].progress = Math.round(((i + 1) / sceneList.length) * 100);
-    console.log(`[clips] ${projectId}: scene ${num} done (${done}/${sceneList.length})`);
   }
 
   clipJobs[projectId] = { ...clipJobs[projectId], status: "done", progress: 100 };
@@ -710,16 +708,38 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
   if (clips.length === 1) {
     fs.copyFileSync(clips[0], outPath);
   } else {
-    // Use external render API to concat with fade transitions
     const clipUrls = clips.map(c => `${SERVER_URL}/${c.replace(/\\/g, "/")}`);
     console.log(`[merge] ${projectId}: concat-transitions (${clipUrls.length} clips)`);
-    const concatRes = await callRenderApi("/concat-transitions", {
-      urls:                clipUrls,
-      transition:          "fade",
-      transition_duration: 0.5,
-      folder:              projectId,
-    });
-    await downloadFile(concatRes.url, outPath);
+
+    // Batch into groups of 50 so the render API isn't hit with hundreds of URLs at once
+    const BATCH = 50;
+    let batchUrls: string[] = [];
+    if (clipUrls.length <= BATCH) {
+      const res = await callRenderApi("/concat-transitions", {
+        urls: clipUrls, transition: "fade", transition_duration: 0.5, folder: projectId,
+      });
+      batchUrls = [res.url];
+    } else {
+      for (let b = 0; b < clipUrls.length; b += BATCH) {
+        const slice = clipUrls.slice(b, b + BATCH);
+        console.log(`[merge] ${projectId}: batch ${Math.floor(b / BATCH) + 1} (${slice.length} clips)`);
+        const res = await callRenderApi("/concat-transitions", {
+          urls: slice, transition: "fade", transition_duration: 0.5, folder: projectId,
+        });
+        batchUrls.push(res.url);
+      }
+    }
+
+    // Final concat of batch results (or single result if only one batch)
+    if (batchUrls.length === 1) {
+      await downloadFile(batchUrls[0], outPath);
+    } else {
+      console.log(`[merge] ${projectId}: joining ${batchUrls.length} batches`);
+      const finalRes = await callRenderApi("/concat-transitions", {
+        urls: batchUrls, transition: "fade", transition_duration: 0.5, folder: projectId,
+      });
+      await downloadFile(finalRes.url, outPath);
+    }
   }
 
   // Clean up only inline temp clips (keep clips/ dir intact)
