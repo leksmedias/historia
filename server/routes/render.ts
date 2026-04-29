@@ -260,7 +260,7 @@ router.post("/image-to-video", memUpload.single("image"), async (req: Request, r
  * Each clip duration = audio duration, Ken Burns effect applied.
  */
 router.post("/:id/clips", async (req: Request, res: Response) => {
-  const projectId = req.params.id;
+  const projectId = (req.params.id as string);
   try {
     try { execSync("ffmpeg -version", { stdio: "ignore" }); }
     catch { return res.status(500).json({ error: "FFmpeg not installed. Run: apt-get install -y ffmpeg" }); }
@@ -293,10 +293,10 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
 
 /** GET /api/render/:id/clips/status */
 router.get("/:id/clips/status", (req: Request, res: Response) => {
-  const job = clipJobs[req.params.id];
+  const job = clipJobs[(req.params.id as string)];
   if (job) return res.json(job);
   // Check if clips dir already has files (e.g. after server restart)
-  const clipsDir = path.join("uploads", req.params.id, "clips");
+  const clipsDir = path.join("uploads", (req.params.id as string), "clips");
   if (fs.existsSync(clipsDir)) {
     const clips = fs.readdirSync(clipsDir).filter(f => f.endsWith(".mp4"));
     if (clips.length > 0) {
@@ -311,7 +311,7 @@ router.get("/:id/clips/status", (req: Request, res: Response) => {
  * Download all individual clips as a ZIP file.
  */
 router.get("/:id/clips/zip", (req: Request, res: Response) => {
-  const clipsDir = path.join("uploads", req.params.id, "clips");
+  const clipsDir = path.join("uploads", (req.params.id as string), "clips");
   if (!fs.existsSync(clipsDir)) {
     return res.status(404).json({ error: "No clips found. Generate clips first." });
   }
@@ -340,7 +340,7 @@ router.get("/:id/clips/zip", (req: Request, res: Response) => {
  * Header: x-whisk-cookie
  */
 router.post("/:id/animate", async (req: Request, res: Response) => {
-  const projectId = req.params.id;
+  const projectId = (req.params.id as string);
   const cookie = req.headers["x-whisk-cookie"] as string;
   if (!cookie) return res.status(400).json({ error: "Whisk cookie required (x-whisk-cookie header)" });
 
@@ -361,7 +361,7 @@ router.post("/:id/animate", async (req: Request, res: Response) => {
 
 /** GET /api/render/:id/animate/status */
 router.get("/:id/animate/status", (req: Request, res: Response) => {
-  const videosDir = path.join("uploads", req.params.id, "videos");
+  const videosDir = path.join("uploads", (req.params.id as string), "videos");
   const getAnimatedNums = (): number[] => {
     if (!fs.existsSync(videosDir)) return [];
     return fs.readdirSync(videosDir)
@@ -371,7 +371,7 @@ router.get("/:id/animate/status", (req: Request, res: Response) => {
       .sort((a, b) => a - b);
   };
 
-  const job = animateJobs[req.params.id];
+  const job = animateJobs[(req.params.id as string)];
   if (job) {
     const animatedSceneNums = getAnimatedNums();
     return res.json({ ...job, animatedSceneNums });
@@ -388,7 +388,7 @@ router.get("/:id/animate/status", (req: Request, res: Response) => {
  * Download animated scenes as ZIP. Prefers final clips (with audio), falls back to raw Veo.
  */
 router.get("/:id/animate/zip", (req: Request, res: Response) => {
-  const projectId = req.params.id;
+  const projectId = (req.params.id as string);
   const videosDir = path.join("uploads", projectId, "videos");
   const clipsDir = path.join("uploads", projectId, "clips");
 
@@ -428,7 +428,7 @@ router.get("/:id/animate/zip", (req: Request, res: Response) => {
  * Body: { resolution?, whiskCookie? }
  */
 router.post("/:id/auto", async (req: Request, res: Response) => {
-  const projectId = req.params.id;
+  const projectId = (req.params.id as string);
   const resKey = req.body?.resolution === "480p" ? "480p" : "720p";
   const whiskCookie: string | undefined = req.body?.whiskCookie || undefined;
   res.json({ success: true, message: "Auto pipeline started in background" });
@@ -440,9 +440,9 @@ router.post("/:id/auto", async (req: Request, res: Response) => {
 
 /** GET /api/render/:id/auto/status */
 router.get("/:id/auto/status", (req: Request, res: Response) => {
-  const job = autoJobs[req.params.id];
+  const job = autoJobs[(req.params.id as string)];
   if (job) return res.json(job);
-  const outPath = path.join("uploads", req.params.id, "render", "output.mp4");
+  const outPath = path.join("uploads", (req.params.id as string), "render", "output.mp4");
   if (fs.existsSync(outPath)) return res.json({ status: "done", resolution: "unknown" });
   res.json({ status: "idle" });
 });
@@ -453,7 +453,7 @@ router.get("/:id/auto/status", (req: Request, res: Response) => {
  * Uses pre-generated clips from clips/ dir if available, otherwise generates inline.
  */
 router.post("/:id", async (req: Request, res: Response) => {
-  const projectId = req.params.id;
+  const projectId = (req.params.id as string);
   try {
     try { execSync("ffmpeg -version", { stdio: "ignore" }); }
     catch { return res.status(500).json({ error: "FFmpeg not installed. Run: apt-get install -y ffmpeg" }); }
@@ -486,20 +486,20 @@ router.post("/:id", async (req: Request, res: Response) => {
 
 /** GET /api/render/:id/status */
 router.get("/:id/status", (req: Request, res: Response) => {
-  const job = mergeJobs[req.params.id];
+  const job = mergeJobs[(req.params.id as string)];
   if (job) return res.json(job);
-  const outPath = path.join("uploads", req.params.id, "render", "output.mp4");
+  const outPath = path.join("uploads", (req.params.id as string), "render", "output.mp4");
   if (fs.existsSync(outPath)) return res.json({ status: "done", progress: 100, total: 0, resolution: "unknown" });
   res.json({ status: "idle" });
 });
 
 /** GET /api/render/:id/download */
 router.get("/:id/download", async (req: Request, res: Response) => {
-  const outPath = path.join("uploads", req.params.id, "render", "output.mp4");
+  const outPath = path.join("uploads", (req.params.id as string), "render", "output.mp4");
   if (!fs.existsSync(outPath)) return res.status(404).json({ error: "Render not found. Start a render first." });
   let filename = "video.mp4";
   try {
-    const [project] = await db.select({ title: projects.title }).from(projects).where(eq(projects.id, req.params.id));
+    const [project] = await db.select({ title: projects.title }).from(projects).where(eq(projects.id, (req.params.id as string)));
     if (project?.title) {
       const safe = project.title.replace(/[^a-zA-Z0-9_\- ]/g, "").trim().replace(/\s+/g, "_").slice(0, 80);
       if (safe) filename = `${safe}.mp4`;
@@ -524,11 +524,15 @@ async function buildVeoClip(
   const FPS = 25;
   const kbFilter = buildKB(pickEffect(), dur, width, height, 1.15);
 
+  const fadeOutStart = Math.max(0, dur - 0.5).toFixed(3);
+
   // Always slow down to match audio — setpts has no lower limit so no looping needed.
   // speed=0.8 → setpts=PTS/0.8=1.25×PTS → video runs 25% slower.
   const vScale = speed < 1.0
     ? `setpts=PTS/${speed},fps=${FPS},${kbFilter},setsar=1,format=yuv420p`
     : `fps=${FPS},${kbFilter},setsar=1,format=yuv420p`;
+
+  const vFilter = `${vScale},fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5`;
 
   const encArgs = [
     "-c:v", "libx264", "-preset", "fast", "-crf", "22",
@@ -542,19 +546,43 @@ async function buildVeoClip(
     await ffmpeg([
       "-y", "-i", veoPath, "-i", audioPath,
       "-filter_complex",
-        `[0:v]${vScale}[v];` +
-        `[0:a]${veoAudioFilter}[va];[1:a]${AUDIO_FILTER}[na];[va][na]amix=inputs=2:duration=first[a]`,
+        `[0:v]${vFilter}[v];` +
+        `[0:a]${veoAudioFilter}[va];[1:a]${AUDIO_FILTER}[na];[va][na]amix=inputs=2:duration=first,afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
       "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
       ...encArgs, outPath,
     ]);
   } else {
     await ffmpeg([
       "-y", "-i", veoPath, "-i", audioPath,
-      "-filter_complex", `[0:v]${vScale}[v];[1:a]${AUDIO_FILTER}[a]`,
+      "-filter_complex", `[0:v]${vFilter}[v];[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
       "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
       ...encArgs, outPath,
     ]);
   }
+}
+
+async function buildImageClip(
+  imagePath: string, audioPath: string, dur: number,
+  width: number, height: number, outPath: string, effect: KBEffect
+): Promise<void> {
+  const FPS = 25;
+  const kbFilter = buildKB(effect, dur, width, height, 1.3);
+
+  const encArgs = [
+    "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+    "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+  ];
+
+  const fadeOutStart = Math.max(0, dur - 0.5).toFixed(3);
+  const vFilter = `[0:v]${kbFilter},fps=${FPS},setsar=1,format=yuv420p,fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5[v]`;
+  const aFilter = `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`;
+
+  await ffmpeg([
+    "-y", "-loop", "1", "-framerate", `${FPS}`, "-i", imagePath, "-i", audioPath,
+    "-filter_complex", `${vFilter};${aFilter}`,
+    "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
+    ...encArgs, outPath,
+  ]);
 }
 
 /**
@@ -583,7 +611,6 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
     }
 
     const dur = parseFloat(getAudioDuration(audioPath).toFixed(3));
-    const frames = Math.round(FPS * dur);
     const clipPath = path.join(clipsDir, `${num}.mp4`);
     const veoPath = path.join("uploads", projectId, "videos", `${num}.mp4`);
 
@@ -594,28 +621,8 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
       } else {
         const effect = pickEffect(prevEffect);
         prevEffect = effect;
-        const imgUrl   = `${SERVER_URL}/${img.replace(/\\/g, "/")}`;
-        const audioUrl = `${SERVER_URL}/uploads/${projectId}/audio/${s.audio_file ?? `${num}.mp3`}`;
-        console.log(`[clips] scene ${num}: calling render API (${KB_TO_API[effect]}, ${dur}s)`);
-
-        const animRes = await callRenderApi("/animate", {
-          media_url:  imgUrl,
-          media_type: "image",
-          animation:  KB_TO_API[effect],
-          duration:   dur,
-          fps:        FPS,
-          resolution: `${width}x${height}`,
-          folder:     projectId,
-        });
-
-        const mergeRes = await callRenderApi("/merge", {
-          video_url: animRes.url,
-          audio_url: audioUrl,
-          strategy:  "trim_or_slow",
-          folder:    projectId,
-        });
-
-        await downloadFile(mergeRes.url, clipPath);
+        console.log(`[clips] scene ${num}: generating locally (${effect}, ${dur}s)`);
+        await buildImageClip(img, audioPath, dur, width, height, clipPath, effect);
       }
 
       done++;
@@ -671,27 +678,11 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
       const dur = parseFloat(getAudioDuration(audioPath).toFixed(3));
       const effect = pickEffect(prevEffect);
       prevEffect = effect;
-      const imgUrl   = `${SERVER_URL}/${img.replace(/\\/g, "/")}`;
-      const audioUrl = `${SERVER_URL}/uploads/${projectId}/audio/${s.audio_file ?? `${num}.mp3`}`;
       const clip = path.join(renderDir, `tmp_${i}.mp4`);
-      console.log(`[merge-inline] scene ${num}: calling render API (${KB_TO_API[effect]}, ${dur}s)`);
-
-      const animRes = await callRenderApi("/animate", {
-        media_url:  imgUrl,
-        media_type: "image",
-        animation:  KB_TO_API[effect],
-        duration:   dur,
-        fps:        FPS,
-        resolution: `${width}x${height}`,
-        folder:     projectId,
-      });
-      const mergeRes = await callRenderApi("/merge", {
-        video_url: animRes.url,
-        audio_url: audioUrl,
-        strategy:  "trim_or_slow",
-        folder:    projectId,
-      });
-      await downloadFile(mergeRes.url, clip);
+      console.log(`[merge-inline] scene ${num}: generating locally (${effect}, ${dur}s)`);
+      
+      await buildImageClip(img, audioPath, dur, width, height, clip, effect);
+      
       clips.push(clip);
       tempClips.push(clip);
       durations.push(getAudioDuration(clip));
@@ -708,38 +699,16 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
   if (clips.length === 1) {
     fs.copyFileSync(clips[0], outPath);
   } else {
-    const clipUrls = clips.map(c => `${SERVER_URL}/${c.replace(/\\/g, "/")}`);
-    console.log(`[merge] ${projectId}: concat-transitions (${clipUrls.length} clips)`);
-
-    // Batch into groups of 50 so the render API isn't hit with hundreds of URLs at once
-    const BATCH = 50;
-    let batchUrls: string[] = [];
-    if (clipUrls.length <= BATCH) {
-      const res = await callRenderApi("/concat-transitions", {
-        urls: clipUrls, transition: "fade", transition_duration: 0.5, folder: projectId,
-      });
-      batchUrls = [res.url];
-    } else {
-      for (let b = 0; b < clipUrls.length; b += BATCH) {
-        const slice = clipUrls.slice(b, b + BATCH);
-        console.log(`[merge] ${projectId}: batch ${Math.floor(b / BATCH) + 1} (${slice.length} clips)`);
-        const res = await callRenderApi("/concat-transitions", {
-          urls: slice, transition: "fade", transition_duration: 0.5, folder: projectId,
-        });
-        batchUrls.push(res.url);
-      }
-    }
-
-    // Final concat of batch results (or single result if only one batch)
-    if (batchUrls.length === 1) {
-      await downloadFile(batchUrls[0], outPath);
-    } else {
-      console.log(`[merge] ${projectId}: joining ${batchUrls.length} batches`);
-      const finalRes = await callRenderApi("/concat-transitions", {
-        urls: batchUrls, transition: "fade", transition_duration: 0.5, folder: projectId,
-      });
-      await downloadFile(finalRes.url, outPath);
-    }
+    console.log(`[merge] ${projectId}: local concat (${clips.length} clips)`);
+    const listPath = path.join(renderDir, "concat_list.txt");
+    const listContent = clips.map(c => `file '${path.resolve(c).replace(/'/g, "'\\''")}'`).join("\n");
+    fs.writeFileSync(listPath, listContent);
+    
+    await ffmpeg([
+      "-y", "-f", "concat", "-safe", "0", "-i", listPath,
+      "-c", "copy", outPath
+    ]);
+    fs.unlinkSync(listPath);
   }
 
   // Clean up only inline temp clips (keep clips/ dir intact)
