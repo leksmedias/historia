@@ -307,8 +307,9 @@ router.get("/:id/clips/status", (req: Request, res: Response) => {
  * GET /api/render/:id/clips/zip
  * Download all individual clips as a ZIP file.
  */
-router.get("/:id/clips/zip", (req: Request, res: Response) => {
-  const clipsDir = path.join("uploads", (req.params.id as string), "clips");
+router.get("/:id/clips/zip", async (req: Request, res: Response) => {
+  const projectId = (req.params.id as string);
+  const clipsDir = path.join("uploads", projectId, "clips");
   if (!fs.existsSync(clipsDir)) {
     return res.status(404).json({ error: "No clips found. Generate clips first." });
   }
@@ -319,8 +320,17 @@ router.get("/:id/clips/zip", (req: Request, res: Response) => {
     return res.status(404).json({ error: "No clips found. Generate clips first." });
   }
 
+  let zipName = "clips.zip";
+  try {
+    const [project] = await db.select({ title: projects.title }).from(projects).where(eq(projects.id, projectId));
+    if (project?.title) {
+      const safe = project.title.replace(/[^a-zA-Z0-9_\- ]/g, "").trim().replace(/\s+/g, "_").slice(0, 80);
+      if (safe) zipName = `${safe}.zip`;
+    }
+  } catch { /* fall back to clips.zip */ }
+
   res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", `attachment; filename="clips.zip"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
 
   const archive = archiver("zip", { zlib: { level: 0 } }); // level 0 = store only (MP4s already compressed)
   archive.on("error", err => { console.error("[zip] error:", err); res.destroy(); });
