@@ -78,11 +78,17 @@ export default function ProjectStatus() {
   }, [fetchData]);
 
   useEffect(() => {
-    const isActive = project?.status === "processing" || project?.status === "created";
+    // Keep refreshing while the pipeline is active OR while there's still incomplete work
+    // (covers partial status where client-side retries are ongoing)
+    const hasPending = scenes.some(
+      s => s.image_status === "pending" || s.audio_status === "pending" ||
+           s.image_status === "generating" || s.audio_status === "generating"
+    );
+    const isActive = project?.status === "processing" || project?.status === "created" || hasPending;
     if (!isActive) return;
     const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
-  }, [fetchData, project?.status]);
+  }, [fetchData, project?.status, scenes]);
 
   useEffect(() => {
     if (clientPipelineStarted.current) return;
