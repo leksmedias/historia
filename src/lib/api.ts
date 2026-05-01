@@ -542,6 +542,19 @@ export async function bulkRegeneratePending(
   }
 }
 
+export async function bulkGenerateMissingAudio(
+  projectId: string,
+  scenes: Array<{ scene_number: number; voice_id?: string | null }>,
+  onProgress: (done: number, total: number) => void
+): Promise<void> {
+  let done = 0;
+  for (const scene of scenes) {
+    await regenerateAssetFrontend(projectId, scene.scene_number, "audio", scene.voice_id || undefined).catch(console.error);
+    done++;
+    onProgress(done, scenes.length);
+  }
+}
+
 export async function stopProject(projectId: string): Promise<void> {
   await apiRequest(`/projects/${projectId}/stop`, { method: "PATCH" });
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, bulkRegeneratePending, checkAndFixImages, deleteProject, stopProject, resumeProject, runClientSidePipeline, startAnimateScenes, getAnimateStatus, type PipelineCallbacks } from "@/lib/api";
+import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, bulkRegeneratePending, bulkGenerateMissingAudio, checkAndFixImages, deleteProject, stopProject, resumeProject, runClientSidePipeline, startAnimateScenes, getAnimateStatus, type PipelineCallbacks } from "@/lib/api";
 import type { Project, Scene } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +45,8 @@ export default function ProjectStatus() {
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
   const [bulkRetryingAudio, setBulkRetryingAudio] = useState(false);
   const [bulkAudioProgress, setBulkAudioProgress] = useState({ done: 0, total: 0 });
+  const [bulkGeneratingAudio, setBulkGeneratingAudio] = useState(false);
+  const [bulkAudioGenerateProgress, setBulkAudioGenerateProgress] = useState({ done: 0, total: 0 });
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState({ done: 0, total: 0 });
   const [checkingImages, setCheckingImages] = useState(false);
@@ -140,6 +142,7 @@ export default function ProjectStatus() {
 
   const failedScenes = scenes.filter(s => s.image_status === "failed" || s.audio_status === "failed");
   const failedAudioScenes = scenes.filter(s => s.audio_status === "failed");
+  const pendingAudioScenes = scenes.filter(s => s.audio_status !== "completed");
   const pendingImageScenes = scenes.filter(s => s.image_status !== "completed");
   const hasPendingWork = scenes.some(s => s.image_status === "pending" || s.audio_status === "pending" || s.image_status === "failed" || s.audio_status === "failed");
 
@@ -169,6 +172,24 @@ export default function ProjectStatus() {
       });
     } finally {
       setBulkRetryingAudio(false);
+      fetchData();
+    }
+  };
+
+  const handleGenerateMissingAudio = async () => {
+    if (!projectId) return;
+    setBulkGeneratingAudio(true);
+    setBulkAudioGenerateProgress({ done: 0, total: pendingAudioScenes.length });
+    try {
+      await bulkGenerateMissingAudio(projectId, pendingAudioScenes, (done, total) => {
+        setBulkAudioGenerateProgress({ done, total });
+        fetchData();
+      });
+      toast.success("Missing audio generated");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setBulkGeneratingAudio(false);
       fetchData();
     }
   };
@@ -485,11 +506,20 @@ export default function ProjectStatus() {
                 </Button>
               )}
               {failedAudioScenes.length > 0 && (
-                <Button variant="outline" onClick={handleBulkRetryAudio} disabled={bulkRetryingAudio || project.status === "processing"} className="text-sm">
+                <Button variant="outline" onClick={handleBulkRetryAudio} disabled={bulkRetryingAudio || bulkGeneratingAudio || project.status === "processing"} className="text-sm">
                   {bulkRetryingAudio ? (
                     <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Retrying Audio {bulkAudioProgress.done}/{bulkAudioProgress.total}</>
                   ) : (
                     <><Volume2 className="h-4 w-4 mr-2" /> Retry Failed Audio ({failedAudioScenes.length})</>
+                  )}
+                </Button>
+              )}
+              {pendingAudioScenes.length > 0 && failedAudioScenes.length < pendingAudioScenes.length && (
+                <Button variant="outline" onClick={handleGenerateMissingAudio} disabled={bulkGeneratingAudio || bulkRetryingAudio || project.status === "processing"} className="text-sm">
+                  {bulkGeneratingAudio ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Generating Audio {bulkAudioGenerateProgress.done}/{bulkAudioGenerateProgress.total}</>
+                  ) : (
+                    <><Volume2 className="h-4 w-4 mr-2" /> Generate Missing Audio ({pendingAudioScenes.length - failedAudioScenes.length})</>
                   )}
                 </Button>
               )}
