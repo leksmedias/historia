@@ -44,6 +44,26 @@ export default function Settings() {
   const [renderStatus, setRenderStatus] = useState<HealthStatus>("idle");
   const [renderMsg, setRenderMsg] = useState("");
 
+  const parseCookieField = (raw: string, primary: "psid" | "psidts") => {
+    if (!raw.includes(";") && !raw.includes("__Secure-1PSID=")) {
+      return primary === "psid"
+        ? setSettings(s => ({ ...s, geminiPsid: raw }))
+        : setSettings(s => ({ ...s, geminiPsidts: raw }));
+    }
+    const extract = (name: string) => {
+      const m = raw.match(new RegExp(`(?:^|;)\\s*${name}=([^;]+)`));
+      return m ? m[1].trim() : "";
+    };
+    const psid = extract("__Secure-1PSID");
+    const psidts = extract("__Secure-1PSIDTS");
+    setSettings(s => ({
+      ...s,
+      ...(psid ? { geminiPsid: psid } : {}),
+      ...(psidts ? { geminiPsidts: psidts } : {}),
+    }));
+    if (psid || psidts) setGeminiStatus("idle");
+  };
+
   const save = () => {
     saveProviderSettings(settings);
     toast.success("Settings saved");
@@ -281,9 +301,9 @@ export default function Settings() {
                 <div className="flex gap-2">
                   <Input
                     type={showGeminiPsid ? "text" : "password"}
-                    placeholder="__Secure-1PSID"
+                    placeholder="__Secure-1PSID value — or paste full cookie string here"
                     value={settings.geminiPsid}
-                    onChange={(e) => { setSettings(s => ({ ...s, geminiPsid: e.target.value })); setGeminiStatus("idle"); }}
+                    onChange={(e) => { parseCookieField(e.target.value, "psid"); setGeminiStatus("idle"); }}
                     className="bg-secondary flex-1"
                   />
                   <Button variant="ghost" size="icon" onClick={() => setShowGeminiPsid(!showGeminiPsid)}>
@@ -293,9 +313,9 @@ export default function Settings() {
                 <div className="flex gap-2">
                   <Input
                     type={showGeminiPsidts ? "text" : "password"}
-                    placeholder="__Secure-1PSIDTS"
+                    placeholder="__Secure-1PSIDTS value"
                     value={settings.geminiPsidts}
-                    onChange={(e) => { setSettings(s => ({ ...s, geminiPsidts: e.target.value })); setGeminiStatus("idle"); }}
+                    onChange={(e) => { parseCookieField(e.target.value, "psidts"); setGeminiStatus("idle"); }}
                     className="bg-secondary flex-1"
                   />
                   <Button variant="ghost" size="icon" onClick={() => setShowGeminiPsidts(!showGeminiPsidts)}>
@@ -303,7 +323,7 @@ export default function Settings() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Go to <strong>gemini.google.com</strong>, press F12 → Network tab → refresh → copy <code>__Secure-1PSID</code> and <code>__Secure-1PSIDTS</code> cookie values. Expires every few days.
+                  Go to <strong>gemini.google.com</strong>, F12 → Network → any request → copy the full <code>cookie:</code> header and paste it into the first field — both values are extracted automatically. Or paste each value individually.
                 </p>
               </div>
 

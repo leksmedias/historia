@@ -54,7 +54,7 @@ info "Updating package list..."
 apt-get update -qq
 
 info "Installing prerequisites..."
-apt-get install -y -qq curl git build-essential openssl ca-certificates
+apt-get install -y -qq curl git build-essential openssl ca-certificates python3 python3-venv python3-pip
 
 # ── 2. Node.js 20 ────────────────────────────────────────────────────────────
 if ! command -v node &>/dev/null || [ "$(node -v | sed 's/v//' | cut -d. -f1)" -lt 18 ]; then
@@ -117,9 +117,8 @@ PORT=${APP_PORT}
 DATABASE_URL=${DB_URL}
 
 # Add your API keys below, or configure them inside the app → Settings
-# GROQ_API_KEY=
-# WHISK_COOKIE=
 # INWORLD_API_KEY=
+GEMINI_SERVICE_URL=http://localhost:3060
 EOF
   ok ".env created"
 else
@@ -141,9 +140,9 @@ else
 fi
 
 # ── 6. Install deps & build ───────────────────────────────────────────────────
-info "Installing npm dependencies..."
+info "Installing npm dependencies and Python sidecar..."
 cd "$APP_DIR"
-npm install --prefer-offline 2>&1 | tail -5
+npm run setup 2>&1 | tail -10
 
 info "Building frontend..."
 npm run build 2>&1 | tail -5
@@ -167,7 +166,7 @@ Type=simple
 User=root
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${APP_DIR}/.env
-ExecStart=${NODE_BIN} --import tsx/esm ${APP_DIR}/server/index.ts
+ExecStart=/usr/local/bin/npm run server
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -212,6 +211,6 @@ echo -e "    Config:     ${CYAN}nano ${APP_DIR}/.env${NC}"
 echo ""
 echo "  After opening the app, go to Settings and add your API keys:"
 echo "    • Groq API Key    → https://console.groq.com"
-echo "    • Whisk Cookie    → https://labs.google/fx/tools/whisk"
+echo "    • Gemini Cookies  → gemini.google.com (F12 → Network → copy cookie header)"
 echo "    • Inworld API Key → https://inworld.ai/studio"
 echo ""
