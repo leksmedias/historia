@@ -92,8 +92,8 @@ export function saveProviderSettings(settings: ProviderSettings) {
 // Shared — API proxy helper
 // ========================
 
-async function whiskProxy(body: any): Promise<any> {
-  const res = await fetch(`/api/whisk-proxy`, {
+async function apiProxy(body: any): Promise<any> {
+  const res = await fetch(`/api/gemini-proxy`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -102,7 +102,7 @@ async function whiskProxy(body: any): Promise<any> {
   });
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Whisk proxy error (HTTP ${res.status}): ${errText.substring(0, 200)}`);
+    throw new Error(`API proxy error (HTTP ${res.status}): ${errText.substring(0, 200)}`);
   }
   return res.json();
 }
@@ -373,7 +373,7 @@ async function callGroqForBatch(
 
   const userPrompt = `Video Title: ${title}\n\nGenerate image prompts for these ${scenes.length} scenes:\n\n${scenesText}\n\nReturn ONLY the JSON object.`;
 
-  const result = await whiskProxy({
+  const result = await apiProxy({
     action: "groq-chat",
     apiKey: groqApiKey,
     payload: {
@@ -447,7 +447,7 @@ async function callClaudeForBatch(
 
   const userPrompt = `Video Title: ${title}\n\nGenerate image prompts for these ${scenes.length} scenes:\n\n${scenesText}\n\nReturn ONLY the JSON object.`;
 
-  const result = await whiskProxy({
+  const result = await apiProxy({
     action: "claude-chat",
     apiKey: anthropicApiKey,
     payload: {
@@ -583,18 +583,7 @@ export async function generateSceneManifest(
 // Gemini — Image generation
 // ========================
 
-async function geminiProxy(body: any): Promise<any> {
-  const res = await fetch(`/api/gemini-proxy`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini proxy error (HTTP ${res.status}): ${errText.substring(0, 200)}`);
-  }
-  return res.json();
-}
+const geminiProxy = apiProxy;
 
 export async function generateGeminiImage(
   prompt: string,
@@ -705,7 +694,7 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
   const userPrompt = `Script text to visualize:\n${scriptText}\n\nGenerate one cinematic image prompt for this scene.`;
 
   if (anthropicApiKey) {
-    const result = await whiskProxy({
+    const result = await apiProxy({
       action: "claude-chat",
       apiKey: anthropicApiKey,
       payload: {
@@ -728,7 +717,7 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
     return content.trim();
   }
 
-  const result = await whiskProxy({
+  const result = await apiProxy({
     action: "groq-chat",
     apiKey: groqApiKey,
     payload: {
