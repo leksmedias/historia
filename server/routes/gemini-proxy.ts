@@ -21,8 +21,9 @@ router.post("/", async (req: Request, res: Response) => {
         });
       } catch (e: any) {
         console.error("[gemini-proxy] generate error:", e.message);
-        const status = e.message?.includes("401") || e.message?.includes("403") ? 401
-          : e.message?.includes("429") ? 429 : 500;
+        const isAuthError = e.message?.includes("401") || e.message?.includes("403");
+        const isRateLimit = e.message?.includes("429") || e.message?.includes("1097") || e.message?.includes("Status: 0") || e.message?.includes("timeout");
+        const status = isAuthError ? 401 : isRateLimit ? 429 : 500;
         return res.json({ status, data: { error: e.message } });
       }
     }

@@ -11,7 +11,7 @@ export async function generateGeminiImage(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt, psid, psidts }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(240_000),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));

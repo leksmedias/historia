@@ -2,6 +2,7 @@ import asyncio
 import base64
 import logging
 import os
+import random
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -68,9 +69,14 @@ async def reset_chat():
 
 @app.post("/generate-image")
 async def generate_image(req: ImageRequest):
-    global _cached_chat
+    global _cached_chat, _cached_client
+    
+    delay = random.randint(10, 30)
+    logger.info("Adding random delay of %ds before image generation to prevent rate limits", delay)
+    await asyncio.sleep(delay)
+
     last_error = "Image generation failed"
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             chat = await get_chat(req.psid, req.psidts)
             response = await chat.send_message(f"Generate an image: {req.prompt}")
@@ -86,12 +92,13 @@ async def generate_image(req: ImageRequest):
         except Exception as e:
             last_error = str(e)
             _cached_chat = None  # always reset chat after any error
-            if attempt < 2:
-                wait = (attempt + 1) * 5  # 5s then 10s
-                logger.warning("generate_image attempt %d failed (%s) — retrying in %ds", attempt + 1, last_error[:80], wait)
+            _cached_client = None  # completely re-initialize the client
+            if attempt < 3:
+                wait = (attempt + 1) * 5  # 5s, 10s, 15s
+                logger.warning("generate_image attempt %d failed (%s) — retrying in %ds (Re-initializing client)", attempt + 1, last_error[:80], wait)
                 await asyncio.sleep(wait)
             else:
-                logger.exception("generate_image failed after 3 attempts")
+                logger.exception("generate_image failed after 4 attempts")
     raise HTTPException(status_code=500, detail=last_error)
 
 
