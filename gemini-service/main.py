@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import os
@@ -69,7 +70,7 @@ async def reset_chat():
 async def generate_image(req: ImageRequest):
     global _cached_chat
     last_error = "Image generation failed"
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             chat = await get_chat(req.psid, req.psidts)
             response = await chat.send_message(f"Generate an image: {req.prompt}")
@@ -84,12 +85,13 @@ async def generate_image(req: ImageRequest):
             raise
         except Exception as e:
             last_error = str(e)
-            if attempt == 0 and ("timeout" in last_error.lower() or "aborted" in last_error.lower()):
-                logger.warning("generate_image timed out — resetting chat and retrying")
-                _cached_chat = None
-                continue
-            logger.exception("generate_image failed")
-            break
+            _cached_chat = None  # always reset chat after any error
+            if attempt < 2:
+                wait = (attempt + 1) * 5  # 5s then 10s
+                logger.warning("generate_image attempt %d failed (%s) — retrying in %ds", attempt + 1, last_error[:80], wait)
+                await asyncio.sleep(wait)
+            else:
+                logger.exception("generate_image failed after 3 attempts")
     raise HTTPException(status_code=500, detail=last_error)
 
 
