@@ -142,6 +142,7 @@ fi
 # ── 6. Install deps & build ───────────────────────────────────────────────────
 info "Installing npm dependencies and Python sidecar..."
 cd "$APP_DIR"
+chmod +x start.sh
 npm run setup 2>&1 | tail -10
 
 info "Building frontend..."
@@ -166,7 +167,7 @@ Type=simple
 User=root
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${APP_DIR}/.env
-ExecStart=/usr/local/bin/npm run server
+ExecStart=${APP_DIR}/start.sh
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
