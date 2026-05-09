@@ -4,7 +4,7 @@ import {
   generateSceneManifest,
   generateScenesForChunk,
   splitScriptIntoChunks,
-  generateWhiskImage,
+  generateGeminiImage,
   generateInworldAudio,
   type SceneManifest,
 } from "./providers";
@@ -224,37 +224,36 @@ export async function runClientSidePipeline(
       callbacks.onSceneProgress(num, "image", "generating");
       try {
         let imageBlob: Blob;
-        if (settings.imageProvider === "whisk") {
-          if (!settings.whiskCookie) throw new Error("Whisk cookie not configured. Add it in Settings.");
+        if (settings.imageProvider === "gemini" || settings.imageProvider === "whisk") {
+          if (!settings.geminiPsid) throw new Error("Gemini cookies not configured. Add them in Settings.");
           const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts || [])];
           const allPrompts = projectStylePrompt
             ? rawPrompts.map(p => `${p}, ${projectStylePrompt}`)
             : rawPrompts;
           let success = false;
-          let lastWhiskError = "All Whisk prompts failed";
+          let lastWhiskError = "All Gemini prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateWhiskImage(
-                prompt, settings.whiskCookie,
-                styleUrls.length ? styleUrls : undefined,
-                styleUrls.length ? serverProjectId : undefined
+              imageBlob = await generateGeminiImage(
+                prompt, settings.geminiPsid,
+                settings.geminiPsidts
               );
               success = true;
               break;
             } catch (e: any) {
               lastWhiskError = e.message;
-              console.error(`Whisk prompt failed: ${e.message}`);
+              console.error(`Gemini prompt failed: ${e.message}`);
               if (e.message.includes("auth expired") || e.message.includes("Unauthorized") || e.message.includes("expired")) break;
             }
           }
           if (!success) throw new Error(lastWhiskError);
         } else {
-          throw new Error("No image provider configured. Please set up Whisk in Settings.");
+          throw new Error("No image provider configured. Please set up Gemini in Settings.");
         }
 
         const fd = new FormData();
         fd.append("file", imageBlob!, `${num}.png`);
-        const ext = settings.imageProvider === "whisk" ? "png" : "svg";
+        const ext = "png";
         await fetch(`${API_BASE}/assets/${serverProjectId}/images/${num}.${ext}`, { method: "POST", body: fd });
 
         await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
@@ -370,7 +369,7 @@ export async function regenerateAssetFrontend(
 
     try {
       let imageBlob: Blob;
-      if (settings.imageProvider === "whisk" && settings.whiskCookie) {
+      if ((settings.imageProvider === "gemini" || settings.imageProvider === "whisk") && settings.geminiPsid) {
         const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
         const allPrompts = regenStylePrompt
           ? rawPrompts.map(p => `${p}, ${regenStylePrompt}`)
@@ -379,10 +378,9 @@ export async function regenerateAssetFrontend(
         let lastError = "";
         for (const prompt of allPrompts) {
           try {
-            imageBlob = await generateWhiskImage(
-              prompt, settings.whiskCookie,
-              styleUrls.length ? styleUrls : undefined,
-              styleUrls.length ? projectId : undefined
+            imageBlob = await generateGeminiImage(
+              prompt, settings.geminiPsid,
+              settings.geminiPsidts
             );
             success = true;
             break;
@@ -393,10 +391,10 @@ export async function regenerateAssetFrontend(
         }
         if (!success) throw new Error(lastError || "All image generation attempts failed.");
       } else {
-        throw new Error("No image provider configured. Please set up Whisk in Settings.");
+        throw new Error("No image provider configured. Please set up Gemini in Settings.");
       }
 
-      const ext = settings.imageProvider === "whisk" ? "png" : "svg";
+      const ext = "png";
       const fd = new FormData();
       fd.append("file", imageBlob!, `${sceneNumber}.${ext}`);
       await fetch(`${API_BASE}/assets/${projectId}/images/${sceneNumber}.${ext}`, { method: "POST", body: fd });
@@ -655,13 +653,15 @@ export function getRenderDownloadUrl(projectId: string): string {
 export async function startAnimateScenes(
   projectId: string,
   sceneNumbers: number[],
-  whiskCookie: string
+  geminiPsid: string,
+  geminiPsidts: string
 ): Promise<{ total: number }> {
   return fetch(`${API_BASE}/render/${projectId}/animate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-whisk-cookie": whiskCookie,
+      "x-gemini-psid": geminiPsid,
+      "x-gemini-psidts": geminiPsidts,
     },
     body: JSON.stringify({ scenes: sceneNumbers }),
   }).then(async r => {
@@ -731,19 +731,18 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
       callbacks.onSceneProgress(num, "image", "generating");
       try {
         let imageBlob: Blob;
-        if (settings.imageProvider === "whisk" && settings.whiskCookie) {
+        if ((settings.imageProvider === "gemini" || settings.imageProvider === "whisk") && settings.geminiPsid) {
           const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
           const allPrompts = resumeStylePrompt
             ? rawPrompts.map(p => `${p}, ${resumeStylePrompt}`)
             : rawPrompts;
           let success = false;
-          let lastWhiskError = "All Whisk prompts failed";
+          let lastWhiskError = "All Gemini prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateWhiskImage(
-                prompt, settings.whiskCookie,
-                styleUrls.length ? styleUrls : undefined,
-                styleUrls.length ? projectId : undefined
+              imageBlob = await generateGeminiImage(
+                prompt, settings.geminiPsid,
+                settings.geminiPsidts
               );
               success = true;
               break;
@@ -754,10 +753,10 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
           }
           if (!success) throw new Error(lastWhiskError);
         } else {
-          throw new Error("No image provider configured. Please set up Whisk in Settings.");
+          throw new Error("No image provider configured. Please set up Gemini in Settings.");
         }
 
-        const ext = settings.imageProvider === "whisk" ? "png" : "svg";
+        const ext = "png";
         const fd = new FormData();
         fd.append("file", imageBlob!, `${num}.${ext}`);
         await fetch(`${API_BASE}/assets/${projectId}/images/${num}.${ext}`, { method: "POST", body: fd });
