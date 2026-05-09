@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, bulkRegeneratePending, bulkGenerateMissingAudio, checkAndFixImages, syncAudioStatus, deleteProject, stopProject, resumeProject, runClientSidePipeline, startAnimateScenes, getAnimateStatus, type PipelineCallbacks } from "@/lib/api";
+import { getProject, getAssetUrl, getDownloadUrl, bulkRegenerateFailed, bulkGenerateMissingAudio, checkAndFixImages, syncAudioStatus, deleteProject, stopProject, resumeProject, runClientSidePipeline, startAnimateScenes, getAnimateStatus, type PipelineCallbacks } from "@/lib/api";
+import { useGeneration } from "@/lib/GenerationContext";
 import type { Project, Scene } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,14 +42,12 @@ export default function ProjectStatus() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeScene, setActiveScene] = useState<number | undefined>();
-  const [bulkRetrying, setBulkRetrying] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
+  const { state: genState, startImageGeneration, startRetry } = useGeneration();
+  const genActive = genState.isRunning && genState.projectId === projectId;
   const [bulkRetryingAudio, setBulkRetryingAudio] = useState(false);
   const [bulkAudioProgress, setBulkAudioProgress] = useState({ done: 0, total: 0 });
   const [bulkGeneratingAudio, setBulkGeneratingAudio] = useState(false);
   const [bulkAudioGenerateProgress, setBulkAudioGenerateProgress] = useState({ done: 0, total: 0 });
-  const [bulkGenerating, setBulkGenerating] = useState(false);
-  const [bulkGenerateProgress, setBulkGenerateProgress] = useState({ done: 0, total: 0 });
   const [checkingImages, setCheckingImages] = useState(false);
   const [checkProgress, setCheckProgress] = useState({ done: 0, total: 0, bad: 0 });
   const [syncingAudio, setSyncingAudio] = useState(false);
@@ -81,17 +80,23 @@ export default function ProjectStatus() {
   }, [fetchData]);
 
   useEffect(() => {
-    // Keep refreshing while the pipeline is active OR while there's still incomplete work
-    // (covers partial status where client-side retries are ongoing)
     const hasPending = scenes.some(
       s => s.image_status === "pending" || s.audio_status === "pending" ||
            s.image_status === "generating" || s.audio_status === "generating"
     );
-    const isActive = project?.status === "processing" || project?.status === "created" || hasPending;
+    const isActive = project?.status === "processing" || project?.status === "created" || hasPending ||
+      (genState.isRunning && genState.projectId === projectId);
     if (!isActive) return;
     const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
-  }, [fetchData, project?.status, scenes]);
+  }, [fetchData, project?.status, scenes, genState.isRunning, genState.projectId, projectId]);
+
+  // Refresh scene list each time the context finishes a scene for this project
+  useEffect(() => {
+    if (genState.projectId === projectId && genState.done > 0) {
+      fetchData();
+    }
+  }, [genState.done, genState.projectId, projectId, fetchData]);
 
   useEffect(() => {
     if (clientPipelineStarted.current) return;
@@ -147,19 +152,9 @@ export default function ProjectStatus() {
   const pendingImageScenes = scenes.filter(s => s.image_status !== "completed");
   const hasPendingWork = scenes.some(s => s.image_status === "pending" || s.audio_status === "pending" || s.image_status === "failed" || s.audio_status === "failed");
 
-  const handleBulkRetry = async () => {
+  const handleBulkRetry = () => {
     if (!projectId) return;
-    setBulkRetrying(true);
-    setBulkProgress({ done: 0, total: failedScenes.length });
-    try {
-      await bulkRegenerateFailed(projectId, failedScenes, (done, total) => {
-        setBulkProgress({ done, total });
-        fetchData();
-      });
-    } finally {
-      setBulkRetrying(false);
-      fetchData();
-    }
+    startRetry(projectId, failedScenes);
   };
 
   const handleBulkRetryAudio = async () => {
@@ -209,22 +204,9 @@ export default function ProjectStatus() {
     }
   };
 
-  const handleGeneratePending = async () => {
+  const handleGeneratePending = () => {
     if (!projectId) return;
-    setBulkGenerating(true);
-    setBulkGenerateProgress({ done: 0, total: pendingImageScenes.length });
-    try {
-      await bulkRegeneratePending(projectId, pendingImageScenes, (done, total) => {
-        setBulkGenerateProgress({ done, total });
-        fetchData();
-      });
-      toast.success("Images generated");
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setBulkGenerating(false);
-      fetchData();
-    }
+    startImageGeneration(projectId, pendingImageScenes);
   };
 
   const handleCheckImages = async () => {
@@ -488,7 +470,7 @@ export default function ProjectStatus() {
               <Button
                 variant="outline"
                 onClick={handleCheckImages}
-                disabled={checkingImages || bulkGenerating || bulkRetrying || project.status === "processing"}
+                disabled={checkingImages || genActive || project.status === "processing"}
                 className="text-sm"
               >
                 {checkingImages ? (
@@ -501,20 +483,20 @@ export default function ProjectStatus() {
                 <Button
                   variant="default"
                   onClick={handleGeneratePending}
-                  disabled={bulkGenerating || bulkRetrying || checkingImages || project.status === "processing"}
+                  disabled={genActive || checkingImages || project.status === "processing"}
                   className="text-sm"
                 >
-                  {bulkGenerating ? (
-                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Generating {bulkGenerateProgress.done}/{bulkGenerateProgress.total}</>
+                  {genActive && genState.trigger === "image" ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Generating {genState.done}/{genState.total}</>
                   ) : (
                     <><RefreshCw className="h-4 w-4 mr-2" /> Generate All Missing Images ({pendingImageScenes.length})</>
                   )}
                 </Button>
               )}
               {failedScenes.length > 0 && (
-                <Button variant="outline" onClick={handleBulkRetry} disabled={bulkRetrying || project.status === "processing"} className="text-sm">
-                  {bulkRetrying ? (
-                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Retrying {bulkProgress.done}/{bulkProgress.total}</>
+                <Button variant="outline" onClick={handleBulkRetry} disabled={genActive || project.status === "processing"} className="text-sm">
+                  {genActive && genState.trigger === "retry" ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Retrying {genState.done}/{genState.total}</>
                   ) : (
                     <><RefreshCw className="h-4 w-4 mr-2" /> Retry All Failed ({failedScenes.length})</>
                   )}

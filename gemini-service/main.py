@@ -21,7 +21,7 @@ async def get_client(psid: str, psidts: str) -> GeminiClient:
     global _cached_client, _cached_chat, _cached_psid, _cached_psidts
     if _cached_client is None or _cached_psid != psid or _cached_psidts != psidts:
         client = GeminiClient(psid, psidts, proxy=None)
-        await client.init(timeout=30, auto_close=False, auto_refresh=True)
+        await client.init(timeout=120, auto_close=False, auto_refresh=True)
         _cached_client = client
         _cached_chat = None  # reset chat when credentials change
         _cached_psid = psid
@@ -67,21 +67,30 @@ async def reset_chat():
 
 @app.post("/generate-image")
 async def generate_image(req: ImageRequest):
-    try:
-        chat = await get_chat(req.psid, req.psidts)
-        response = await chat.send_message(f"Generate an image: {req.prompt}")
-        images = list(response.images)
-        if not images:
-            raise HTTPException(status_code=500, detail="No images in Gemini response")
-        with tempfile.TemporaryDirectory() as tmpdir:
-            await images[0].save(path=tmpdir, filename="output.png")
-            img_bytes = (Path(tmpdir) / "output.png").read_bytes()
-        return {"image_base64": base64.b64encode(img_bytes).decode()}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("generate_image failed")
-        raise HTTPException(status_code=500, detail="Image generation failed")
+    global _cached_chat
+    last_error = "Image generation failed"
+    for attempt in range(2):
+        try:
+            chat = await get_chat(req.psid, req.psidts)
+            response = await chat.send_message(f"Generate an image: {req.prompt}")
+            images = list(response.images)
+            if not images:
+                raise HTTPException(status_code=500, detail="No images in Gemini response")
+            with tempfile.TemporaryDirectory() as tmpdir:
+                await images[0].save(path=tmpdir, filename="output.png")
+                img_bytes = (Path(tmpdir) / "output.png").read_bytes()
+            return {"image_base64": base64.b64encode(img_bytes).decode()}
+        except HTTPException:
+            raise
+        except Exception as e:
+            last_error = str(e)
+            if attempt == 0 and ("timeout" in last_error.lower() or "aborted" in last_error.lower()):
+                logger.warning("generate_image timed out — resetting chat and retrying")
+                _cached_chat = None
+                continue
+            logger.exception("generate_image failed")
+            break
+    raise HTTPException(status_code=500, detail=last_error)
 
 
 @app.post("/generate-video")
