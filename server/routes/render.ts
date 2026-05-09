@@ -7,7 +7,7 @@ import path from "path";
 import fs from "fs";
 import { execSync, spawn } from "child_process";
 import archiver from "archiver";
-import { animateWhiskImage } from "../lib/whisk.js";
+import { animateGeminiVideo } from "../lib/gemini.js";
 
 const router = express.Router();
 const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -348,8 +348,9 @@ router.get("/:id/clips/zip", async (req: Request, res: Response) => {
  */
 router.post("/:id/animate", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);
-  const cookie = req.headers["x-whisk-cookie"] as string;
-  if (!cookie) return res.status(400).json({ error: "Whisk cookie required (x-whisk-cookie header)" });
+  const psid = req.headers["x-gemini-psid"] as string;
+  const psidts = (req.headers["x-gemini-psidts"] as string) || "";
+  if (!psid) return res.status(400).json({ error: "Gemini cookies required (x-gemini-psid header)" });
 
   const sceneNums = (req.body?.scenes as number[]) || [];
   if (sceneNums.length === 0) return res.status(400).json({ error: "No scenes provided" });
@@ -361,7 +362,7 @@ router.post("/:id/animate", async (req: Request, res: Response) => {
   animateJobs[projectId] = { status: "animating", progress: 0, done: 0, total: toAnimate.length, sceneErrors: {} };
   res.json({ success: true, total: toAnimate.length });
 
-  animateScenes(projectId, sceneNums, allScenes, cookie).catch(e => {
+  animateScenes(projectId, sceneNums, allScenes, psid, psidts).catch(e => {
     animateJobs[projectId] = { ...animateJobs[projectId], status: "failed", error: e.message };
   });
 });
@@ -437,9 +438,10 @@ router.get("/:id/animate/zip", (req: Request, res: Response) => {
 router.post("/:id/auto", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);
   const resKey = req.body?.resolution === "480p" ? "480p" : "720p";
-  const whiskCookie: string | undefined = req.body?.whiskCookie || undefined;
+  const geminiPsid: string | undefined = req.body?.geminiPsid || undefined;
+  const geminiPsidts: string | undefined = req.body?.geminiPsidts || undefined;
   res.json({ success: true, message: "Auto pipeline started in background" });
-  runAutoPipeline(projectId, resKey, whiskCookie).catch(e => {
+  runAutoPipeline(projectId, resKey, geminiPsid, geminiPsidts).catch(e => {
     console.error(`[auto] ${projectId} failed:`, e.message);
     if (autoJobs[projectId]) autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: e.message };
   });
@@ -729,7 +731,7 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
  * Full auto-pipeline: poll until all assets ready → animate with Veo (if cookie provided)
  * → generate clips → merge. Runs entirely in-process; browser can be closed.
  */
-async function runAutoPipeline(projectId: string, resKey: "480p" | "720p", whiskCookie?: string) {
+async function runAutoPipeline(projectId: string, resKey: "480p" | "720p", geminiPsid?: string, geminiPsidts?: string) {
   const [W, H] = RESOLUTIONS[resKey];
   autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
   console.log(`[auto] ${projectId}: waiting for assets (${resKey})`);
@@ -760,13 +762,13 @@ async function runAutoPipeline(projectId: string, resKey: "480p" | "720p", whisk
     return;
   }
 
-  // ── Veo animation (if Whisk cookie provided) ──────────────────────────────
-  if (whiskCookie) {
+  // ── Gemini video animation (if Gemini cookies provided) ──────────────────
+  if (geminiPsid) {
     console.log(`[auto] ${projectId}: animating ${ready.length} scenes with Veo`);
     autoJobs[projectId] = { ...autoJobs[projectId], status: "animating" as any };
     animateJobs[projectId] = { status: "animating", progress: 0, done: 0, total: ready.length, sceneErrors: {} };
     const sceneNums = ready.map(s => s.scene_number);
-    await animateScenes(projectId, sceneNums, ready, whiskCookie).catch(e => {
+    await animateScenes(projectId, sceneNums, ready, geminiPsid, geminiPsidts || "").catch(e => {
       console.warn(`[auto] ${projectId}: Veo animation failed (continuing with stills): ${e.message}`);
     });
   }
@@ -789,7 +791,8 @@ async function animateScenes(
   projectId: string,
   sceneNumbers: number[],
   sceneList: any[],
-  cookie: string
+  psid: string,
+  psidts: string
 ) {
   const videosDir = path.join("uploads", projectId, "videos");
   fs.mkdirSync(videosDir, { recursive: true });
@@ -805,7 +808,7 @@ async function animateScenes(
     }
     const videoPath = path.join(videosDir, `${num}.mp4`);
     try {
-      const buf = await animateWhiskImage(img, cookie, s.image_prompt || "");
+      const buf = await animateGeminiVideo(img, psid, psidts, s.image_prompt || "");
       fs.writeFileSync(videoPath, buf);
       done++;
       animateJobs[projectId].done = done;
