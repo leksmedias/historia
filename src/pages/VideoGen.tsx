@@ -52,11 +52,12 @@ export default function VideoGen() {
       );
       // Kick off the full background pipeline: images → Veo animate → clips → merge
       setPhaseLabel("Starting background pipeline...");
-      const whiskCookie = settings.whiskCookie || undefined;
+      const geminiPsid = settings.geminiPsid || undefined;
+      const geminiPsidts = settings.geminiPsidts || undefined;
       await fetch(`/api/render/${pid}/auto`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resolution, whiskCookie }),
+        body: JSON.stringify({ resolution, geminiPsid, geminiPsidts }),
       });
       // Safe to leave / close browser — server handles everything
       navigate(`/projects/${pid}`);

@@ -428,15 +428,15 @@ export default function ProjectPreview() {
   const handleAnimateScenes = async () => {
     if (!projectId || animateSelected.size === 0) return;
     const settings = loadProviderSettings();
-    if (!settings.whiskCookie) { toast.error("Whisk cookie not configured in Settings"); return; }
+    if (!settings.geminiPsid) { toast.error("Gemini cookies not configured in Settings"); return; }
     setAnimateError(null);
     setAnimateStatus("animating");
     setAnimateProgress(0);
     try {
-      const { total } = await startAnimateScenes(projectId, Array.from(animateSelected), settings.whiskCookie);
+      const { total } = await startAnimateScenes(projectId, Array.from(animateSelected), settings.geminiPsid, settings.geminiPsidts || "");
       setAnimateTotal(total);
       setAnimateDone(0);
-      toast.success(`Animating ${total} scenes with Veo…`);
+      toast.success(`Animating ${total} scenes with Gemini…`);
       startAnimatePolling(projectId);
     } catch (e: any) {
       setAnimateStatus("failed");

@@ -109,9 +109,9 @@ export default function ProjectStatus() {
     if (!hasPendingScenes) return;
 
     const settings = loadProviderSettings();
-    const canRunClient = settings.imageProvider !== "whisk" || !!settings.whiskCookie;
+    const canRunClient = settings.imageProvider !== "gemini" || !!settings.geminiPsid;
     if (!canRunClient) {
-      toast.error("Whisk cookie not configured. Add it in Settings to generate images.");
+      toast.error("Gemini cookies not configured. Add them in Settings to generate images.");
       return;
     }
 
@@ -251,10 +251,10 @@ export default function ProjectStatus() {
   const handleAnimate = async (sceneNumber: number) => {
     if (!projectId) return;
     const settings = loadProviderSettings();
-    if (!settings.whiskCookie) { toast.error("Whisk cookie not configured in Settings"); return; }
+    if (!settings.geminiPsid) { toast.error("Gemini cookies not configured in Settings"); return; }
     setAnimatingScenes(prev => new Set(prev).add(sceneNumber));
     try {
-      await startAnimateScenes(projectId, [sceneNumber], settings.whiskCookie);
+      await startAnimateScenes(projectId, [sceneNumber], settings.geminiPsid, settings.geminiPsidts || "");
       // Poll until this scene's animation is done
       for (let i = 0; i < 120; i++) {
         await new Promise(r => setTimeout(r, 3000));

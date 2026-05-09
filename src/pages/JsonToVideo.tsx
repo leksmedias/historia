@@ -56,7 +56,7 @@ export default function JsonToVideo() {
 
   const { scenes: parsedScenes, error: parseError } = parseSceneJson(jsonInput);
 
-  const missingWhisk = !settings.whiskCookie;
+  const missingGemini = !settings.geminiPsid;
   const missingInworld = !settings.inworldApiKey;
 
   const canSubmit = !loading && parsedScenes.length > 0 && title.trim().length > 0;
@@ -73,7 +73,7 @@ export default function JsonToVideo() {
       const fd = new FormData();
       fd.append("title", title.trim());
       fd.append("script", parsedScenes.map((s) => s.narration_text).join(" "));
-      fd.append("imageProvider", currentSettings.imageProvider || "whisk");
+      fd.append("imageProvider", currentSettings.imageProvider || "gemini");
       fd.append("ttsProvider", currentSettings.ttsProvider || "inworld");
       fd.append("voiceId", voiceId);
       fd.append("modelId", currentSettings.modelId || "inworld-tts-1.5-max");
@@ -147,13 +147,13 @@ export default function JsonToVideo() {
         </div>
 
         {/* Provider warnings */}
-        {(missingWhisk || missingInworld) && (
+        {(missingGemini || missingInworld) && (
           <div className="space-y-2">
-            {missingWhisk && (
+            {missingGemini && (
               <Alert className="border-warning/30 bg-warning/5">
                 <AlertTriangle className="h-4 w-4 text-warning" />
                 <AlertDescription className="text-warning">
-                  Whisk cookie not configured — images cannot be generated.{" "}
+                  Gemini cookies not configured — images cannot be generated.{" "}
                   <a href="/settings" className="underline">Go to Settings</a>
                 </AlertDescription>
               </Alert>
