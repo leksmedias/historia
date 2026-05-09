@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,11 +28,13 @@ interface Props {
   isAnimated?: boolean;
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, elapsed }: { status: string; elapsed?: number }) {
   if (status === "completed")
     return <Badge className="bg-success/20 text-success border-success/30"><CheckCircle2 className="h-3 w-3 mr-1" />Done</Badge>;
   if (status === "failed")
     return <Badge variant="destructive"><AlertTriangle className="h-3 w-3 mr-1" />Failed</Badge>;
+  if (status === "generating")
+    return <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Generating{elapsed != null ? ` ${elapsed}s` : "…"}</Badge>;
   return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
 }
 
@@ -41,6 +43,21 @@ export default function SceneCard({ scene, projectId, onRefresh, onAnimate, isAn
   const [regenAudio, setRegenAudio] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [imgErrorUrl, setImgErrorUrl] = useState<string | null>(null);
+  const [imgElapsed, setImgElapsed] = useState(0);
+  const imgElapsedRef = useRef(0);
+
+  useEffect(() => {
+    if (scene.image_status !== "generating") {
+      imgElapsedRef.current = 0;
+      setImgElapsed(0);
+      return;
+    }
+    const id = setInterval(() => {
+      imgElapsedRef.current += 1;
+      setImgElapsed(imgElapsedRef.current);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [scene.image_status]);
 
   // Editable fields
   const [editingField, setEditingField] = useState<"script" | "tts" | "prompt" | null>(null);
@@ -208,7 +225,7 @@ export default function SceneCard({ scene, projectId, onRefresh, onAnimate, isAn
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground"><ImageIcon className="h-4 w-4" /> Image</div>
-                <StatusBadge status={scene.image_status} />
+                <StatusBadge status={scene.image_status} elapsed={scene.image_status === "generating" ? imgElapsed : undefined} />
               </div>
               <div className="aspect-video rounded-md overflow-hidden bg-secondary border border-border">
                 {imgUrl && !hasImgError ? (
