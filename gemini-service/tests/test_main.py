@@ -1,7 +1,11 @@
 import base64
+import os
 import pytest
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
+
+from main import app
 
 
 @pytest.fixture
@@ -12,7 +16,9 @@ def mock_image_bytes():
 @pytest.mark.asyncio
 async def test_generate_image_returns_base64(mock_image_bytes):
     mock_image = AsyncMock()
-    mock_image.save = AsyncMock(side_effect=lambda path, filename: open(f"{path}/{filename}", "wb").write(mock_image_bytes))
+    mock_image.save = AsyncMock(
+        side_effect=lambda path, filename: Path(os.path.join(path, filename)).write_bytes(mock_image_bytes)
+    )
 
     mock_response = MagicMock()
     mock_response.images = [mock_image]
@@ -20,8 +26,7 @@ async def test_generate_image_returns_base64(mock_image_bytes):
     mock_client = AsyncMock()
     mock_client.generate_content = AsyncMock(return_value=mock_response)
 
-    with patch("main.get_client", return_value=mock_client):
-        from main import app
+    with patch("main.get_client", new=AsyncMock(return_value=mock_client)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.post("/generate-image", json={
                 "prompt": "A medieval castle at sunset",
@@ -43,8 +48,7 @@ async def test_generate_image_no_images_returns_500():
     mock_client = AsyncMock()
     mock_client.generate_content = AsyncMock(return_value=mock_response)
 
-    with patch("main.get_client", return_value=mock_client):
-        from main import app
+    with patch("main.get_client", new=AsyncMock(return_value=mock_client)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.post("/generate-image", json={
                 "prompt": "A scene",

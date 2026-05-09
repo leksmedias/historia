@@ -1,4 +1,5 @@
 import base64
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -8,18 +9,21 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from gemini_webapi import GeminiClient
 
+logger = logging.getLogger(__name__)
+
 _cached_client: Optional[GeminiClient] = None
 _cached_psid: Optional[str] = None
+_cached_psidts: Optional[str] = None
 
 
 async def get_client(psid: str, psidts: str) -> GeminiClient:
-    global _cached_client, _cached_psid
-    if _cached_client is None or _cached_psid != psid:
+    global _cached_client, _cached_psid, _cached_psidts
+    if _cached_client is None or _cached_psid != psid or _cached_psidts != psidts:
         client = GeminiClient(psid, psidts, proxy=None)
-        cookie_path = os.environ.get("GEMINI_COOKIE_PATH", None)
         await client.init(timeout=30, auto_close=False, auto_refresh=True)
         _cached_client = client
         _cached_psid = psid
+        _cached_psidts = psidts
     return _cached_client
 
 
@@ -59,7 +63,8 @@ async def generate_image(req: ImageRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("generate_image failed")
+        raise HTTPException(status_code=500, detail="Image generation failed")
 
 
 @app.post("/generate-video")
@@ -68,6 +73,10 @@ async def generate_video(req: VideoRequest):
         image_path = Path(req.image_path)
         if not image_path.exists():
             raise HTTPException(status_code=400, detail=f"Image not found: {req.image_path}")
+        uploads_root = Path(os.environ.get("UPLOADS_DIR", "uploads")).resolve()
+        resolved = image_path.resolve()
+        if not str(resolved).startswith(str(uploads_root)):
+            raise HTTPException(status_code=400, detail="Invalid image path")
         client = await get_client(req.psid, req.psidts)
         response = await client.generate_content(
             f"Generate a short cinematic video: {req.prompt}",
@@ -83,4 +92,5 @@ async def generate_video(req: VideoRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("generate_video failed")
+        raise HTTPException(status_code=500, detail="Video generation failed")
