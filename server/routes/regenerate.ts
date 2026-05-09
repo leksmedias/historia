@@ -4,7 +4,7 @@ import { projects, scenes } from "../../shared/schema";
 import { eq } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
-import { generateWhiskImageWithRefs, getStyleImagePaths } from "../lib/whisk";
+import { generateGeminiImage } from "../lib/gemini.js";
 
 const router = Router();
 
@@ -30,7 +30,7 @@ async function generateInworldAudio(text: string, apiKey: string, voiceId: strin
 
 router.post("/", async (req: Request, res: Response) => {
   try {
-    const { projectId, sceneNumber, type, voiceOverride } = req.body;
+    const { projectId, sceneNumber, type, voiceOverride, geminiPsid, geminiPsidts } = req.body;
 
     const [scene] = await db.select().from(scenes)
       .where(eq(scenes.project_id, projectId))
@@ -39,7 +39,6 @@ router.post("/", async (req: Request, res: Response) => {
 
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
     const settings = (project?.settings as any) || {};
-    const imageProvider = settings.imageProvider || "whisk";
     const ttsProvider = settings.ttsProvider || "inworld";
     const voiceId = voiceOverride || scene.voice_id || settings.voiceId || "Dennis";
     const modelId = settings.modelId || "inworld-tts-1.5-max";
@@ -51,23 +50,14 @@ router.post("/", async (req: Request, res: Response) => {
       const regenStylePrompt: string | undefined = settings.stylePrompt;
 
       try {
-        if (imageProvider === "whisk") {
-          const cookie = process.env.WHISK_COOKIE;
-          if (!cookie) throw new Error("WHISK_COOKIE not configured");
-          const stylePaths = regenStylePrompt ? [] : getStyleImagePaths(projectId);
-          const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
-          const allPrompts = regenStylePrompt
-            ? rawPrompts.map((p: string) => `${p}, ${regenStylePrompt}`)
-            : rawPrompts;
-          let bytes: Uint8Array | null = null;
-          for (const prompt of allPrompts) {
-            try { bytes = await generateWhiskImageWithRefs(prompt, cookie, stylePaths); break; } catch (e: any) { console.error(`Whisk prompt failed: ${e.message}`); }
-          }
-          if (!bytes) throw new Error("All Whisk prompts failed");
-          fs.writeFileSync(path.join(imgDir, `${sceneNumber}.png`), bytes);
-        } else {
-          throw new Error("No image provider configured. Set imageProvider to 'whisk' in project settings.");
-        }
+        if (!geminiPsid || !geminiPsidts) throw new Error("Gemini credentials required. Pass geminiPsid and geminiPsidts in request body.");
+        const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
+        const prompt = regenStylePrompt
+          ? `${rawPrompts[0]}, ${regenStylePrompt}`
+          : rawPrompts[0];
+        const base64 = await generateGeminiImage(prompt, geminiPsid, geminiPsidts);
+        const bytes = Buffer.from(base64, "base64");
+        fs.writeFileSync(path.join(imgDir, `${sceneNumber}.png`), bytes);
         await db.update(scenes).set({
           image_status: "completed",
           image_attempts: (scene.image_attempts || 0) + 1,

@@ -433,7 +433,7 @@ router.get("/:id/animate/zip", (req: Request, res: Response) => {
  * POST /api/render/:id/auto
  * Full background pipeline: wait for assets → (optionally) animate with Veo → generate clips → merge.
  * Returns immediately; runs entirely server-side.
- * Body: { resolution?, whiskCookie? }
+ * Body: { resolution?, geminiPsid?, geminiPsidts? }
  */
 router.post("/:id/auto", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);

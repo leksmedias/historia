@@ -5,7 +5,6 @@ import { eq, desc, or, gt } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { createWhiskProject, generateImageFromProject, getStyleImagePaths } from "../lib/whisk";
 
 const router = Router();
 
@@ -230,7 +229,6 @@ async function runAssetPipeline(projectId: string) {
     if (!project) return;
 
     const settings = (project.settings as any) || {};
-    const imageProvider: string = settings.imageProvider || "whisk";
     const ttsProvider: string = settings.ttsProvider || "mock";
     const voiceId: string = settings.voiceId || "Dennis";
     const modelId: string = settings.modelId || "inworld-tts-1.5-max";
@@ -244,7 +242,7 @@ async function runAssetPipeline(projectId: string) {
       return;
     }
 
-    console.log(`${projectId}: Starting asset pipeline for ${sceneList.length} scenes (image=${imageProvider}, tts=${ttsProvider})`);
+    console.log(`${projectId}: Starting asset pipeline for ${sceneList.length} scenes (tts=${ttsProvider})`);
 
     let imagesCompleted = 0, audioCompleted = 0, imagesFailed = 0, audioFailed = 0;
     let stopped = false;
@@ -264,67 +262,9 @@ async function runAssetPipeline(projectId: string) {
       return false;
     };
 
-    const stylePrompt: string | undefined = settings.stylePrompt;
-
-    // Create Whisk project once and reuse for all scenes (avoids N×3 redundant setup API calls)
-    let whiskProject: any = null;
-    let whiskRefsAdded = 0;
-    if (imageProvider === "whisk") {
-      const cookie = process.env.WHISK_COOKIE;
-      if (!cookie) throw new Error("WHISK_COOKIE not set in environment");
-      // Style-prompt mode skips image refs entirely; just create a bare project
-      const stylePaths = stylePrompt ? [] : getStyleImagePaths(projectId);
-      ({ project: whiskProject, refsAdded: whiskRefsAdded } = await createWhiskProject(cookie, stylePaths));
-      console.log(`${projectId}: Whisk project created, reusing for all ${sceneList.length} scenes${stylePrompt ? " (style-prompt mode)" : ""}`);
-    }
-
-    // Phase 1: Generate images — 3 at a time
+    // Phase 1: Images are generated client-side via Gemini sidecar; skip here
     const imgDir = path.join("uploads", projectId, "images");
     fs.mkdirSync(imgDir, { recursive: true });
-
-    const imageQueue = [...sceneList];
-    const imageWorkers = Array(Math.min(3, sceneList.length)).fill(null).map(async () => {
-      while (imageQueue.length > 0) {
-        if (await checkStopped()) return;
-        const scene = imageQueue.shift()!;
-        const num = scene.scene_number;
-        try {
-          if (imageProvider === "whisk") {
-            const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])].filter(Boolean);
-            const allPrompts = stylePrompt
-              ? rawPrompts.map((p: string) => `${p}, ${stylePrompt}`)
-              : rawPrompts;
-            let bytes: Uint8Array | null = null;
-            let lastWhiskError = "All Whisk prompts failed";
-            for (const prompt of allPrompts) {
-              try {
-                bytes = await generateImageFromProject(whiskProject, prompt, whiskRefsAdded);
-                break;
-              } catch (e: any) {
-                lastWhiskError = e.message;
-                console.error(`${projectId} scene ${num}: Whisk prompt failed: ${e.message}`);
-                if (e.message.includes("auth expired") || e.message.includes("Unauthorized") || e.message.includes("expired")) break;
-              }
-            }
-            if (!bytes) throw new Error(lastWhiskError);
-            fs.writeFileSync(path.join(imgDir, `${num}.png`), bytes);
-          } else {
-            throw new Error("No image provider configured. Set imageProvider to 'whisk' in project settings.");
-          }
-          await db.update(scenes).set({ image_status: "completed", image_attempts: 1 })
-            .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
-          imagesCompleted++;
-          console.log(`${projectId}: Scene ${num} image done (${imagesCompleted}/${sceneList.length})`);
-        } catch (e: any) {
-          console.error(`${projectId} scene ${num}: Image failed: ${e.message}`);
-          await db.update(scenes).set({ image_status: "failed", image_attempts: 1, image_error: e.message, needs_review: true })
-            .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
-          imagesFailed++;
-        }
-        await updateStats();
-      }
-    });
-    await Promise.all(imageWorkers);
 
     if (stopped) return;
 
@@ -409,9 +349,6 @@ async function runMissingImageGeneration(projectId: string) {
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
     if (!project) return;
 
-    const settings = (project.settings as any) || {};
-    const imageProvider: string = settings.imageProvider || "whisk";
-
     const allScenes = await db.select().from(scenes)
       .where(eq(scenes.project_id, projectId))
       .orderBy(scenes.scene_number);
@@ -431,19 +368,6 @@ async function runMissingImageGeneration(projectId: string) {
     const imgDir = path.join("uploads", projectId, "images");
     fs.mkdirSync(imgDir, { recursive: true });
 
-    const missingStylePrompt: string | undefined = settings.stylePrompt;
-
-    // Create Whisk project once and reuse across all missing scenes (avoids N redundant setup calls)
-    let whiskProject: any = null;
-    let whiskRefsAdded = 0;
-    if (imageProvider === "whisk") {
-      const cookie = process.env.WHISK_COOKIE;
-      if (!cookie) throw new Error("WHISK_COOKIE not set in environment");
-      const stylePaths = missingStylePrompt ? [] : getStyleImagePaths(projectId);
-      ({ project: whiskProject, refsAdded: whiskRefsAdded } = await createWhiskProject(cookie, stylePaths));
-      console.log(`${projectId}: generate-missing Whisk project created, reusing for ${targets.length} scene(s)${missingStylePrompt ? " (style-prompt mode)" : ""}`);
-    }
-
     let stopped = false;
     const checkStopped = async (): Promise<boolean> => {
       if (stopped) return true;
@@ -459,31 +383,7 @@ async function runMissingImageGeneration(projectId: string) {
         const scene = queue.shift()!;
         const num = scene.scene_number;
         try {
-          if (imageProvider === "whisk") {
-            const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])].filter(Boolean);
-            const allPrompts = missingStylePrompt
-              ? rawPrompts.map((p: string) => `${p}, ${missingStylePrompt}`)
-              : rawPrompts;
-            let bytes: Uint8Array | null = null;
-            let lastError = "All Whisk prompts failed";
-            for (const prompt of allPrompts) {
-              try {
-                bytes = await generateImageFromProject(whiskProject, prompt, whiskRefsAdded);
-                break;
-              } catch (e: any) {
-                lastError = e.message;
-                console.error(`${projectId} scene ${num}: Whisk prompt failed: ${e.message}`);
-                if (e.message.includes("auth expired") || e.message.includes("Unauthorized") || e.message.includes("expired")) break;
-              }
-            }
-            if (!bytes) throw new Error(lastError);
-            fs.writeFileSync(path.join(imgDir, `${num}.png`), bytes);
-            await db.update(scenes)
-              .set({ image_status: "completed", image_file: `${num}.png`, image_attempts: (scene.image_attempts || 0) + 1, image_error: null, needs_review: false })
-              .where(eq(scenes.project_id, projectId)).where(eq(scenes.scene_number, num));
-          } else {
-            throw new Error("No image provider configured. Set imageProvider to 'whisk' in project settings.");
-          }
+          throw new Error("Server-side image generation not supported. Use the project page to regenerate images via Gemini.");
           console.log(`${projectId}: generate-missing scene ${num} image done`);
         } catch (e: any) {
           console.error(`${projectId} scene ${num}: generate-missing failed: ${e.message}`);
@@ -608,13 +508,11 @@ router.post("/:id/scenes", async (req: Request, res: Response) => {
 
     await db.insert(scenes).values(sceneRows);
 
-    const hasWhiskCookie = !!process.env.WHISK_COOKIE;
     const hasInworldKey = !!process.env.INWORLD_API_KEY;
     const projectSettings = (await db.select({ settings: projects.settings }).from(projects).where(eq(projects.id, projectId)))[0]?.settings as any;
-    const imageProvider = projectSettings?.imageProvider || "whisk";
     const ttsProvider = projectSettings?.ttsProvider || "inworld";
 
-    const serverCanHandleImages = imageProvider === "whisk" && hasWhiskCookie;
+    const serverCanHandleImages = false; // Images are generated client-side via Gemini
     const serverCanHandleAudio = ttsProvider === "inworld" && hasInworldKey;
     const serverPipeline = serverCanHandleImages && serverCanHandleAudio;
 
