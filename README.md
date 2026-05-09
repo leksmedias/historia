@@ -30,16 +30,24 @@ SSH into your VPS and run:
 ```bash
 cd /opt/historia
 git pull
+chmod +x start.sh
 npm run setup
 npm run build
 systemctl restart historia-3001   # replace 3001 with your port
-```
-
-Check it's running:
-
-```bash
 journalctl -u historia-3001 -n 30
 ```
+
+### First-time upgrade from a pre-Gemini install
+
+If the service was installed before the Gemini sidecar was added, update the systemd service file once:
+
+```bash
+sed -i 's|^ExecStart=.*|ExecStart=/opt/historia/start.sh|' /etc/systemd/system/historia-3001.service
+systemctl daemon-reload
+systemctl restart historia-3001
+```
+
+This changes the startup command from the old direct Node.js call to `start.sh`, which launches both the Node.js server and the Gemini Python sidecar together.
 
 ## Overview
 
@@ -242,7 +250,7 @@ systemctl stop historia-3001
 nano /opt/historia/.env
 
 # Update to latest version
-cd /opt/historia && git pull && npm run setup && npm run build && systemctl restart historia-3001
+cd /opt/historia && git pull && chmod +x start.sh && npm run setup && npm run build && systemctl restart historia-3001
 ```
 
 ## Nginx Reverse Proxy (optional)
