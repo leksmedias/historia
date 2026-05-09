@@ -19,7 +19,8 @@ export interface ProviderSettings {
   groqApiKey: string;
   anthropicApiKey: string;
   claudeModel: string;
-  whiskCookie: string;
+  geminiPsid: string;
+  geminiPsidts: string;
   inworldApiKey: string;
   customVoices: CustomVoice[];
 }
@@ -59,7 +60,7 @@ export function getAvailableVoices(settings: ProviderSettings): InworldVoice[] {
 }
 
 const DEFAULTS: ProviderSettings = {
-  imageProvider: "ai",
+  imageProvider: "gemini",
   ttsProvider: "inworld",
   voiceId: "Dennis",
   modelId: "inworld-tts-1.5-max",
@@ -68,7 +69,8 @@ const DEFAULTS: ProviderSettings = {
   groqApiKey: "",
   anthropicApiKey: "",
   claudeModel: "claude-haiku-4-5-20251001",
-  whiskCookie: "",
+  geminiPsid: "",
+  geminiPsidts: "",
   inworldApiKey: "",
   customVoices: [],
 };
@@ -84,6 +86,25 @@ export function loadProviderSettings(): ProviderSettings {
 
 export function saveProviderSettings(settings: ProviderSettings) {
   localStorage.setItem("historia-settings", JSON.stringify(settings));
+}
+
+// ========================
+// Shared — API proxy helper
+// ========================
+
+async function whiskProxy(body: any): Promise<any> {
+  const res = await fetch(`/api/whisk-proxy`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Whisk proxy error (HTTP ${res.status}): ${errText.substring(0, 200)}`);
+  }
+  return res.json();
 }
 
 // ========================
@@ -559,121 +580,48 @@ export async function generateSceneManifest(
 }
 
 // ========================
-// Whisk — Image generation
+// Gemini — Image generation
 // ========================
 
-async function whiskProxy(body: any): Promise<any> {
-  const res = await fetch(`/api/whisk-proxy`, {
+async function geminiProxy(body: any): Promise<any> {
+  const res = await fetch(`/api/gemini-proxy`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Whisk proxy error (HTTP ${res.status}): ${errText.substring(0, 200)}`);
+    throw new Error(`Gemini proxy error (HTTP ${res.status}): ${errText.substring(0, 200)}`);
   }
   return res.json();
 }
 
-// Create a Whisk project/workflow and return the workflowId
-async function createWhiskProject(cookie: string): Promise<string> {
-  const result = await whiskProxy({
-    action: "create-project",
-    cookie,
-    payload: { name: "Historia-" + Date.now() },
-  });
-  if (result.status && result.status >= 400) {
-    throw new Error(`Whisk create-project failed (${result.status}): ${JSON.stringify(result.data).substring(0, 300)}`);
-  }
-  const workflowId = result.data?.workflowId;
-  if (!workflowId) throw new Error(`No workflowId from Whisk. Response: ${JSON.stringify(result.data).substring(0, 300)}`);
-  return workflowId;
-}
-
-// Caption an image via Whisk's backbone.captionImage
-async function captionWhiskImage(
-  rawBytes: string,
-  mediaCategory: string,
-  workflowId: string,
-  cookie: string
-): Promise<string> {
-  const result = await whiskProxy({
-    action: "caption-image",
-    cookie,
-    payload: { rawBytes, mediaCategory, workflowId },
-  });
-  if (result.status && result.status >= 400) {
-    console.warn(`Whisk caption failed (${result.status}), using empty caption`);
-    return "";
-  }
-  const caption = result.data?.candidates?.[0]?.output || "";
-  return caption;
-}
-
-// Upload an image to Whisk and get a media generation ID for use as a reference
-async function uploadToWhisk(
-  rawBytes: string,
-  caption: string,
-  mediaCategory: string,
-  workflowId: string,
-  cookie: string
-): Promise<string> {
-  const result = await whiskProxy({
-    action: "upload",
-    cookie,
-    payload: { rawBytes, caption, mediaCategory, workflowId },
-  });
-  if (result.status && result.status >= 400) {
-    throw new Error(`Whisk upload failed (${result.status}): ${JSON.stringify(result.data).substring(0, 300)}`);
-  }
-  const mediaId = result.data?.uploadMediaGenerationId;
-  if (!mediaId) throw new Error(`No uploadMediaGenerationId from Whisk. Response: ${JSON.stringify(result.data).substring(0, 300)}`);
-  return mediaId;
-}
-
-
-
-
-export async function generateWhiskImage(
+export async function generateGeminiImage(
   prompt: string,
-  cookie: string,
-  styleImageUrls?: string[],
-  projectId?: string
+  psid: string,
+  psidts: string
 ): Promise<Blob> {
-  const genResult = await whiskProxy({
+  const genResult = await geminiProxy({
     action: "generate",
-    cookie,
-    projectId,
+    psid,
+    psidts,
     payload: {
       userInput: { candidatesCount: 1, prompts: [prompt] },
-      aspectRatio: "IMAGE_ASPECT_RATIO_LANDSCAPE",
     },
   });
 
   if (genResult.status && genResult.status >= 400) {
     const detail = JSON.stringify(genResult.data || genResult).substring(0, 300);
-    console.error(`Whisk generate error ${genResult.status}:`, detail);
-    if (genResult.status === 429) throw new Error("Whisk rate limited — wait a minute and try again.");
-    if (genResult.status === 401 || genResult.status === 403) throw new Error("Whisk auth expired. Update your Whisk Cookie in Settings.");
-    throw new Error(`Whisk failed (${genResult.status}): ${detail}`);
+    console.error(`Gemini generate error ${genResult.status}:`, detail);
+    if (genResult.status === 429) throw new Error("Gemini rate limited — wait a minute and try again.");
+    if (genResult.status === 401 || genResult.status === 403) throw new Error("Gemini auth expired. Update your Gemini cookies in Settings.");
+    throw new Error(`Gemini failed (${genResult.status}): ${detail}`);
   }
 
   const encodedImage = genResult.data?.imagePanels?.[0]?.generatedImages?.[0]?.encodedImage;
-  if (!encodedImage) throw new Error("No image in Whisk response");
+  if (!encodedImage) throw new Error("No image in Gemini response");
 
   return base64ToBlob(encodedImage);
-}
-
-// Convert blob to data URL (data:image/...;base64,...) for Whisk API
-async function blobToBase64DataUrl(blob: Blob): Promise<string> {
-  const buf = await blob.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  const mimeType = blob.type || "image/png";
-  return `data:${mimeType};base64,${btoa(binary)}`;
 }
 
 function base64ToBlob(encodedImage: string): Blob {
