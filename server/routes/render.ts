@@ -343,8 +343,8 @@ router.get("/:id/clips/zip", async (req: Request, res: Response) => {
 
 /**
  * POST /api/render/:id/animate
- * Animate selected scenes using Whisk/Veo. Body: { scenes: number[] }
- * Header: x-whisk-cookie
+ * Animate selected scenes using Gemini. Body: { scenes: number[] }
+ * Headers: x-gemini-psid, x-gemini-psidts
  */
 router.post("/:id/animate", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);

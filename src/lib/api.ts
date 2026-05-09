@@ -231,7 +231,7 @@ export async function runClientSidePipeline(
             ? rawPrompts.map(p => `${p}, ${projectStylePrompt}`)
             : rawPrompts;
           let success = false;
-          let lastWhiskError = "All Gemini prompts failed";
+          let lastError = "All Gemini prompts failed";
           for (const prompt of allPrompts) {
             try {
               imageBlob = await generateGeminiImage(
@@ -241,12 +241,12 @@ export async function runClientSidePipeline(
               success = true;
               break;
             } catch (e: any) {
-              lastWhiskError = e.message;
+              lastError = e.message;
               console.error(`Gemini prompt failed: ${e.message}`);
               if (e.message.includes("auth expired") || e.message.includes("Unauthorized") || e.message.includes("expired")) break;
             }
           }
-          if (!success) throw new Error(lastWhiskError);
+          if (!success) throw new Error(lastError);
         } else {
           throw new Error("No image provider configured. Please set up Gemini in Settings.");
         }
@@ -737,7 +737,7 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
             ? rawPrompts.map(p => `${p}, ${resumeStylePrompt}`)
             : rawPrompts;
           let success = false;
-          let lastWhiskError = "All Gemini prompts failed";
+          let lastError = "All Gemini prompts failed";
           for (const prompt of allPrompts) {
             try {
               imageBlob = await generateGeminiImage(
@@ -747,11 +747,11 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
               success = true;
               break;
             } catch (e: any) {
-              lastWhiskError = e.message;
+              lastError = e.message;
               if (e.message.includes("expired") || e.message.includes("Unauthorized") || e.message.includes("rate limited")) break;
             }
           }
-          if (!success) throw new Error(lastWhiskError);
+          if (!success) throw new Error(lastError);
         } else {
           throw new Error("No image provider configured. Please set up Gemini in Settings.");
         }

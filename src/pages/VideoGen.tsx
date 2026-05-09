@@ -188,7 +188,7 @@ export default function VideoGen() {
 
               <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground space-y-1">
                 <p>Using providers from Settings:</p>
-                <p>Image: <span className="text-foreground">{settings.imageProvider || "whisk"}</span></p>
+                <p>Image: <span className="text-foreground">{settings.imageProvider || "gemini"}</span></p>
                 <p>Voice: <span className="text-foreground">{settings.ttsProvider || "inworld"}</span></p>
               </div>
             </CardContent>
