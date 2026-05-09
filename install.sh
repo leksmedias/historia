@@ -23,7 +23,7 @@ ask() {
   echo "${answer:-$default}"
 }
 
-GIT_URL="https://github.com/leksautomate/historia.git"
+GIT_URL="https://github.com/leksmedias/historia.git"
 APP_DIR="/opt/historia"
 DB_NAME="historia"
 DB_USER="historia"

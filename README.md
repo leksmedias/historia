@@ -5,7 +5,7 @@ A self-hosted web application that transforms historical scripts into cinematic 
 ## Quick Start
 
 ```bash
-git clone https://github.com/leksautomate/historia.git
+git clone https://github.com/leksmedias/historia.git
 cd historia
 npm run setup   # installs Node deps + creates Python venv + installs Python deps
 npm run dev     # builds frontend, starts Express server + Gemini Python sidecar
@@ -18,7 +18,7 @@ npm run dev     # builds frontend, starts Express server + Gemini Python sidecar
 Paste this on any Ubuntu 22.04 / Debian 12 server as root:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/leksautomate/historia/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/leksmedias/historia/main/install.sh)
 ```
 
 You'll be asked for a port (default: `3001`). Everything else is fully automated.
@@ -134,7 +134,7 @@ Historia automates the production pipeline for historical documentary content:
 ### VPS Installation (Ubuntu / Debian — recommended)
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/leksautomate/historia/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/leksmedias/historia/main/install.sh)
 ```
 
 What the script does automatically:
@@ -159,7 +159,7 @@ systemctl restart historia-3001   # replace 3001 with your port
 ### Manual Local Installation
 
 ```bash
-git clone https://github.com/leksautomate/historia.git
+git clone https://github.com/leksmedias/historia.git
 cd historia
 npm run setup          # installs Node deps + Python venv + Python deps
 # Create .env with your DATABASE_URL (see Environment Variables below)
