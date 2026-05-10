@@ -7,7 +7,6 @@ import path from "path";
 import fs from "fs";
 import { execSync, spawn } from "child_process";
 import archiver from "archiver";
-import { animateGeminiVideo } from "../lib/gemini.js";
 
 const router = express.Router();
 const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -343,28 +342,10 @@ router.get("/:id/clips/zip", async (req: Request, res: Response) => {
 
 /**
  * POST /api/render/:id/animate
- * Animate selected scenes using Gemini. Body: { scenes: number[] }
- * Headers: x-gemini-psid, x-gemini-psidts
+ * Animate selected scenes. Body: { scenes: number[] }
  */
 router.post("/:id/animate", async (req: Request, res: Response) => {
-  const projectId = (req.params.id as string);
-  const psid = req.headers["x-gemini-psid"] as string;
-  const psidts = (req.headers["x-gemini-psidts"] as string) || "";
-  if (!psid) return res.status(400).json({ error: "Gemini cookies required (x-gemini-psid header)" });
-
-  const sceneNums = (req.body?.scenes as number[]) || [];
-  if (sceneNums.length === 0) return res.status(400).json({ error: "No scenes provided" });
-
-  const allScenes = await db.select().from(scenes).where(eq(scenes.project_id, projectId)).orderBy(scenes.scene_number);
-  const toAnimate = allScenes.filter(s => sceneNums.includes(s.scene_number) && s.image_status === "completed");
-  if (toAnimate.length === 0) return res.status(400).json({ error: "No scenes with completed images to animate" });
-
-  animateJobs[projectId] = { status: "animating", progress: 0, done: 0, total: toAnimate.length, sceneErrors: {} };
-  res.json({ success: true, total: toAnimate.length });
-
-  animateScenes(projectId, sceneNums, allScenes, psid, psidts).catch(e => {
-    animateJobs[projectId] = { ...animateJobs[projectId], status: "failed", error: e.message };
-  });
+  res.status(501).json({ error: "Video animation is not configured" });
 });
 
 /** GET /api/render/:id/animate/status */
@@ -431,17 +412,15 @@ router.get("/:id/animate/zip", (req: Request, res: Response) => {
 
 /**
  * POST /api/render/:id/auto
- * Full background pipeline: wait for assets → (optionally) animate with Veo → generate clips → merge.
+ * Full background pipeline: wait for assets → generate clips → merge.
  * Returns immediately; runs entirely server-side.
- * Body: { resolution?, geminiPsid?, geminiPsidts? }
+ * Body: { resolution? }
  */
 router.post("/:id/auto", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);
   const resKey = req.body?.resolution === "480p" ? "480p" : "720p";
-  const geminiPsid: string | undefined = req.body?.geminiPsid || undefined;
-  const geminiPsidts: string | undefined = req.body?.geminiPsidts || undefined;
   res.json({ success: true, message: "Auto pipeline started in background" });
-  runAutoPipeline(projectId, resKey, geminiPsid, geminiPsidts).catch(e => {
+  runAutoPipeline(projectId, resKey).catch(e => {
     console.error(`[auto] ${projectId} failed:`, e.message);
     if (autoJobs[projectId]) autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: e.message };
   });
@@ -728,10 +707,10 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
 }
 
 /**
- * Full auto-pipeline: poll until all assets ready → animate with Veo (if cookie provided)
- * → generate clips → merge. Runs entirely in-process; browser can be closed.
+ * Full auto-pipeline: poll until all assets ready → generate clips → merge.
+ * Runs entirely in-process; browser can be closed.
  */
-async function runAutoPipeline(projectId: string, resKey: "480p" | "720p", geminiPsid?: string, geminiPsidts?: string) {
+async function runAutoPipeline(projectId: string, resKey: "480p" | "720p") {
   const [W, H] = RESOLUTIONS[resKey];
   autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
   console.log(`[auto] ${projectId}: waiting for assets (${resKey})`);
@@ -762,17 +741,6 @@ async function runAutoPipeline(projectId: string, resKey: "480p" | "720p", gemin
     return;
   }
 
-  // ── Gemini video animation (if Gemini cookies provided) ──────────────────
-  if (geminiPsid) {
-    console.log(`[auto] ${projectId}: animating ${ready.length} scenes with Veo`);
-    autoJobs[projectId] = { ...autoJobs[projectId], status: "animating" as any };
-    animateJobs[projectId] = { status: "animating", progress: 0, done: 0, total: ready.length, sceneErrors: {} };
-    const sceneNums = ready.map(s => s.scene_number);
-    await animateScenes(projectId, sceneNums, ready, geminiPsid, geminiPsidts || "").catch(e => {
-      console.warn(`[auto] ${projectId}: Veo animation failed (continuing with stills): ${e.message}`);
-    });
-  }
-
   console.log(`[auto] ${projectId}: ${ready.length} scenes ready → generating clips`);
   autoJobs[projectId].status = "generating_clips";
   clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
@@ -785,41 +753,6 @@ async function runAutoPipeline(projectId: string, resKey: "480p" | "720p", gemin
 
   autoJobs[projectId].status = "done";
   console.log(`[auto] ${projectId}: pipeline complete`);
-}
-
-async function animateScenes(
-  projectId: string,
-  sceneNumbers: number[],
-  sceneList: any[],
-  psid: string,
-  psidts: string
-) {
-  const videosDir = path.join("uploads", projectId, "videos");
-  fs.mkdirSync(videosDir, { recursive: true });
-
-  let done = 0;
-  for (const num of sceneNumbers) {
-    const s = sceneList.find((sc: any) => sc.scene_number === num);
-    if (!s) continue;
-    const img = findImageFile(projectId, num, s.image_file);
-    if (!img) {
-      console.warn(`[animate] scene ${num}: no image, skipping`);
-      continue;
-    }
-    const videoPath = path.join(videosDir, `${num}.mp4`);
-    try {
-      const buf = await animateGeminiVideo(img, psid, psidts, s.image_prompt || "");
-      fs.writeFileSync(videoPath, buf);
-      done++;
-      animateJobs[projectId].done = done;
-      animateJobs[projectId].progress = Math.round((done / sceneNumbers.length) * 100);
-      console.log(`[animate] ${projectId}: scene ${num} done (${done}/${sceneNumbers.length})`);
-    } catch (e: any) {
-      console.error(`[animate] scene ${num} failed:`, e.message);
-      animateJobs[projectId].sceneErrors[num] = e.message;
-    }
-  }
-  animateJobs[projectId] = { ...animateJobs[projectId], status: "done", progress: 100 };
 }
 
 export default router;

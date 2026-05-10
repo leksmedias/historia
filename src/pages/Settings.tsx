@@ -31,38 +31,14 @@ export default function Settings() {
   const [newVoiceName, setNewVoiceName] = useState("");
   const [showGroq, setShowGroq] = useState(false);
   const [showAnthropic, setShowAnthropic] = useState(false);
-  const [showGeminiPsid, setShowGeminiPsid] = useState(false);
-  const [showGeminiPsidts, setShowGeminiPsidts] = useState(false);
   const [showInworld, setShowInworld] = useState(false);
 
   const [groqStatus, setGroqStatus] = useState<HealthStatus>("idle");
   const [groqMsg, setGroqMsg] = useState("");
-  const [geminiStatus, setGeminiStatus] = useState<HealthStatus>("idle");
-  const [geminiMsg, setGeminiMsg] = useState("");
   const [inworldStatus, setInworldStatus] = useState<HealthStatus>("idle");
   const [inworldMsg, setInworldMsg] = useState("");
   const [renderStatus, setRenderStatus] = useState<HealthStatus>("idle");
   const [renderMsg, setRenderMsg] = useState("");
-
-  const parseCookieField = (raw: string, primary: "psid" | "psidts") => {
-    if (!raw.includes(";") && !raw.includes("__Secure-1PSID=")) {
-      return primary === "psid"
-        ? setSettings(s => ({ ...s, geminiPsid: raw }))
-        : setSettings(s => ({ ...s, geminiPsidts: raw }));
-    }
-    const extract = (name: string) => {
-      const m = raw.match(new RegExp(`(?:^|;)\\s*${name}=([^;]+)`));
-      return m ? m[1].trim() : "";
-    };
-    const psid = extract("__Secure-1PSID");
-    const psidts = extract("__Secure-1PSIDTS");
-    setSettings(s => ({
-      ...s,
-      ...(psid ? { geminiPsid: psid } : {}),
-      ...(psidts ? { geminiPsidts: psidts } : {}),
-    }));
-    if (psid || psidts) setGeminiStatus("idle");
-  };
 
   const save = () => {
     saveProviderSettings(settings);
@@ -82,24 +58,6 @@ export default function Settings() {
       setGroqStatus("ok");
     } catch (e: any) {
       setGroqStatus("error"); setGroqMsg(e.message?.includes("fetch") ? "Network error" : e.message);
-    }
-  };
-
-  const testGemini = async () => {
-    if (!settings.geminiPsid) { setGeminiStatus("error"); setGeminiMsg("No __Secure-1PSID provided"); return; }
-    setGeminiStatus("checking"); setGeminiMsg("");
-    try {
-      const res = await fetch(`/api/gemini-proxy`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "session" }),
-      });
-      if (!res.ok) { setGeminiStatus("error"); setGeminiMsg(`Proxy error: HTTP ${res.status}`); return; }
-      const result = await res.json();
-      if (result.status && result.status >= 400) { setGeminiStatus("error"); setGeminiMsg(`HTTP ${result.status}`); return; }
-      setGeminiStatus("ok");
-    } catch (e: any) {
-      setGeminiStatus("error"); setGeminiMsg(e.message?.includes("fetch") ? "Network error" : e.message);
     }
   };
 
@@ -139,7 +97,7 @@ export default function Settings() {
     }
   };
 
-  const testAll = () => { testGroq(); testGemini(); testInworld(); testRenderApi(); };
+  const testAll = () => { testGroq(); testInworld(); testRenderApi(); };
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "connections", label: "Connections", icon: <Key className="h-4 w-4" /> },
@@ -287,48 +245,6 @@ export default function Settings() {
 
               <div className="border-t border-border" />
 
-              {/* Gemini */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-foreground">Gemini Cookies</label>
-                  <div className="flex items-center gap-2">
-                    <StatusIndicator status={geminiStatus} message={geminiMsg} />
-                    <Button variant="ghost" size="sm" onClick={testGemini} className="text-xs h-7">
-                      {geminiStatus === "checking" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    type={showGeminiPsid ? "text" : "password"}
-                    placeholder="__Secure-1PSID value — or paste full cookie string here"
-                    value={settings.geminiPsid}
-                    onChange={(e) => { parseCookieField(e.target.value, "psid"); setGeminiStatus("idle"); }}
-                    className="bg-secondary flex-1"
-                  />
-                  <Button variant="ghost" size="icon" onClick={() => setShowGeminiPsid(!showGeminiPsid)}>
-                    {showGeminiPsid ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    type={showGeminiPsidts ? "text" : "password"}
-                    placeholder="__Secure-1PSIDTS value"
-                    value={settings.geminiPsidts}
-                    onChange={(e) => { parseCookieField(e.target.value, "psidts"); setGeminiStatus("idle"); }}
-                    className="bg-secondary flex-1"
-                  />
-                  <Button variant="ghost" size="icon" onClick={() => setShowGeminiPsidts(!showGeminiPsidts)}>
-                    {showGeminiPsidts ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Go to <strong>gemini.google.com</strong>, F12 → Network → any request → copy the full <code>cookie:</code> header and paste it into the first field — both values are extracted automatically. Or paste each value individually.
-                </p>
-              </div>
-
-              <div className="border-t border-border" />
-
               {/* Inworld */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -380,9 +296,6 @@ export default function Settings() {
                     <SelectItem value="gemini">Gemini (Nano Banana)</SelectItem>
                   </SelectContent>
                 </Select>
-                {settings.imageProvider === "gemini" && !settings.geminiPsid && (
-                  <p className="text-xs text-destructive">⚠ Gemini cookies required — configure them in the Connections tab</p>
-                )}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">

@@ -30,7 +30,7 @@ async function generateInworldAudio(text: string, apiKey: string, voiceId: strin
 
 router.post("/", async (req: Request, res: Response) => {
   try {
-    const { projectId, sceneNumber, type, voiceOverride, geminiPsid, geminiPsidts } = req.body;
+    const { projectId, sceneNumber, type, voiceOverride } = req.body;
 
     const [scene] = await db.select().from(scenes)
       .where(eq(scenes.project_id, projectId))
@@ -50,12 +50,11 @@ router.post("/", async (req: Request, res: Response) => {
       const regenStylePrompt: string | undefined = settings.stylePrompt;
 
       try {
-        if (!geminiPsid || !geminiPsidts) throw new Error("Gemini credentials required. Pass geminiPsid and geminiPsidts in request body.");
         const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
         const prompt = regenStylePrompt
           ? `${rawPrompts[0]}, ${regenStylePrompt}`
           : rawPrompts[0];
-        const base64 = await generateGeminiImage(prompt, geminiPsid, geminiPsidts);
+        const base64 = await generateGeminiImage(prompt);
         const bytes = Buffer.from(base64, "base64");
         fs.writeFileSync(path.join(imgDir, `${sceneNumber}.png`), bytes);
         await db.update(scenes).set({

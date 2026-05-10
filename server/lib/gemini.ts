@@ -1,45 +1,41 @@
 import path from "path";
 
-const GEMINI_SERVICE_URL = (process.env.GEMINI_SERVICE_URL || "http://localhost:3060").replace(/\/$/, "");
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const MODEL_ID = process.env.IMAGEN_MODEL_ID || "imagen-3.0-generate-002";
 
-export async function generateGeminiImage(
-  prompt: string,
-  psid: string,
-  psidts: string
-): Promise<string> {
-  const res = await fetch(`${GEMINI_SERVICE_URL}/generate-image`, {
+export async function generateGeminiImage(prompt: string): Promise<string> {
+  if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set in .env");
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:predict?key=${GEMINI_API_KEY}`;
+
+  const body = {
+    instances: [{ prompt }],
+    parameters: {
+      aspectRatio: "16:9",
+      sampleCount: 1,
+      personGeneration: "allow_all",
+      safetySettings: "block_few",
+      addWatermark: false,
+      language: "auto",
+    },
+  };
+
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, psid, psidts }),
-    signal: AbortSignal.timeout(240_000),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120_000),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(`Gemini image failed: ${(err as any).detail}`);
-  }
-  const data = await res.json() as { image_base64: string };
-  return data.image_base64;
-}
 
-export async function animateGeminiVideo(
-  imagePath: string,
-  psid: string,
-  psidts: string,
-  prompt: string
-): Promise<Buffer> {
-  const absPath = path.isAbsolute(imagePath) ? imagePath : path.resolve(imagePath);
-  const res = await fetch(`${GEMINI_SERVICE_URL}/generate-video`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, image_path: absPath, psid, psidts }),
-    signal: AbortSignal.timeout(300_000),
-  });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(`Gemini video failed: ${(err as any).detail}`);
+    const err = await res.text();
+    throw new Error(`Imagen API failed ${res.status}: ${err.slice(0, 300)}`);
   }
-  const data = await res.json() as { video_base64: string };
-  return Buffer.from(data.video_base64, "base64");
+
+  const data = (await res.json()) as { predictions: Array<{ bytesBase64Encoded: string }> };
+  const img = data.predictions?.[0]?.bytesBase64Encoded;
+  if (!img) throw new Error("No image in Imagen response");
+  return img;
 }
 
 export function getStyleImagePaths(projectId: string): string[] {

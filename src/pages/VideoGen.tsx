@@ -50,14 +50,12 @@ export default function VideoGen() {
           onStats: () => {},
         }
       );
-      // Kick off the full background pipeline: images → Veo animate → clips → merge
+      // Kick off the full background pipeline: images → clips → merge
       setPhaseLabel("Starting background pipeline...");
-      const geminiPsid = settings.geminiPsid || undefined;
-      const geminiPsidts = settings.geminiPsidts || undefined;
       await fetch(`/api/render/${pid}/auto`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resolution, geminiPsid, geminiPsidts }),
+        body: JSON.stringify({ resolution }),
       });
       // Safe to leave / close browser — server handles everything
       navigate(`/projects/${pid}`);

@@ -2,39 +2,24 @@ import { Router, Request, Response } from "express";
 import { generateGeminiImage } from "../lib/gemini.js";
 
 const router = Router();
-const GEMINI_SERVICE_URL = (process.env.GEMINI_SERVICE_URL || "http://localhost:3060").replace(/\/$/, "");
 
 router.post("/", async (req: Request, res: Response) => {
   try {
-    const { action, payload, apiKey, psid, psidts } = req.body;
+    const { action, payload, apiKey } = req.body;
 
     if (action === "generate") {
       const promptText: string = payload?.userInput?.prompts?.[0] || payload?.prompt || "";
       if (!promptText) return res.json({ status: 400, data: { error: "prompt required" } });
-      if (!psid) return res.json({ status: 400, data: { error: "psid required" } });
 
       try {
-        const imageBase64 = await generateGeminiImage(promptText, psid, psidts || "");
+        const imageBase64 = await generateGeminiImage(promptText);
         return res.json({
           status: 200,
           data: { imagePanels: [{ generatedImages: [{ encodedImage: imageBase64 }] }] },
         });
       } catch (e: any) {
         console.error("[gemini-proxy] generate error:", e.message);
-        const isAuthError = e.message?.includes("401") || e.message?.includes("403");
-        const isRateLimit = e.message?.includes("429") || e.message?.includes("1097") || e.message?.includes("Status: 0") || e.message?.includes("timeout");
-        const status = isAuthError ? 401 : isRateLimit ? 429 : 500;
-        return res.json({ status, data: { error: e.message } });
-      }
-    }
-
-    if (action === "session") {
-      try {
-        const healthRes = await fetch(`${GEMINI_SERVICE_URL}/health`);
-        if (healthRes.ok) return res.json({ status: 200, data: { authenticated: true } });
-        return res.status(503).json({ error: "Gemini service unreachable" });
-      } catch {
-        return res.status(503).json({ error: "Gemini service unreachable" });
+        return res.json({ status: 500, data: { error: e.message } });
       }
     }
 

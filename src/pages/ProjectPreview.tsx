@@ -428,12 +428,11 @@ export default function ProjectPreview() {
   const handleAnimateScenes = async () => {
     if (!projectId || animateSelected.size === 0) return;
     const settings = loadProviderSettings();
-    if (!settings.geminiPsid) { toast.error("Gemini cookies not configured in Settings"); return; }
     setAnimateError(null);
     setAnimateStatus("animating");
     setAnimateProgress(0);
     try {
-      const { total } = await startAnimateScenes(projectId, Array.from(animateSelected), settings.geminiPsid, settings.geminiPsidts || "");
+      const { total } = await startAnimateScenes(projectId, Array.from(animateSelected));
       setAnimateTotal(total);
       setAnimateDone(0);
       toast.success(`Animating ${total} scenes with Gemini…`);

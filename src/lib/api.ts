@@ -225,25 +225,20 @@ export async function runClientSidePipeline(
       try {
         let imageBlob: Blob;
         if (settings.imageProvider === "gemini" || settings.imageProvider === "whisk") {
-          if (!settings.geminiPsid) throw new Error("Gemini cookies not configured. Add them in Settings.");
           const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts || [])];
           const allPrompts = projectStylePrompt
             ? rawPrompts.map(p => `${p}, ${projectStylePrompt}`)
             : rawPrompts;
           let success = false;
-          let lastError = "All Gemini prompts failed";
+          let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateGeminiImage(
-                prompt, settings.geminiPsid,
-                settings.geminiPsidts
-              );
+              imageBlob = await generateGeminiImage(prompt);
               success = true;
               break;
             } catch (e: any) {
               lastError = e.message;
-              console.error(`Gemini prompt failed: ${e.message}`);
-              if (e.message.includes("auth expired") || e.message.includes("Unauthorized") || e.message.includes("expired")) break;
+              console.error(`Imagen prompt failed: ${e.message}`);
             }
           }
           if (!success) throw new Error(lastError);
@@ -369,7 +364,7 @@ export async function regenerateAssetFrontend(
 
     try {
       let imageBlob: Blob;
-      if ((settings.imageProvider === "gemini" || settings.imageProvider === "whisk") && settings.geminiPsid) {
+      if (settings.imageProvider === "gemini" || settings.imageProvider === "whisk") {
         const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
         const allPrompts = regenStylePrompt
           ? rawPrompts.map(p => `${p}, ${regenStylePrompt}`)
@@ -378,15 +373,12 @@ export async function regenerateAssetFrontend(
         let lastError = "";
         for (const prompt of allPrompts) {
           try {
-            imageBlob = await generateGeminiImage(
-              prompt, settings.geminiPsid,
-              settings.geminiPsidts
-            );
+            imageBlob = await generateGeminiImage(prompt);
             success = true;
             break;
           } catch (e: any) {
             lastError = e.message;
-            if (e.message.includes("expired") || e.message.includes("rate limited") || e.message.includes("CORS")) break;
+            if (e.message.includes("rate limited")) break;
           }
         }
         if (!success) throw new Error(lastError || "All image generation attempts failed.");
@@ -652,17 +644,11 @@ export function getRenderDownloadUrl(projectId: string): string {
 
 export async function startAnimateScenes(
   projectId: string,
-  sceneNumbers: number[],
-  geminiPsid: string,
-  geminiPsidts: string
+  sceneNumbers: number[]
 ): Promise<{ total: number }> {
   return fetch(`${API_BASE}/render/${projectId}/animate`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-gemini-psid": geminiPsid,
-      "x-gemini-psidts": geminiPsidts,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scenes: sceneNumbers }),
   }).then(async r => {
     if (!r.ok) {
@@ -731,24 +717,21 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
       callbacks.onSceneProgress(num, "image", "generating");
       try {
         let imageBlob: Blob;
-        if ((settings.imageProvider === "gemini" || settings.imageProvider === "whisk") && settings.geminiPsid) {
+        if (settings.imageProvider === "gemini" || settings.imageProvider === "whisk") {
           const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
           const allPrompts = resumeStylePrompt
             ? rawPrompts.map(p => `${p}, ${resumeStylePrompt}`)
             : rawPrompts;
           let success = false;
-          let lastError = "All Gemini prompts failed";
+          let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateGeminiImage(
-                prompt, settings.geminiPsid,
-                settings.geminiPsidts
-              );
+              imageBlob = await generateGeminiImage(prompt);
               success = true;
               break;
             } catch (e: any) {
               lastError = e.message;
-              if (e.message.includes("expired") || e.message.includes("Unauthorized") || e.message.includes("rate limited")) break;
+              if (e.message.includes("rate limited")) break;
             }
           }
           if (!success) throw new Error(lastError);

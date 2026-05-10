@@ -56,7 +56,6 @@ export default function JsonToVideo() {
 
   const { scenes: parsedScenes, error: parseError } = parseSceneJson(jsonInput);
 
-  const missingGemini = !settings.geminiPsid;
   const missingInworld = !settings.inworldApiKey;
 
   const canSubmit = !loading && parsedScenes.length > 0 && title.trim().length > 0;
@@ -147,27 +146,14 @@ export default function JsonToVideo() {
         </div>
 
         {/* Provider warnings */}
-        {(missingGemini || missingInworld) && (
-          <div className="space-y-2">
-            {missingGemini && (
-              <Alert className="border-warning/30 bg-warning/5">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <AlertDescription className="text-warning">
-                  Gemini cookies not configured — images cannot be generated.{" "}
-                  <a href="/settings" className="underline">Go to Settings</a>
-                </AlertDescription>
-              </Alert>
-            )}
-            {missingInworld && (
-              <Alert className="border-warning/30 bg-warning/5">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <AlertDescription className="text-warning">
-                  Inworld API key not configured — audio cannot be generated.{" "}
-                  <a href="/settings" className="underline">Go to Settings</a>
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
+        {missingInworld && (
+          <Alert className="border-warning/30 bg-warning/5">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <AlertDescription className="text-warning">
+              Inworld API key not configured — audio cannot be generated.{" "}
+              <a href="/settings" className="underline">Go to Settings</a>
+            </AlertDescription>
+          </Alert>
         )}
 
         <Card className="border-border/50 glow-gold">

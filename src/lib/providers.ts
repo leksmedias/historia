@@ -19,8 +19,6 @@ export interface ProviderSettings {
   groqApiKey: string;
   anthropicApiKey: string;
   claudeModel: string;
-  geminiPsid: string;
-  geminiPsidts: string;
   inworldApiKey: string;
   customVoices: CustomVoice[];
 }
@@ -69,8 +67,6 @@ const DEFAULTS: ProviderSettings = {
   groqApiKey: "",
   anthropicApiKey: "",
   claudeModel: "claude-haiku-4-5-20251001",
-  geminiPsid: "",
-  geminiPsidts: "",
   inworldApiKey: "",
   customVoices: [],
 };
@@ -583,17 +579,9 @@ export async function generateSceneManifest(
 // Gemini — Image generation
 // ========================
 
-const geminiProxy = apiProxy;
-
-export async function generateGeminiImage(
-  prompt: string,
-  psid: string,
-  psidts: string
-): Promise<Blob> {
-  const genResult = await geminiProxy({
+export async function generateGeminiImage(prompt: string): Promise<Blob> {
+  const genResult = await apiProxy({
     action: "generate",
-    psid,
-    psidts,
     payload: {
       userInput: { candidatesCount: 1, prompts: [prompt] },
     },
@@ -602,9 +590,8 @@ export async function generateGeminiImage(
   if (genResult.status && genResult.status >= 400) {
     const detail = JSON.stringify(genResult.data || genResult).substring(0, 300);
     console.error(`Gemini generate error ${genResult.status}:`, detail);
-    if (genResult.status === 429) throw new Error("Gemini rate limited — wait a minute and try again.");
-    if (genResult.status === 401 || genResult.status === 403) throw new Error("Gemini auth expired. Update your Gemini cookies in Settings.");
-    throw new Error(`Gemini failed (${genResult.status}): ${detail}`);
+    if (genResult.status === 429) throw new Error("Imagen rate limited — wait a minute and try again.");
+    throw new Error(`Imagen failed (${genResult.status}): ${detail}`);
   }
 
   const encodedImage = genResult.data?.imagePanels?.[0]?.generatedImages?.[0]?.encodedImage;
