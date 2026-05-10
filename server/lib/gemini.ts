@@ -15,7 +15,6 @@ function getAccessToken(): string {
 }
 
 export async function generateGeminiImage(prompt: string): Promise<string> {
-  const accessToken = getAccessToken();
   const url = `https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${LOCATION_ID}/publishers/google/models/${MODEL_ID}:predict`;
 
   const body = {
@@ -35,27 +34,45 @@ export async function generateGeminiImage(prompt: string): Promise<string> {
     },
   };
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(120_000),
-  });
+  const delays = [10_000, 20_000, 30_000];
+  let lastError = "";
 
-  if (!res.ok) {
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    const accessToken = getAccessToken();
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as { predictions: Array<{ bytesBase64Encoded: string }> };
+      const img = data.predictions?.[0]?.bytesBase64Encoded;
+      if (!img) throw new Error("No image in Imagen response");
+      return img;
+    }
+
     const err = await res.text();
-    if (res.status === 429) throw new Error("Imagen rate limited — try again in a moment.");
-    if (res.status === 401 || res.status === 403) throw new Error("Vertex AI auth failed — run: gcloud auth login --no-browser");
+    if (res.status === 401 || res.status === 403) {
+      throw new Error("Vertex AI auth failed — run: gcloud auth login --no-browser");
+    }
+    if (res.status === 429) {
+      lastError = `Rate limited (attempt ${attempt + 1})`;
+      if (attempt < delays.length) {
+        console.warn(`[imagen] 429 rate limit — retrying in ${delays[attempt] / 1000}s`);
+        await new Promise(r => setTimeout(r, delays[attempt]));
+        continue;
+      }
+      throw new Error("Imagen rate limited after 4 attempts — check your Vertex AI quota at console.cloud.google.com");
+    }
     throw new Error(`Imagen API failed ${res.status}: ${err.slice(0, 200)}`);
   }
 
-  const data = (await res.json()) as { predictions: Array<{ bytesBase64Encoded: string }> };
-  const img = data.predictions?.[0]?.bytesBase64Encoded;
-  if (!img) throw new Error("No image in Imagen response");
-  return img;
+  throw new Error(lastError || "Imagen generation failed");
 }
 
 export function getStyleImagePaths(projectId: string): string[] {
