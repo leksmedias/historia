@@ -5,7 +5,7 @@ import fs from "fs";
 const PROJECT_ID = process.env.VERTEX_PROJECT_ID || "project-f3847793-8610-4a16-945";
 // Veo is only available in us-central1 (not europe-west4)
 const VEO_LOCATION = process.env.VEO_LOCATION_ID || "us-central1";
-const VEO_MODEL = process.env.VEO_MODEL_ID || "veo-2.0-generate-001";
+const VEO_MODEL = process.env.VEO_MODEL_ID || "veo-3.1-lite-generate-001";
 const API_ENDPOINT = `${VEO_LOCATION}-aiplatform.googleapis.com`;
 
 function getAccessToken(): string {
@@ -44,6 +44,9 @@ export async function generateVeoClip(
       aspectRatio: "16:9",
       sampleCount: 1,
       durationSeconds: 8,
+      resolution: "720p",
+      personGeneration: "allow_all",
+      generateAudio: false,
     },
   };
 
