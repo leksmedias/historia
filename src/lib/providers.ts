@@ -21,6 +21,7 @@ export interface ProviderSettings {
   claudeModel: string;
   inworldApiKey: string;
   customVoices: CustomVoice[];
+  skipImageGeneration: boolean;
 }
 
 export interface InworldVoice {
@@ -69,6 +70,7 @@ const DEFAULTS: ProviderSettings = {
   claudeModel: "claude-haiku-4-5-20251001",
   inworldApiKey: "",
   customVoices: [],
+  skipImageGeneration: false,
 };
 
 export function loadProviderSettings(): ProviderSettings {

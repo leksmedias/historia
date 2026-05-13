@@ -220,7 +220,7 @@ export async function runClientSidePipeline(
     const imageAlreadyDone = sceneAny.image_status === "completed";
     const audioAlreadyDone = sceneAny.audio_status === "completed";
 
-    if (!imageAlreadyDone) {
+    if (!imageAlreadyDone && !settings.skipImageGeneration) {
       callbacks.onSceneProgress(num, "image", "generating");
       try {
         let imageBlob: Blob;

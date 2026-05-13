@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Plus, Trash2, Key, Server, Mic } from "lucide-react";
@@ -307,6 +308,16 @@ export default function Settings() {
                   min={1} max={5} step={1}
                 />
                 <p className="text-xs text-muted-foreground">Number of images generated in parallel</p>
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <div>
+                  <label className="text-sm font-medium text-foreground">Generate Images</label>
+                  <p className="text-xs text-muted-foreground">Turn off to skip image generation for new projects</p>
+                </div>
+                <Switch
+                  checked={!settings.skipImageGeneration}
+                  onCheckedChange={(checked) => setSettings(s => ({ ...s, skipImageGeneration: !checked }))}
+                />
               </div>
             </CardContent>
           </Card>
