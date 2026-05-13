@@ -3,9 +3,10 @@ import path from "path";
 import fs from "fs";
 
 const PROJECT_ID = process.env.VERTEX_PROJECT_ID || "project-f3847793-8610-4a16-945";
-const LOCATION_ID = process.env.VERTEX_LOCATION_ID || "europe-west4";
-const VEO_MODEL = "veo-3.0-fast-preview";
-const API_ENDPOINT = `${LOCATION_ID}-aiplatform.googleapis.com`;
+// Veo is only available in us-central1 (not europe-west4)
+const VEO_LOCATION = process.env.VEO_LOCATION_ID || "us-central1";
+const VEO_MODEL = process.env.VEO_MODEL_ID || "veo-2.0-generate-001";
+const API_ENDPOINT = `${VEO_LOCATION}-aiplatform.googleapis.com`;
 
 function getAccessToken(): string {
   try {
@@ -32,7 +33,7 @@ export async function generateVeoClip(
   const ext = path.extname(imagePath).toLowerCase();
   const mimeType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
 
-  const url = `https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${LOCATION_ID}/publishers/google/models/${VEO_MODEL}:predictLongRunning`;
+  const url = `https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${VEO_LOCATION}/publishers/google/models/${VEO_MODEL}:predictLongRunning`;
 
   const body = {
     instances: [{
