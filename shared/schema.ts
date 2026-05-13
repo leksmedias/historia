@@ -32,6 +32,8 @@ export const scenes = pgTable("scenes", {
   audio_attempts: integer("audio_attempts").notNull().default(0),
   image_error: text("image_error"),
   audio_error: text("audio_error"),
+  video_status: text("video_status").notNull().default("none"),
+  video_error: text("video_error"),
   needs_review: boolean("needs_review").notNull().default(false),
   voice_id: text("voice_id"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
