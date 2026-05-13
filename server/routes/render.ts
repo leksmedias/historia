@@ -669,6 +669,7 @@ async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<voi
   let done = 0;
   let head = 0;
   const VEO_CONCURRENCY = 2;
+  const job = animateJobs[projectId];
 
   async function worker(): Promise<void> {
     while (true) {
@@ -679,8 +680,8 @@ async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<voi
 
       const imgPath = findImageFile(projectId, num, s.image_file);
       if (!imgPath) {
-        animateJobs[projectId].sceneErrors[num] = "Image file not found";
-        animateJobs[projectId].progress = Math.round((++done / total) * 100);
+        job.sceneErrors[num] = "Image file not found";
+        job.progress = Math.round((++done / total) * 100);
         await db.update(scenes)
           .set({ video_status: "failed", video_error: "Image file not found" })
           .where(eq(scenes.id, s.id));
@@ -690,6 +691,9 @@ async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<voi
       const outPath = path.join("uploads", projectId, "videos", `${num}.mp4`);
 
       try {
+        await db.update(scenes)
+          .set({ video_status: "animating", video_error: null })
+          .where(eq(scenes.id, s.id));
         console.log(`[veo] ${projectId}: scene ${num} animating`);
         await generateVeoClip(imgPath, s.image_prompt || "", outPath);
 
@@ -697,13 +701,14 @@ async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<voi
           .set({ video_status: "completed", video_error: null })
           .where(eq(scenes.id, s.id));
 
-        animateJobs[projectId].done = ++done;
-        animateJobs[projectId].progress = Math.round((done / total) * 100);
-        console.log(`[veo] ${projectId}: scene ${num} done (${done}/${total})`);
+        const d = ++done;
+        job.done = d;
+        job.progress = Math.round((d / total) * 100);
+        console.log(`[veo] ${projectId}: scene ${num} done (${d}/${total})`);
       } catch (e: any) {
         console.error(`[veo] ${projectId}: scene ${num} failed:`, e.message);
-        animateJobs[projectId].sceneErrors[num] = e.message;
-        animateJobs[projectId].progress = Math.round((++done / total) * 100);
+        job.sceneErrors[num] = e.message;
+        job.progress = Math.round((++done / total) * 100);
 
         await db.update(scenes)
           .set({ video_status: "failed", video_error: e.message })
@@ -713,7 +718,8 @@ async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<voi
   }
 
   await Promise.all(Array.from({ length: VEO_CONCURRENCY }, worker));
-  animateJobs[projectId] = { ...animateJobs[projectId], status: "done", progress: 100 };
+  job.status = "done";
+  job.progress = 100;
   console.log(`[veo] ${projectId}: animation complete`);
 }
 

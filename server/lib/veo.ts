@@ -79,6 +79,10 @@ async function pollVeoOperation(operationName: string, outPath: string): Promise
     });
 
     if (!pollRes.ok) {
+      if (pollRes.status === 429 || pollRes.status >= 500) {
+        console.warn(`[veo] poll transient error ${pollRes.status}, retrying...`);
+        continue;
+      }
       throw new Error(`Veo poll failed: ${pollRes.status} ${await pollRes.text()}`);
     }
 
