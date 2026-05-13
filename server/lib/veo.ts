@@ -1,0 +1,103 @@
+import { execSync } from "child_process";
+import path from "path";
+import fs from "fs";
+
+const PROJECT_ID = process.env.VERTEX_PROJECT_ID || "project-f3847793-8610-4a16-945";
+const LOCATION_ID = process.env.VERTEX_LOCATION_ID || "europe-west4";
+const VEO_MODEL = "veo-3.0-fast-preview";
+const API_ENDPOINT = `${LOCATION_ID}-aiplatform.googleapis.com`;
+
+function getAccessToken(): string {
+  try {
+    return execSync("gcloud auth print-access-token", { encoding: "utf8" }).trim();
+  } catch {
+    throw new Error("Failed to get gcloud access token — run: gcloud auth application-default login --no-browser");
+  }
+}
+
+/**
+ * Animate an image to an 8-second video clip using Veo 3.0-fast-preview.
+ * Saves the result to outPath. Throws on failure or timeout.
+ *
+ * Audio sync note: the caller (buildVeoClip in render.ts) handles
+ * speed adjustment when audio > 8s via setpts — no looping needed.
+ */
+export async function generateVeoClip(
+  imagePath: string,
+  prompt: string,
+  outPath: string
+): Promise<void> {
+  const imageBytes = fs.readFileSync(imagePath);
+  const imageBase64 = imageBytes.toString("base64");
+  const ext = path.extname(imagePath).toLowerCase();
+  const mimeType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
+
+  const url = `https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${LOCATION_ID}/publishers/google/models/${VEO_MODEL}:predictLongRunning`;
+
+  const body = {
+    instances: [{
+      prompt,
+      image: { bytesBase64Encoded: imageBase64, mimeType },
+    }],
+    parameters: {
+      aspectRatio: "16:9",
+      sampleCount: 1,
+      durationSeconds: 8,
+    },
+  };
+
+  const token = getAccessToken();
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Veo request failed: ${res.status} ${text}`);
+  }
+
+  const operation = (await res.json()) as { name: string };
+  if (!operation.name) throw new Error("Veo returned no operation name");
+
+  await pollVeoOperation(operation.name, outPath);
+}
+
+async function pollVeoOperation(operationName: string, outPath: string): Promise<void> {
+  const pollUrl = `https://${API_ENDPOINT}/v1/${operationName}`;
+  const MAX_POLLS = 60; // 60 × 5 s = 5 min max
+
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await new Promise(r => setTimeout(r, 5_000));
+
+    const token = getAccessToken();
+    const pollRes = await fetch(pollUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!pollRes.ok) {
+      throw new Error(`Veo poll failed: ${pollRes.status} ${await pollRes.text()}`);
+    }
+
+    const op = (await pollRes.json()) as {
+      done?: boolean;
+      error?: { message: string };
+      response?: { predictions: Array<{ bytesBase64Encoded: string }> };
+    };
+
+    if (op.error) throw new Error(`Veo generation failed: ${op.error.message}`);
+
+    if (op.done) {
+      const videoBase64 = op.response?.predictions?.[0]?.bytesBase64Encoded;
+      if (!videoBase64) throw new Error("Veo returned no video data in predictions");
+      fs.mkdirSync(path.dirname(outPath), { recursive: true });
+      fs.writeFileSync(outPath, Buffer.from(videoBase64, "base64"));
+      return;
+    }
+  }
+
+  throw new Error("Veo generation timed out after 5 minutes");
+}
