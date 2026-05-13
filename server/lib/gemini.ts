@@ -6,6 +6,27 @@ const LOCATION_ID = process.env.VERTEX_LOCATION_ID || "europe-west4";
 const MODEL_ID = process.env.VERTEX_MODEL_ID || "imagen-4.0-fast-generate-001";
 const API_ENDPOINT = `${LOCATION_ID}-aiplatform.googleapis.com`;
 
+// Global semaphore — max 2 concurrent Imagen calls across all pipelines
+const IMAGEN_CONCURRENCY = 2;
+let activeImagenCalls = 0;
+const imagenQueue: Array<() => void> = [];
+
+function acquireImagenSlot(): Promise<void> {
+  return new Promise(resolve => {
+    if (activeImagenCalls < IMAGEN_CONCURRENCY) {
+      activeImagenCalls++;
+      resolve();
+    } else {
+      imagenQueue.push(() => { activeImagenCalls++; resolve(); });
+    }
+  });
+}
+
+function releaseImagenSlot(): void {
+  activeImagenCalls--;
+  if (imagenQueue.length > 0) imagenQueue.shift()!();
+}
+
 function getAccessToken(): string {
   try {
     return execSync("gcloud auth print-access-token", { encoding: "utf8" }).trim();
@@ -15,6 +36,15 @@ function getAccessToken(): string {
 }
 
 export async function generateGeminiImage(prompt: string): Promise<string> {
+  await acquireImagenSlot();
+  try {
+    return await _generateGeminiImage(prompt);
+  } finally {
+    releaseImagenSlot();
+  }
+}
+
+async function _generateGeminiImage(prompt: string): Promise<string> {
   const url = `https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${LOCATION_ID}/publishers/google/models/${MODEL_ID}:predict`;
 
   const body = {
