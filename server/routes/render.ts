@@ -7,6 +7,7 @@ import path from "path";
 import fs from "fs";
 import { execSync, spawn } from "child_process";
 import archiver from "archiver";
+import { generateVeoClip } from "../lib/veo.js";
 
 const router = express.Router();
 const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -345,7 +346,41 @@ router.get("/:id/clips/zip", async (req: Request, res: Response) => {
  * Animate selected scenes. Body: { scenes: number[] }
  */
 router.post("/:id/animate", async (req: Request, res: Response) => {
-  res.status(501).json({ error: "Video animation is not configured" });
+  const projectId = req.params.id as string;
+  const sceneNumbers: number[] = req.body?.scenes || [];
+
+  try {
+    const allScenes = await db.select().from(scenes)
+      .where(eq(scenes.project_id, projectId))
+      .orderBy(scenes.scene_number);
+
+    const toAnimate = sceneNumbers.length > 0
+      ? allScenes.filter(s => sceneNumbers.includes(s.scene_number) && s.image_status === "completed")
+      : allScenes.filter(s => s.image_status === "completed");
+
+    if (toAnimate.length === 0) {
+      return res.status(400).json({ error: "No scenes with completed images to animate" });
+    }
+
+    animateJobs[projectId] = {
+      status: "animating",
+      progress: 0,
+      done: 0,
+      total: toAnimate.length,
+      sceneErrors: {},
+    };
+
+    res.json({ success: true, total: toAnimate.length });
+
+    runVeoAnimation(projectId, toAnimate).catch(e => {
+      console.error(`[veo] ${projectId} failed:`, e.message);
+      if (animateJobs[projectId]) {
+        animateJobs[projectId] = { ...animateJobs[projectId], status: "failed", error: e.message };
+      }
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /** GET /api/render/:id/animate/status */
@@ -627,6 +662,59 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
 
   clipJobs[projectId] = { ...clipJobs[projectId], status: "done", progress: 100 };
   console.log(`[clips] ${projectId}: all clips done → ${clipsDir}`);
+}
+
+async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<void> {
+  const total = sceneList.length;
+  let done = 0;
+  let head = 0;
+  const VEO_CONCURRENCY = 2;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const idx = head++;
+      if (idx >= sceneList.length) break;
+      const s = sceneList[idx];
+      const num = s.scene_number;
+
+      const imgPath = findImageFile(projectId, num, s.image_file);
+      if (!imgPath) {
+        animateJobs[projectId].sceneErrors[num] = "Image file not found";
+        animateJobs[projectId].progress = Math.round((++done / total) * 100);
+        await db.update(scenes)
+          .set({ video_status: "failed", video_error: "Image file not found" })
+          .where(eq(scenes.id, s.id));
+        continue;
+      }
+
+      const outPath = path.join("uploads", projectId, "videos", `${num}.mp4`);
+
+      try {
+        console.log(`[veo] ${projectId}: scene ${num} animating`);
+        await generateVeoClip(imgPath, s.image_prompt || "", outPath);
+
+        await db.update(scenes)
+          .set({ video_status: "completed", video_error: null })
+          .where(eq(scenes.id, s.id));
+
+        animateJobs[projectId].done = ++done;
+        animateJobs[projectId].progress = Math.round((done / total) * 100);
+        console.log(`[veo] ${projectId}: scene ${num} done (${done}/${total})`);
+      } catch (e: any) {
+        console.error(`[veo] ${projectId}: scene ${num} failed:`, e.message);
+        animateJobs[projectId].sceneErrors[num] = e.message;
+        animateJobs[projectId].progress = Math.round((++done / total) * 100);
+
+        await db.update(scenes)
+          .set({ video_status: "failed", video_error: e.message })
+          .where(eq(scenes.id, s.id));
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: VEO_CONCURRENCY }, worker));
+  animateJobs[projectId] = { ...animateJobs[projectId], status: "done", progress: 100 };
+  console.log(`[veo] ${projectId}: animation complete`);
 }
 
 /**
