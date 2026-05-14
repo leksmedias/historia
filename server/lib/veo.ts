@@ -96,14 +96,28 @@ async function pollVeoOperation(operationName: string, outPath: string): Promise
     const op = (await pollRes.json()) as {
       done?: boolean;
       error?: { message: string };
-      response?: { predictions: Array<{ bytesBase64Encoded: string }> };
+      response?: unknown;
     };
 
     if (op.error) throw new Error(`Veo generation failed: ${op.error.message}`);
 
     if (op.done) {
-      const videoBase64 = op.response?.predictions?.[0]?.bytesBase64Encoded;
-      if (!videoBase64) throw new Error("Veo returned no video data in predictions");
+      const r = op.response as any;
+      // Try all known Veo response shapes:
+      // Shape A (predictLongRunning/Imagen-style): predictions[0].bytesBase64Encoded
+      // Shape B (Veo 3 nested):                   predictions[0].video.bytesBase64Encoded
+      // Shape C (generateVideoResponse):          generatedSamples[0].video.bytesBase64Encoded
+      // Shape D (top-level videos):               videos[0].bytesBase64Encoded
+      const videoBase64: string | undefined =
+        r?.predictions?.[0]?.bytesBase64Encoded ||
+        r?.predictions?.[0]?.video?.bytesBase64Encoded ||
+        r?.generatedSamples?.[0]?.video?.bytesBase64Encoded ||
+        r?.videos?.[0]?.bytesBase64Encoded;
+
+      if (!videoBase64) {
+        console.error("[veo] unexpected done response:", JSON.stringify(r).slice(0, 500));
+        throw new Error(`Veo returned no video data. Response keys: ${Object.keys(r || {}).join(", ")}`);
+      }
       fs.mkdirSync(path.dirname(outPath), { recursive: true });
       fs.writeFileSync(outPath, Buffer.from(videoBase64, "base64"));
       return;
