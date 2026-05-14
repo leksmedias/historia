@@ -69,6 +69,27 @@ export async function generateVeoClip(
   await pollVeoOperation(operation.name, outPath);
 }
 
+async function downloadGcs(gcsUri: string, outPath: string): Promise<void> {
+  // gcsUri format: gs://bucket-name/path/to/file.mp4
+  const withoutScheme = gcsUri.replace(/^gs:\/\//, "");
+  const slashIdx = withoutScheme.indexOf("/");
+  const bucket = withoutScheme.slice(0, slashIdx);
+  const object = withoutScheme.slice(slashIdx + 1);
+  const token = getAccessToken();
+
+  const url = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(object)}?alt=media`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) {
+    throw new Error(`GCS download failed: ${res.status} ${await res.text()}`);
+  }
+  const buffer = Buffer.from(await res.arrayBuffer());
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, buffer);
+}
+
 async function pollVeoOperation(operationName: string, outPath: string): Promise<void> {
   // Veo requires POST to :fetchPredictOperation — a GET to the operations URL returns 404
   const pollUrl = `https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${VEO_LOCATION}/publishers/google/models/${VEO_MODEL}:fetchPredictOperation`;
@@ -103,24 +124,35 @@ async function pollVeoOperation(operationName: string, outPath: string): Promise
 
     if (op.done) {
       const r = op.response as any;
-      // Try all known Veo response shapes:
-      // Shape A (predictLongRunning/Imagen-style): predictions[0].bytesBase64Encoded
-      // Shape B (Veo 3 nested):                   predictions[0].video.bytesBase64Encoded
-      // Shape C (generateVideoResponse):          generatedSamples[0].video.bytesBase64Encoded
-      // Shape D (top-level videos):               videos[0].bytesBase64Encoded
+
+      // Inline base64 — older Veo models / predictLongRunning flatten into predictions[]
       const videoBase64: string | undefined =
         r?.predictions?.[0]?.bytesBase64Encoded ||
         r?.predictions?.[0]?.video?.bytesBase64Encoded ||
-        r?.generatedSamples?.[0]?.video?.bytesBase64Encoded ||
-        r?.videos?.[0]?.bytesBase64Encoded;
+        r?.generateVideoResponse?.generatedSamples?.[0]?.video?.bytesBase64Encoded ||
+        r?.generatedSamples?.[0]?.video?.bytesBase64Encoded;
 
-      if (!videoBase64) {
-        console.error("[veo] unexpected done response:", JSON.stringify(r).slice(0, 500));
-        throw new Error(`Veo returned no video data. Response keys: ${Object.keys(r || {}).join(", ")}`);
+      if (videoBase64) {
+        fs.mkdirSync(path.dirname(outPath), { recursive: true });
+        fs.writeFileSync(outPath, Buffer.from(videoBase64, "base64"));
+        return;
       }
-      fs.mkdirSync(path.dirname(outPath), { recursive: true });
-      fs.writeFileSync(outPath, Buffer.from(videoBase64, "base64"));
-      return;
+
+      // GCS URI — Veo 3.x returns gs:// URI, must be downloaded separately
+      const gcsUri: string | undefined =
+        r?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
+        r?.generatedSamples?.[0]?.video?.uri ||
+        r?.predictions?.[0]?.video?.uri ||
+        r?.predictions?.[0]?.uri;
+
+      if (gcsUri) {
+        console.log(`[veo] downloading from GCS: ${gcsUri}`);
+        await downloadGcs(gcsUri, outPath);
+        return;
+      }
+
+      console.error("[veo] unexpected done response:", JSON.stringify(r).slice(0, 800));
+      throw new Error(`Veo returned no video data. Response keys: ${Object.keys(r || {}).join(", ")}`);
     }
   }
 
