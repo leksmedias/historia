@@ -125,8 +125,14 @@ async function pollVeoOperation(operationName: string, outPath: string): Promise
     if (op.done) {
       const r = op.response as any;
 
+      if (r?.raiMediaFilteredCount > 0) {
+        const reasons = r.raiMediaFilteredReasons?.join(" | ") || "Content was filtered by Responsible AI.";
+        throw new Error(`Veo generation blocked by RAI filters: ${reasons}`);
+      }
+
       // Inline base64 — older Veo models / predictLongRunning flatten into predictions[]
       const videoBase64: string | undefined =
+        r?.videos?.[0]?.bytesBase64Encoded ||
         r?.predictions?.[0]?.bytesBase64Encoded ||
         r?.predictions?.[0]?.video?.bytesBase64Encoded ||
         r?.generateVideoResponse?.generatedSamples?.[0]?.video?.bytesBase64Encoded ||
