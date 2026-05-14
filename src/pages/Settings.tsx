@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Plus, Trash2, Key, Server, Mic } from "lucide-react";
-import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, type ProviderSettings } from "@/lib/providers";
+import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, IMAGE_MODELS, type ProviderSettings } from "@/lib/providers";
 
 type HealthStatus = "idle" | "checking" | "ok" | "error";
 type Tab = "connections" | "providers" | "voices";
@@ -294,7 +294,23 @@ export default function Settings() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gemini">Gemini (Nano Banana)</SelectItem>
+                    <SelectItem value="gemini">Vertex AI (Imagen / Gemini)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Default Image Model</label>
+                <Select
+                  value={settings.imageModel || "imagen-4.0-fast-generate-001"}
+                  onValueChange={(v) => setSettings(s => ({ ...s, imageModel: v }))}
+                >
+                  <SelectTrigger className="bg-secondary">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {IMAGE_MODELS.map(m => (
+                      <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

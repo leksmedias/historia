@@ -233,7 +233,7 @@ export async function runClientSidePipeline(
           let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateGeminiImage(prompt);
+              imageBlob = await generateGeminiImage(prompt, settings.imageModel);
               success = true;
               break;
             } catch (e: any) {
@@ -726,7 +726,7 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
           let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateGeminiImage(prompt);
+              imageBlob = await generateGeminiImage(prompt, settings.imageModel);
               success = true;
               break;
             } catch (e: any) {

@@ -11,6 +11,7 @@ export interface CustomVoice {
 
 export interface ProviderSettings {
   imageProvider: string;
+  imageModel: string;
   ttsProvider: string;
   voiceId: string;
   modelId: string;
@@ -23,6 +24,13 @@ export interface ProviderSettings {
   customVoices: CustomVoice[];
   skipImageGeneration: boolean;
 }
+
+export const IMAGE_MODELS = [
+  { id: "imagen-4.0-fast-generate-001", label: "Imagen 4 Fast" },
+  { id: "imagen-4.0-generate-001",      label: "Imagen 4" },
+  { id: "imagen-4.0-ultra-generate-001", label: "Imagen 4 Ultra" },
+  { id: "gemini-2.5-flash-image",       label: "Gemini 2.5 Flash" },
+] as const;
 
 export interface InworldVoice {
   id: string;
@@ -60,6 +68,7 @@ export function getAvailableVoices(settings: ProviderSettings): InworldVoice[] {
 
 const DEFAULTS: ProviderSettings = {
   imageProvider: "gemini",
+  imageModel: "imagen-4.0-fast-generate-001",
   ttsProvider: "inworld",
   voiceId: "Dennis",
   modelId: "inworld-tts-1.5-max",
@@ -581,11 +590,12 @@ export async function generateSceneManifest(
 // Gemini — Image generation
 // ========================
 
-export async function generateGeminiImage(prompt: string): Promise<Blob> {
+export async function generateGeminiImage(prompt: string, imageModel?: string): Promise<Blob> {
   const genResult = await apiProxy({
     action: "generate",
     payload: {
       userInput: { candidatesCount: 1, prompts: [prompt] },
+      modelId: imageModel,
     },
   });
 

@@ -70,7 +70,8 @@ export async function generateVeoClip(
 }
 
 async function pollVeoOperation(operationName: string, outPath: string): Promise<void> {
-  const pollUrl = `https://${API_ENDPOINT}/v1/${operationName}`;
+  // Veo requires POST to :fetchPredictOperation — a GET to the operations URL returns 404
+  const pollUrl = `https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${VEO_LOCATION}/publishers/google/models/${VEO_MODEL}:fetchPredictOperation`;
   const MAX_POLLS = 60; // 60 × 5 s = 5 min max
 
   for (let i = 0; i < MAX_POLLS; i++) {
@@ -78,7 +79,9 @@ async function pollVeoOperation(operationName: string, outPath: string): Promise
 
     const token = getAccessToken();
     const pollRes = await fetch(pollUrl, {
-      headers: { Authorization: `Bearer ${token}` },
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ operationName }),
       signal: AbortSignal.timeout(15_000),
     });
 

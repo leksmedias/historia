@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createProjectFrontend } from "@/lib/api";
-import { loadProviderSettings, getAvailableVoices, COMPACT_STYLE_SUFFIX } from "@/lib/providers";
-import { Upload, Scroll, Loader2, Sparkles, Type, Image } from "lucide-react";
+import { loadProviderSettings, saveProviderSettings, getAvailableVoices, COMPACT_STYLE_SUFFIX, IMAGE_MODELS } from "@/lib/providers";
+import { Upload, Scroll, Loader2, Sparkles, Type, Image, Cpu } from "lucide-react";
 import { toast } from "sonner";
 
 export default function ProjectForm() {
@@ -22,6 +22,7 @@ export default function ProjectForm() {
   const [style1, setStyle1] = useState<File | null>(null);
   const [style2, setStyle2] = useState<File | null>(null);
   const [stylePrompt, setStylePrompt] = useState(COMPACT_STYLE_SUFFIX);
+  const [imageModel, setImageModel] = useState(settings.imageModel || "imagen-4.0-fast-generate-001");
   const [voiceId, setVoiceId] = useState(settings.voiceId || "Dennis");
   const [splitMode, setSplitMode] = useState<"smart" | "exact" | "duration" | "two">("smart");
   const [loading, setLoading] = useState(false);
@@ -37,10 +38,13 @@ export default function ProjectForm() {
     if (!canSubmit) return;
 
     const settings = loadProviderSettings();
-    if (!settings.groqApiKey) {
-      toast.error("Groq API key required. Go to Settings to configure it.");
+    if (!settings.groqApiKey && !settings.anthropicApiKey) {
+      toast.error("Groq or Anthropic API key required. Go to Settings to configure it.");
       return;
     }
+
+    // Persist the selected model so the pipeline reads it via loadProviderSettings()
+    saveProviderSettings({ ...settings, imageModel });
 
     setLoading(true);
     setPhase("Generating scene manifest...");
@@ -240,6 +244,23 @@ export default function ProjectForm() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                <Cpu className="h-4 w-4 text-muted-foreground" />
+                Image Model
+              </label>
+              <Select value={imageModel} onValueChange={setImageModel}>
+                <SelectTrigger className="bg-secondary border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {IMAGE_MODELS.map(m => (
+                    <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {loading && (
