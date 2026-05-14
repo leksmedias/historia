@@ -540,22 +540,30 @@ async function buildVeoClip(
   veoPath: string, audioPath: string, dur: number,
   width: number, height: number, outPath: string
 ): Promise<void> {
-  const veoDur = getAudioDuration(veoPath); // ffprobe format=duration works for video too
-  const speed  = veoDur / dur;              // < 1.0 → Veo is shorter than audio → slow down
+  const veoDur = getAudioDuration(veoPath);
+  const speed  = veoDur / dur; // < 1.0 → Veo shorter than audio
+
+  // Strategy:
+  //   speed >= 1.0  → Veo longer than audio: trim with -t (no extra work)
+  //   speed >= 0.85 → small gap: slow down slightly with setpts (≤ 1.18× stretch)
+  //   speed <  0.85 → large gap: loop with -stream_loop -1 so Ken Burns
+  //                   fills the full duration without extreme slow-motion
+  const shouldSlowDown = speed < 1.0 && speed >= 0.85;
+  const shouldLoop     = speed < 0.85;
+
+  const veoInputArgs: string[] = shouldLoop
+    ? ["-stream_loop", "-1", "-i", veoPath]
+    : ["-i", veoPath];
 
   const veoAudio = hasAudioStream(veoPath);
   const FPS = 25;
   const kbFilter = buildKB(pickEffect(), dur, width, height, 1.15);
-
   const fadeOutStart = Math.max(0, dur - 0.5).toFixed(3);
 
-  // Always slow down to match audio — setpts has no lower limit so no looping needed.
-  // speed=0.8 → setpts=PTS/0.8=1.25×PTS → video runs 25% slower.
-  const vScale = speed < 1.0
-    ? `setpts=PTS/${speed},fps=${FPS},${kbFilter},setsar=1,format=yuv420p`
+  const vBase = shouldSlowDown
+    ? `setpts=PTS/${speed.toFixed(6)},fps=${FPS},${kbFilter},setsar=1,format=yuv420p`
     : `fps=${FPS},${kbFilter},setsar=1,format=yuv420p`;
-
-  const vFilter = `${vScale},fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5`;
+  const vFilter = `${vBase},fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5`;
 
   const encArgs = [
     "-c:v", "libx264", "-preset", "fast", "-crf", "22",
@@ -563,11 +571,13 @@ async function buildVeoClip(
   ];
 
   if (veoAudio) {
-    // atempo min is 0.5; clamp so Veo's ambient audio stays audibly in sync
-    const atempoSpeed = Math.max(speed, 0.5).toFixed(4);
-    const veoAudioFilter = speed < 1.0 ? `atempo=${atempoSpeed},volume=0.1` : `volume=0.1`;
+    // Slow ambient audio only when slowing video; looped audio plays at natural speed
+    const atempoSpeed = shouldSlowDown ? Math.max(speed, 0.5).toFixed(4) : "1.0";
+    const veoAudioFilter = shouldSlowDown
+      ? `atempo=${atempoSpeed},volume=0.1`
+      : `volume=0.1`;
     await ffmpeg([
-      "-y", "-i", veoPath, "-i", audioPath,
+      "-y", ...veoInputArgs, "-i", audioPath,
       "-filter_complex",
         `[0:v]${vFilter}[v];` +
         `[0:a]${veoAudioFilter}[va];[1:a]${AUDIO_FILTER}[na];[va][na]amix=inputs=2:duration=first,afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
@@ -576,7 +586,7 @@ async function buildVeoClip(
     ]);
   } else {
     await ffmpeg([
-      "-y", "-i", veoPath, "-i", audioPath,
+      "-y", ...veoInputArgs, "-i", audioPath,
       "-filter_complex", `[0:v]${vFilter}[v];[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
       "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
       ...encArgs, outPath,
