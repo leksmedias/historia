@@ -724,6 +724,38 @@ async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<voi
 }
 
 /**
+ * Build an FFmpeg filter_complex string that chains xfade (video) and
+ * acrossfade (audio) dissolves across N pre-encoded clips.
+ *
+ * Each clip has its own 0.5 s fade-in/out baked in. Using xd=1.0 s means
+ * the dissolve starts 1 s before the clip ends — the first 0.5 s is a clean
+ * blend, and the last 0.5 s the outgoing clip also fades, producing a gentle
+ * cinematic dip that resolves fully into the incoming clip.
+ */
+function buildXfadeFilter(durations: number[], xd: number): string {
+  const n = durations.length;
+  const vParts: string[] = [];
+  const aParts: string[] = [];
+  let offset = 0;
+
+  for (let i = 1; i < n; i++) {
+    const inV  = i === 1     ? "[0:v]"  : `[xv${i}]`;
+    const inA  = i === 1     ? "[0:a]"  : `[xa${i}]`;
+    const outV = i === n - 1 ? "[vout]" : `[xv${i + 1}]`;
+    const outA = i === n - 1 ? "[aout]" : `[xa${i + 1}]`;
+
+    offset += durations[i - 1] - xd;
+
+    vParts.push(
+      `${inV}[${i}:v]xfade=transition=fade:duration=${xd.toFixed(3)}:offset=${Math.max(0, offset).toFixed(3)}${outV}`
+    );
+    aParts.push(`${inA}[${i}:a]acrossfade=d=${xd.toFixed(3)}${outA}`);
+  }
+
+  return [...vParts, ...aParts].join(";");
+}
+
+/**
  * Phase 2: merge clips into output.mp4 with xfade transitions.
  * Reads from clips/ dir if pre-generated; otherwise generates clips inline.
  */
@@ -781,16 +813,33 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
   if (clips.length === 1) {
     fs.copyFileSync(clips[0], outPath);
   } else {
-    console.log(`[merge] ${projectId}: local concat (${clips.length} clips)`);
-    const listPath = path.join(renderDir, "concat_list.txt");
-    const listContent = clips.map(c => `file '${path.resolve(c).replace(/'/g, "'\\''")}'`).join("\n");
-    fs.writeFileSync(listPath, listContent);
-    
-    await ffmpeg([
-      "-y", "-f", "concat", "-safe", "0", "-i", listPath,
-      "-c", "copy", outPath
-    ]);
-    fs.unlinkSync(listPath);
+    const XD = 1.0; // crossfade duration in seconds
+    // Use xfade when all clips are long enough; fall back to simple concat for edge cases
+    const canXfade = clips.length <= 200 && durations.every(d => d > XD * 2);
+
+    if (canXfade) {
+      console.log(`[merge] ${projectId}: xfade dissolve (${clips.length} clips, ${XD}s crossfade)`);
+      const filterComplex = buildXfadeFilter(durations, XD);
+      const inputs = clips.flatMap(c => ["-i", c]);
+      await ffmpeg([
+        "-y", ...inputs,
+        "-filter_complex", filterComplex,
+        "-map", "[vout]", "-map", "[aout]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+        outPath,
+      ]);
+    } else {
+      console.log(`[merge] ${projectId}: simple concat (${clips.length} clips)`);
+      const listPath = path.join(renderDir, "concat_list.txt");
+      const listContent = clips.map(c => `file '${path.resolve(c).replace(/'/g, "'\\''")}'`).join("\n");
+      fs.writeFileSync(listPath, listContent);
+      await ffmpeg([
+        "-y", "-f", "concat", "-safe", "0", "-i", listPath,
+        "-c", "copy", outPath,
+      ]);
+      fs.unlinkSync(listPath);
+    }
   }
 
   // Clean up only inline temp clips (keep clips/ dir intact)
