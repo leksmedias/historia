@@ -545,11 +545,9 @@ async function buildVeoClip(
 
   // Strategy:
   //   speed >= 1.0  → Veo longer than audio: trim with -t (no extra work)
-  //   speed >= 0.85 → small gap: slow down slightly with setpts (≤ 1.18× stretch)
-  //   speed <  0.85 → large gap: loop with -stream_loop -1 so Ken Burns
-  //                   fills the full duration without extreme slow-motion
-  const shouldSlowDown = speed < 1.0 && speed >= 0.85;
-  const shouldLoop     = speed < 0.85;
+  //   speed <  1.0  → Veo shorter than audio: stretch with setpts (slow motion)
+  const shouldSlowDown = speed < 1.0;
+  const shouldLoop     = false;
 
   const veoInputArgs: string[] = shouldLoop
     ? ["-stream_loop", "-1", "-i", veoPath]
