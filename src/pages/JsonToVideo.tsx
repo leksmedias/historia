@@ -16,6 +16,7 @@ interface RawScene {
   scene_id?: string;
   narration_text: string;
   visual_prompt: string;
+  motion_prompt?: string;
 }
 
 function parseSceneJson(raw: string): { scenes: RawScene[]; error: string | null } {
@@ -105,6 +106,7 @@ export default function JsonToVideo() {
         script_text: s.narration_text,
         tts_text: s.narration_text,
         image_prompt: [prefix, s.visual_prompt, suffix].filter(Boolean).join(", "),
+        motion_prompt: s.motion_prompt || null,
         fallback_prompts: [],
         image_file: `${i + 1}.png`,
         audio_file: `${i + 1}.mp3`,

@@ -41,10 +41,8 @@ export async function generateVeoClip(
       image: { bytesBase64Encoded: imageBase64, mimeType },
     }],
     parameters: {
-      aspectRatio: "16:9",
       sampleCount: 1,
       durationSeconds: 8,
-      resolution: "720p",
       personGeneration: "allow_all",
       generateAudio: false,
     },

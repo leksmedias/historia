@@ -66,18 +66,14 @@ function buildKB(effect: KBEffect, dur: number, width: number, height: number, m
   const dy = pH - height;  // extra vertical pixels
   switch (effect) {
     case "zoom-in":
-      // Crop window shrinks pW×pH → W×H (shows progressively less = zooms in)
-      // then post-scale stretches back to W×H for consistent output size
       return `scale=${pW}:${pH}:flags=lanczos,` +
              `crop=${pW}-${dx}*min(t\\,${d})/${d}:${pH}-${dy}*min(t\\,${d})/${d}:(iw-out_w)/2:(ih-out_h)/2,` +
              `scale=${width}:${height}:flags=lanczos`;
     case "zoom-out":
-      // Crop window grows W×H → pW×pH (shows progressively more = zooms out)
       return `scale=${pW}:${pH}:flags=lanczos,` +
              `crop=${width}+${dx}*min(t\\,${d})/${d}:${height}+${dy}*min(t\\,${d})/${d}:(iw-out_w)/2:(ih-out_h)/2,` +
              `scale=${width}:${height}:flags=lanczos`;
     case "pan-right":
-      // Crop x advances left→right; output is always W×H so no post-scale needed
       return `scale=${pW}:${pH}:flags=lanczos,` +
              `crop=${width}:${height}:min(${dx}*min(t\\,${d})/${d}\\,${dx}):${dy / 2}`;
     case "pan-left":
@@ -555,12 +551,12 @@ async function buildVeoClip(
 
   const veoAudio = hasAudioStream(veoPath);
   const FPS = 25;
-  const kbFilter = buildKB(pickEffect(), dur, width, height, 1.15);
   const fadeOutStart = Math.max(0, dur - 0.5).toFixed(3);
+  const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,format=yuv420p`;
 
   const vBase = shouldSlowDown
-    ? `setpts=PTS/${speed.toFixed(6)},fps=${FPS},${kbFilter},setsar=1,format=yuv420p`
-    : `fps=${FPS},${kbFilter},setsar=1,format=yuv420p`;
+    ? `setpts=PTS/${speed.toFixed(6)},fps=${FPS},${scaleFilter}`
+    : `fps=${FPS},${scaleFilter}`;
   const vFilter = `${vBase},fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5`;
 
   const encArgs = [
@@ -703,7 +699,7 @@ async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<voi
           .set({ video_status: "animating", video_error: null })
           .where(eq(scenes.id, s.id));
         console.log(`[veo] ${projectId}: scene ${num} animating`);
-        await generateVeoClip(imgPath, s.image_prompt || "", outPath);
+        await generateVeoClip(imgPath, s.motion_prompt || s.image_prompt || "", outPath);
 
         await db.update(scenes)
           .set({ video_status: "completed", video_error: null })
