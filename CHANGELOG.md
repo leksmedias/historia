@@ -2,6 +2,65 @@
 
 All notable changes to Historia are documented here.
 
+## [0.9.0] — 2026-05-24
+
+### Added
+- **Gemini 3.1 Flash Image Preview** (`gemini-3.1-flash-image-preview`) as a selectable image model
+- **Aspect ratio support (16:9 and 9:16)** — setting applied to all models; Imagen passes `parameters.aspectRatio`, Gemini passes `generationConfig.imageConfig.aspectRatio`; selector added to Settings → Providers
+- **1080p (1920×1080) and 1440p (2560×1440) render resolutions** — added to all render routes (clips, merge, auto); resolution picker in ProjectPreview now shows 480p / 720p / 1080p / 1440p; default changed to 1080p
+- **Downloads panel on ProjectPreview** — "Downloads" toggle button in the top bar reveals quick-access links for: all assets ZIP, scene clips ZIP, Veo clips ZIP, and final MP4
+- **Files & Downloads card on ProjectStatus** — four labeled tiles showing each download endpoint with its API path and a direct link; also shows the `/uploads/{projectId}/` static file path
+- **Image Model Test page** (`/image-test`) — run all five image models against the same prompt side by side, with per-model status badge, timing, individual generate/download, aspect ratio selection, and "Run All" / "Stop" controls
+- **Safety settings set to OFF for Gemini models** — all four harm categories (`HATE_SPEECH`, `DANGEROUS_CONTENT`, `SEXUALLY_EXPLICIT`, `HARASSMENT`) sent as `"OFF"` in Gemini generation requests
+
+### Changed
+- `_generateWithGemini` now sends `responseModalities: ["TEXT", "IMAGE"]` (was `["IMAGE"]`) and includes `imageConfig` with `aspectRatio` and `outputMimeType: "image/png"`
+- `_generateWithImagen` now uses dynamic `aspectRatio` parameter instead of hardcoded `"16:9"`
+- Render route resolution guards replaced with table lookup so any value in `RESOLUTIONS` is accepted
+- `VideoResolution` type exported from `api.ts` for use across the frontend
+
+---
+
+## [0.8.0] — 2026-05-20
+
+### Added
+- **Imagen 4** (`imagen-4.0-generate-001`), **Imagen 4 Ultra** (`imagen-4.0-ultra-generate-001`), and **Gemini 2.5 Flash** (`gemini-2.5-flash-image`) as selectable image models in Settings and JSON Import
+- **JSON Import page** (`/json-to-video`) — paste a pre-structured `[{narration_text, visual_prompt, motion_prompt?}]` array to create a project without script splitting; supports style prompt mode, image reference mode, prompt prefix/suffix modifiers, and independent voice + model selection
+- **`motion_prompt` field on scenes** — optional Veo animation description stored per scene; used by the animation pipeline instead of the image prompt when present
+- **Prompt prefix/suffix modifiers** on JSON Import — prepend or append text to every `visual_prompt` before generation
+- **Skip image generation toggle** — Settings option to bypass Imagen calls entirely (for testing audio/script flows)
+
+### Changed
+- Gemini image routing in `server/lib/gemini.ts` — `model.startsWith("gemini-")` routes to `_generateWithGemini` using the `generateContent` endpoint; all other models use `_generateWithImagen` using the Vertex AI `predict` endpoint
+- `IMAGE_MODELS` constant centralised in `providers.ts` and consumed by Settings, JSON Import, and ProjectPreview
+
+---
+
+## [0.7.0] — 2026-05-10
+
+### Added
+- **Veo image-to-video animation** — `POST /api/render/:id/animate` sends completed scene images to Veo 3.1 Lite on Vertex AI (`us-central1`); resulting `.mp4` files stored in `uploads/{id}/videos/`
+- **Veo clip integration in render pipeline** — if a Veo video exists for a scene, it is used instead of the still image for clip generation; slow-motion is applied when Veo duration < audio duration (no looping); Veo audio is mixed in at 10% volume
+- **Per-scene Veo toggle in ProjectPreview** — click the video icon on any timeline thumbnail or sidebar card to queue it for animation; "Select All" / "Deselect" shortcuts; animated scenes shown in emerald green
+- **Veo ZIP download** — `GET /api/render/:id/animate/zip` returns animated scenes as a ZIP (prefers final clips with audio, falls back to raw Veo)
+- **`video_status` field on scenes** — `none | animating | completed | failed`; persisted to DB alongside `video_error`
+- **`POST /api/render/image-to-video`** — convert a single uploaded image to an animated clip via the external render API (multipart; returns `{ url, animation, duration, resolution }`)
+- **`GET /api/render/health`** — ping the external render API and report connectivity + response time
+
+### Changed
+- **xfade dissolve transitions** replace hard-cut concat — `buildXfadeFilter` chains `xfade` (video) and `acrossfade` (audio) with 1-second dissolves between every clip; falls back to simple concat for >200 clips or very short clips
+- Ken Burns `maxZoom` reduced to `1.15` for Veo clips (vs `1.30` for stills) to avoid over-cropping animated content
+- Veo concurrency capped at 2 simultaneous animations; each scene's `video_status` is updated in the DB throughout the process
+- ErrorLog redesigned — scenes grouped by project in accordions; per-scene retry buttons; video error type shown separately from image/audio errors
+- Veo model updated to `veo-3.1-lite-generate-001` (`us-central1`); Vertex AI response parsing hardened to handle GCS URIs (`gs://`) and multiple response shapes
+
+### Fixed
+- Veo GCS URI response — videos are now downloaded from `gs://` and saved locally when the model returns a storage URI instead of base64
+- Veo RAI filter failures produce a clear error message and mark the scene `failed` instead of hanging
+- Imagen 2-slot semaphore (`server/lib/gemini.ts`) prevents quota exhaustion when multiple pipelines run concurrently
+
+---
+
 ## [0.6.0] — 2026-03-09
 
 ### Added
@@ -18,6 +77,8 @@ All notable changes to Historia are documented here.
 ### Fixed
 - Project incorrectly marked `completed` when images were still `pending` (status logic now checks all scenes are fully accounted for, not just absence of failures) — fixed on both client and server pipelines
 
+---
+
 ## [0.5.0] — 2026-03-09
 
 ### Added
@@ -28,20 +89,23 @@ All notable changes to Historia are documented here.
 - "Generate All Missing Images" and "Retry All Failed" are separate actions, each showing their own progress counter
 - Both bulk actions disable each other while running to avoid conflicts
 
+---
+
 ## [0.4.0] — 2026-03-09
 
 ### Added
 - **VPS deployment script** (`deploy.sh`) — one-command Ubuntu/Debian deploy: installs Node.js 20, PostgreSQL, creates DB, writes `.env`, builds, creates systemd service
 - **Configurable port** — `server/index.ts` reads `PORT` from environment; `deploy.sh` accepts `--port` flag; multiple instances on same VPS supported
-- **"Historia" branding** — browser tab title, meta tags, sidebar "H" lettermark badge, custom SVG favicon (`/historia-icon.svg`)
+- **"Historia" branding** — browser tab title, meta tags, sidebar "H" lettermark badge, custom SVG favicon
 - **Preview timeline scrollbar contained** — horizontal scrollbar is inside the timeline strip, not at the page level
 - **No browser-level scrolling** — app locked to viewport height; all pages scroll within their own containers
 - **Prompt-only sidebar on Preview page** — removed Scenes tab from preview sidebar; scenes stay in bottom timeline; sidebar shows only the image prompt editor
-- **Improved Whisk error messages** — 401 auth errors are stored on scene cards and shown in Error Log as "Whisk auth expired. Update your Whisk Cookie in Settings." instead of generic failure messages
 
 ### Changed
-- `AppLayout` uses `h-screen overflow-hidden` (was `min-h-screen`) to eliminate browser-level scrollbar
+- `AppLayout` uses `h-screen overflow-hidden` to eliminate browser-level scrollbar
 - All page root containers use `h-full overflow-y-auto` for internal scrolling
+
+---
 
 ## [0.3.0] — 2026-03-08
 
@@ -49,11 +113,11 @@ All notable changes to Historia are documented here.
 - **Voice selection** on project form — choose from 6 Inworld narration voices
 - **Script split mode** on project form — Smart (sentence-aware beats) or Exact (paragraph boundaries)
 - **TTS text preservation** — narration text is now kept identical to original script (no rephrasing)
-- `CONTEXT.md` — comprehensive developer/AI reference document
 
 ### Changed
-- Updated `README.md` with voice selection, split modes, and improved structure
 - Updated LLM scene prompt to enforce tts_text = script_text
+
+---
 
 ## [0.2.0] — 2026-03-07
 
@@ -64,25 +128,16 @@ All notable changes to Historia are documented here.
 - **Scene splitting** — split scenes at sentence boundaries with a dialog
 - **Per-scene voice override** — change narration voice for individual scenes
 - **Bulk retry** — one-click retry for all failed assets
-- **Smart text splitter** utility page — split text by sentences or exact word count
 - **Error log viewer** — dedicated page for reviewing generation errors
-- **Settings health checks** — test Groq, Whisk, and Inworld connections with one click
+- **Settings health checks** — test Groq, Inworld connections with one click
 
 ### Changed
 - Pipeline runs entirely client-side for real-time progress feedback
 - Fallback prompts include style anchor prefix for visual consistency
 
+---
+
 ## [0.1.0] — 2026-03-06
 
 ### Added
-- Initial release
-- Project creation form with script input and dual style reference uploads
-- AI scene manifest generation via Groq (Llama 3.3 70B)
-- Image generation via Google Whisk (Imagen 3.5) with style transfer
-- TTS audio generation via Inworld AI (TTS 1.5 Max)
-- Project list and project detail pages with scene cards
-- Inline editing of script text and image prompts
-- Image and audio regeneration per scene
-- PostgreSQL backend — projects and scenes tables via Drizzle ORM
-- Whisk proxy for CORS bypass
-- App sidebar navigation
+- Initial release — project creation form, Groq scene splitting, Imagen image generation, Inworld TTS, project list and detail pages, PostgreSQL backend via Drizzle ORM
