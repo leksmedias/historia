@@ -31,7 +31,6 @@ export const IMAGE_MODELS = [
   { id: "imagen-4.0-generate-001",              label: "Imagen 4" },
   { id: "imagen-4.0-ultra-generate-001",        label: "Imagen 4 Ultra" },
   { id: "gemini-2.5-flash-image",               label: "Gemini 2.5 Flash" },
-  { id: "gemini-3.1-flash-image-preview",       label: "Gemini 3.1 Flash (Preview)" },
 ] as const;
 
 export const ASPECT_RATIOS = [
