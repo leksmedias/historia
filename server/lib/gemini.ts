@@ -115,7 +115,6 @@ async function _generateWithGemini(prompt: string, model: string, aspectRatio = 
       responseModalities: ["TEXT", "IMAGE"],
       imageConfig: {
         aspectRatio,
-        outputMimeType: "image/png",
       },
     },
     safetySettings: [
