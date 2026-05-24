@@ -12,6 +12,7 @@ export interface CustomVoice {
 export interface ProviderSettings {
   imageProvider: string;
   imageModel: string;
+  aspectRatio: "16:9" | "9:16";
   ttsProvider: string;
   voiceId: string;
   modelId: string;
@@ -26,10 +27,16 @@ export interface ProviderSettings {
 }
 
 export const IMAGE_MODELS = [
-  { id: "imagen-4.0-fast-generate-001", label: "Imagen 4 Fast" },
-  { id: "imagen-4.0-generate-001",      label: "Imagen 4" },
-  { id: "imagen-4.0-ultra-generate-001", label: "Imagen 4 Ultra" },
-  { id: "gemini-2.5-flash-image",       label: "Gemini 2.5 Flash" },
+  { id: "imagen-4.0-fast-generate-001",         label: "Imagen 4 Fast" },
+  { id: "imagen-4.0-generate-001",              label: "Imagen 4" },
+  { id: "imagen-4.0-ultra-generate-001",        label: "Imagen 4 Ultra" },
+  { id: "gemini-2.5-flash-image",               label: "Gemini 2.5 Flash" },
+  { id: "gemini-3.1-flash-image-preview",       label: "Gemini 3.1 Flash (Preview)" },
+] as const;
+
+export const ASPECT_RATIOS = [
+  { value: "16:9", label: "16:9 Landscape" },
+  { value: "9:16", label: "9:16 Portrait" },
 ] as const;
 
 export interface InworldVoice {
@@ -69,6 +76,7 @@ export function getAvailableVoices(settings: ProviderSettings): InworldVoice[] {
 const DEFAULTS: ProviderSettings = {
   imageProvider: "gemini",
   imageModel: "imagen-4.0-fast-generate-001",
+  aspectRatio: "16:9",
   ttsProvider: "inworld",
   voiceId: "Dennis",
   modelId: "inworld-tts-1.5-max",
@@ -590,12 +598,13 @@ export async function generateSceneManifest(
 // Gemini — Image generation
 // ========================
 
-export async function generateGeminiImage(prompt: string, imageModel?: string): Promise<Blob> {
+export async function generateGeminiImage(prompt: string, imageModel?: string, aspectRatio?: string): Promise<Blob> {
   const genResult = await apiProxy({
     action: "generate",
     payload: {
       userInput: { candidatesCount: 1, prompts: [prompt] },
       modelId: imageModel,
+      aspectRatio: aspectRatio || "16:9",
     },
   });
 

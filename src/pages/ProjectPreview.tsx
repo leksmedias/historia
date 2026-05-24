@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getProject, getAssetUrl, regenerateAssetFrontend, bulkRegeneratePending, startClipGeneration, getClipStatus, getClipsZipUrl, startRender, getRenderStatus, getRenderDownloadUrl, startAnimateScenes, getAnimateStatus, getAnimateZipUrl } from "@/lib/api";
+import { getProject, getAssetUrl, getDownloadUrl, regenerateAssetFrontend, bulkRegeneratePending, startClipGeneration, getClipStatus, getClipsZipUrl, startRender, getRenderStatus, getRenderDownloadUrl, startAnimateScenes, getAnimateStatus, getAnimateZipUrl } from "@/lib/api";
 import { regenerateImagePrompt } from "@/lib/providers";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,7 @@ export default function ProjectPreview() {
   const [renderStatus, setRenderStatus] = useState<"idle" | "rendering" | "done" | "failed">("idle");
   const [renderProgress, setRenderProgress] = useState(0);
   const [renderTotal, setRenderTotal] = useState(0);
-  const [renderResolution, setRenderResolution] = useState<"480p" | "720p">("720p");
+  const [renderResolution, setRenderResolution] = useState<import("@/lib/api").VideoResolution>("1080p");
   const [renderError, setRenderError] = useState<string | null>(null);
   const renderPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -61,6 +61,7 @@ export default function ProjectPreview() {
   const animatePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [showFailedPanel, setShowFailedPanel] = useState(false);
+  const [showDownloads, setShowDownloads] = useState(false);
   const [failedImageSelected, setFailedImageSelected] = useState<Set<number>>(new Set());
   const [failedAudioSelected, setFailedAudioSelected] = useState<Set<number>>(new Set());
   const [bulkRegenImageRunning, setBulkRegenImageRunning] = useState(false);
@@ -561,7 +562,7 @@ export default function ProjectPreview() {
 
             {/* Resolution picker */}
             <div className="flex rounded-md border border-border overflow-hidden text-xs">
-              {(["480p", "720p"] as const).map(r => (
+              {(["480p", "720p", "1080p", "1440p"] as const).map(r => (
                 <button
                   key={r}
                   onClick={() => setRenderResolution(r)}
@@ -707,6 +708,14 @@ export default function ProjectPreview() {
               </div>
             )}
 
+            <Button
+              variant={showDownloads ? "secondary" : "ghost"}
+              size="sm"
+              className="text-xs gap-1"
+              onClick={() => setShowDownloads(v => !v)}
+            >
+              <FolderDown className="h-3.5 w-3.5" />Downloads
+            </Button>
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
               {sidebarOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
             </Button>
@@ -784,6 +793,40 @@ export default function ProjectPreview() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Downloads panel */}
+        {showDownloads && projectId && (
+          <div className="border-b border-border bg-card px-4 py-3 shrink-0">
+            <p className="text-xs font-medium text-foreground mb-2">Download Files</p>
+            <div className="flex flex-wrap gap-2">
+              <a href={getDownloadUrl(projectId)} download>
+                <Button size="sm" variant="outline" className="text-xs h-7 gap-1.5">
+                  <Download className="h-3 w-3" />All Assets (Images + Audio)
+                </Button>
+              </a>
+              <a href={getClipsZipUrl(projectId)} download="clips.zip">
+                <Button size="sm" variant="outline" className="text-xs h-7 gap-1.5">
+                  <Film className="h-3 w-3" />Scene Clips ZIP
+                </Button>
+              </a>
+              <a href={getRenderDownloadUrl(projectId)} download>
+                <Button size="sm" variant="default" className="text-xs h-7 gap-1.5">
+                  <Download className="h-3 w-3" />Final Video (MP4)
+                </Button>
+              </a>
+              {animateDone > 0 && (
+                <a href={getAnimateZipUrl(projectId)} download="animated-scenes.zip">
+                  <Button size="sm" variant="outline" className="text-xs h-7 gap-1.5">
+                    <Video className="h-3 w-3" />Veo Clips ZIP
+                  </Button>
+                </a>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Files also available directly at <code className="font-mono text-foreground/70">/uploads/{projectId}/</code> on the server
+            </p>
           </div>
         )}
 

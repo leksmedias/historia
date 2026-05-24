@@ -12,6 +12,7 @@ import ProjectPreview from "./pages/ProjectPreview";
 import Settings from "./pages/Settings";
 import ErrorLog from "./pages/ErrorLog";
 import JsonToVideo from "./pages/JsonToVideo";
+import ImageModelTest from "./pages/ImageModelTest";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/settings" element={<Settings />} />
             <Route path="/errors" element={<ErrorLog />} />
             <Route path="/json-to-video" element={<JsonToVideo />} />
+            <Route path="/image-test" element={<ImageModelTest />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AppLayout>

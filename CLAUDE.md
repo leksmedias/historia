@@ -38,6 +38,7 @@ Historia is a cinematic historical documentary generator: script → AI scene sp
   - `groq-chat` — Groq API proxy (uses `apiKey` from request or `GROQ_API_KEY` env)
   - `claude-chat` — Anthropic API proxy (uses `apiKey` from request or `ANTHROPIC_API_KEY` env)
 - `server/lib/veo.ts` — Veo video animation via Vertex AI (`us-central1` only)
+- `server/routes/regenerate.ts` — `POST /api/regenerate` regenerates a single scene's image or audio server-side (body: `{ projectId, sceneNumber, type: "image"|"audio", voiceOverride? }`)
 
 ### Shared (`shared/`)
 - `shared/schema.ts` — Drizzle ORM schema for `projects` and `scenes` tables; imported by both frontend and backend
@@ -45,6 +46,7 @@ Historia is a cinematic historical documentary generator: script → AI scene sp
 
 ### Database
 - PostgreSQL via Drizzle ORM. Two tables: `projects` (metadata, settings, style_summary, stats as JSONB) and `scenes` (per-scene prompts, file paths, statuses, error logs).
+- Key scene fields: `script_text` (display text), `tts_text` (text sent to TTS — may differ), `image_prompt`, `motion_prompt` (Veo animation description, falls back to `image_prompt`), `fallback_prompts` (JSONB array), `needs_review` (set true on generation failure).
 - Schema changes: edit `shared/schema.ts` → `npm run db:push`
 
 ### Asset file storage (`uploads/`)
@@ -79,15 +81,23 @@ The `stats.serverPipeline` boolean in the `projects` table is the flag the front
    - Phase 2: `POST /api/render/:id` — concat clips into `output.mp4`
    - Or: `POST /api/render/:id/auto` — all phases in one background job
    - Optional: `POST /api/render/:id/animate` — Veo animation before clip generation
+   - `POST /api/render/image-to-video` — convert a single uploaded image to an animated video (multipart)
+   - `GET /api/render/health` — check external render API connectivity
+   - `GET /api/render/:id/download` — download `output.mp4` as file
+   - `GET /api/render/:id/clips/zip` — download all scene clips as ZIP
+   - `GET /api/render/:id/animate/zip` — download animated scenes as ZIP
+   - `GET /api/download/:projectId` — download full project (images/audio/scene JSON) as ZIP
 
 **Render jobs (`clipJobs`, `mergeJobs`, `animateJobs`, `autoJobs`) are stored in-memory — they don't survive server restarts.**
 
 ## Key Conventions
 
 - **AI providers** (Groq key, Inworld key, Anthropic key) are stored in `localStorage` and set via the Settings page. The Groq key is **never** in `.env`; it can be passed as `apiKey` in the `groq-chat` proxy request.
+- **Image models** selectable in Settings: `imagen-4.0-fast-generate-001` (default), `imagen-4.0-generate-001`, `imagen-4.0-ultra-generate-001`, `gemini-2.5-flash-image`.
+- `skipImageGeneration` setting (in `ProviderSettings`) bypasses Imagen calls entirely — useful for testing audio/script flows without consuming quota.
 - **shadcn/ui** components live in `src/components/ui/`. Fonts: Cinzel (headings), Source Sans 3 (body).
 - Scene status fields (`image_status`, `audio_status`): `pending` | `completed` | `failed`
-- Scene `video_status`: `none` | `pending` | `completed` | `failed`
+- Scene `video_status`: `none` | `animating` | `completed` | `failed`
 - Project status values: `created` | `processing` | `completed` | `partial` | `failed` | `stopped`
 - `scene_number` is sequential (1-based) per project; scenes can be appended via `/api/projects/:id/scenes/append`.
 - `project.stats` is recalculated from live scene rows on every `GET /api/projects/:id` — the stored value is a cache that self-corrects on fetch.
@@ -113,6 +123,7 @@ VEO_MODEL_ID=veo-3.1-lite-generate-001
 # Optional server-side LLM keys (can also be passed per-request)
 ANTHROPIC_API_KEY=<key>
 GROQ_API_KEY=<key>
+CLIP_CONCURRENCY=3                         # Parallel clip generation workers (default: 3)
 ```
 
 Vertex AI access requires `gcloud auth application-default login` on the server host.

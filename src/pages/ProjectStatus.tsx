@@ -425,6 +425,54 @@ export default function ProjectStatus() {
           </Card>
         </div>
 
+        {/* Downloads */}
+        <Card>
+          <CardHeader><CardTitle className="text-lg font-display flex items-center gap-2"><Download className="h-5 w-5 text-primary" />Files &amp; Downloads</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <a href={getDownloadUrl(project.id)} download className="block">
+                <div className="border border-border rounded-lg p-3 hover:border-primary/50 hover:bg-primary/5 transition-colors space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <ImageIcon className="h-4 w-4 text-primary" />Images + Audio
+                  </div>
+                  <p className="text-xs text-muted-foreground">All generated assets as ZIP</p>
+                  <p className="text-xs text-primary font-mono truncate">/api/download/{project.id}</p>
+                </div>
+              </a>
+              <a href={`/api/render/${project.id}/clips/zip`} download="clips.zip" className="block">
+                <div className="border border-border rounded-lg p-3 hover:border-primary/50 hover:bg-primary/5 transition-colors space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Play className="h-4 w-4 text-primary" />Scene Clips
+                  </div>
+                  <p className="text-xs text-muted-foreground">Individual MP4 clips as ZIP</p>
+                  <p className="text-xs text-primary font-mono truncate">/api/render/{project.id}/clips/zip</p>
+                </div>
+              </a>
+              <a href={`/api/render/${project.id}/animate/zip`} download="animated-scenes.zip" className="block">
+                <div className="border border-border rounded-lg p-3 hover:border-primary/50 hover:bg-primary/5 transition-colors space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Play className="h-4 w-4 text-primary" />Veo Clips
+                  </div>
+                  <p className="text-xs text-muted-foreground">Animated scene clips as ZIP</p>
+                  <p className="text-xs text-primary font-mono truncate">/api/render/{project.id}/animate/zip</p>
+                </div>
+              </a>
+              <a href={`/api/render/${project.id}/download`} download className="block">
+                <div className="border border-border rounded-lg p-3 hover:border-primary/50 hover:bg-primary/5 transition-colors space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Download className="h-4 w-4 text-success" />Final Video
+                  </div>
+                  <p className="text-xs text-muted-foreground">Merged documentary MP4</p>
+                  <p className="text-xs text-success font-mono truncate">/api/render/{project.id}/download</p>
+                </div>
+              </a>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              All source files are at <code className="font-mono text-foreground/70">/uploads/{project.id}/</code> on the server — served statically at <code className="font-mono text-foreground/70">{window.location.origin}/uploads/{project.id}/</code>
+            </p>
+          </CardContent>
+        </Card>
+
         {/* Timeline */}
         <Card>
           <CardHeader><CardTitle className="text-lg font-display">Scene Timeline</CardTitle></CardHeader>

@@ -233,7 +233,7 @@ export async function runClientSidePipeline(
           let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateGeminiImage(prompt, settings.imageModel);
+              imageBlob = await generateGeminiImage(prompt, settings.imageModel, settings.aspectRatio);
               success = true;
               break;
             } catch (e: any) {
@@ -597,7 +597,9 @@ export async function checkAndFixImages(
   return bad;
 }
 
-export async function startClipGeneration(projectId: string, resolution: "480p" | "720p"): Promise<{ total: number; resolution: string }> {
+export type VideoResolution = "480p" | "720p" | "1080p" | "1440p";
+
+export async function startClipGeneration(projectId: string, resolution: VideoResolution): Promise<{ total: number; resolution: string }> {
   return apiRequest(`/render/${projectId}/clips`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -620,7 +622,7 @@ export function getClipsZipUrl(projectId: string): string {
   return `/api/render/${projectId}/clips/zip`;
 }
 
-export async function startRender(projectId: string, resolution: "480p" | "720p"): Promise<{ total: number; resolution: string }> {
+export async function startRender(projectId: string, resolution: VideoResolution): Promise<{ total: number; resolution: string }> {
   return apiRequest(`/render/${projectId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -726,7 +728,7 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
           let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateGeminiImage(prompt, settings.imageModel);
+              imageBlob = await generateGeminiImage(prompt, settings.imageModel, settings.aspectRatio);
               success = true;
               break;
             } catch (e: any) {

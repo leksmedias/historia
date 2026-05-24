@@ -89,8 +89,10 @@ function buildKB(effect: KBEffect, dur: number, width: number, height: number, m
 }
 
 const RESOLUTIONS: Record<string, [number, number]> = {
-  "480p": [854, 480],
-  "720p": [1280, 720],
+  "480p":  [854,  480],
+  "720p":  [1280, 720],
+  "1080p": [1920, 1080],
+  "1440p": [2560, 1440],
 };
 
 const CONCURRENCY = Math.max(1, parseInt(process.env.CLIP_CONCURRENCY ?? "3", 10));
@@ -212,7 +214,7 @@ router.post("/image-to-video", memUpload.single("image"), async (req: Request, r
 
   const animation = req.body.animation || "random";
   const duration = Math.min(Math.max(parseFloat(req.body.duration) || 5, 1), 30);
-  const resKey = req.body.resolution === "480p" ? "480p" : "720p";
+  const resKey = RESOLUTIONS[req.body.resolution] ? req.body.resolution : "720p";
   const [W, H] = RESOLUTIONS[resKey];
   const FPS = 25;
 
@@ -269,7 +271,7 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
     if (ready.length === 0)
       return res.status(400).json({ error: "No scenes ready — need completed image AND audio for each scene." });
 
-    const resKey = req.body?.resolution === "480p" ? "480p" : "720p";
+    const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
     const [W, H] = RESOLUTIONS[resKey];
 
     clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
@@ -449,7 +451,7 @@ router.get("/:id/animate/zip", (req: Request, res: Response) => {
  */
 router.post("/:id/auto", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);
-  const resKey = req.body?.resolution === "480p" ? "480p" : "720p";
+  const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
   res.json({ success: true, message: "Auto pipeline started in background" });
   runAutoPipeline(projectId, resKey).catch(e => {
     console.error(`[auto] ${projectId} failed:`, e.message);
@@ -488,7 +490,7 @@ router.post("/:id", async (req: Request, res: Response) => {
     if (ready.length === 0)
       return res.status(400).json({ error: "No scenes are fully ready." });
 
-    const resKey = req.body?.resolution === "480p" ? "480p" : "720p";
+    const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
     const [W, H] = RESOLUTIONS[resKey];
 
     mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
@@ -857,7 +859,7 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
  * Full auto-pipeline: poll until all assets ready → generate clips → merge.
  * Runs entirely in-process; browser can be closed.
  */
-async function runAutoPipeline(projectId: string, resKey: "480p" | "720p") {
+async function runAutoPipeline(projectId: string, resKey: string) {
   const [W, H] = RESOLUTIONS[resKey];
   autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
   console.log(`[auto] ${projectId}: waiting for assets (${resKey})`);

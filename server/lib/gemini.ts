@@ -38,25 +38,25 @@ function getAccessToken(): string {
   }
 }
 
-export async function generateGeminiImage(prompt: string, modelId?: string): Promise<string> {
+export async function generateGeminiImage(prompt: string, modelId?: string, aspectRatio = "16:9"): Promise<string> {
   await acquireImagenSlot();
   try {
     const model = modelId || MODEL_ID;
     return model.startsWith("gemini-")
-      ? await _generateWithGemini(prompt, model)
-      : await _generateWithImagen(prompt, model);
+      ? await _generateWithGemini(prompt, model, aspectRatio)
+      : await _generateWithImagen(prompt, model, aspectRatio);
   } finally {
     releaseImagenSlot();
   }
 }
 
-async function _generateWithImagen(prompt: string, model: string): Promise<string> {
+async function _generateWithImagen(prompt: string, model: string, aspectRatio = "16:9"): Promise<string> {
   const url = `https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${LOCATION_ID}/publishers/google/models/${model}:predict`;
 
   const body = {
     instances: [{ prompt }],
     parameters: {
-      aspectRatio: "16:9",
+      aspectRatio,
       sampleCount: 1,
       personGeneration: "allow_all",
       safetySettings: "block_few",
@@ -106,12 +106,24 @@ async function _generateWithImagen(prompt: string, model: string): Promise<strin
   throw new Error(lastError || "Imagen generation failed");
 }
 
-async function _generateWithGemini(prompt: string, model: string): Promise<string> {
+async function _generateWithGemini(prompt: string, model: string, aspectRatio = "16:9"): Promise<string> {
   const url = `https://${GEMINI_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${GEMINI_LOCATION}/publishers/google/models/${model}:generateContent`;
 
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { responseModalities: ["IMAGE"] },
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: {
+        aspectRatio,
+        outputMimeType: "image/png",
+      },
+    },
+    safetySettings: [
+      { category: "HARM_CATEGORY_HATE_SPEECH",        threshold: "OFF" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT",  threshold: "OFF" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",  threshold: "OFF" },
+      { category: "HARM_CATEGORY_HARASSMENT",         threshold: "OFF" },
+    ],
   };
 
   const delays = [10_000, 20_000, 30_000];

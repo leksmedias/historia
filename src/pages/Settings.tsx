@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Plus, Trash2, Key, Server, Mic } from "lucide-react";
-import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, IMAGE_MODELS, type ProviderSettings } from "@/lib/providers";
+import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, IMAGE_MODELS, ASPECT_RATIOS, type ProviderSettings } from "@/lib/providers";
 
 type HealthStatus = "idle" | "checking" | "ok" | "error";
 type Tab = "connections" | "providers" | "voices";
@@ -313,6 +313,23 @@ export default function Settings() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Aspect Ratio</label>
+                <Select
+                  value={settings.aspectRatio || "16:9"}
+                  onValueChange={(v) => setSettings(s => ({ ...s, aspectRatio: v as "16:9" | "9:16" }))}
+                >
+                  <SelectTrigger className="bg-secondary">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ASPECT_RATIOS.map(r => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Applied to all image models — 16:9 for landscape, 9:16 for portrait</p>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
