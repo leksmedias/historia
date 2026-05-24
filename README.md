@@ -27,6 +27,7 @@ Paste on any Ubuntu 22.04 / Debian 12 server as root. You'll be prompted for a p
 cd /opt/historia
 git pull
 npm run setup
+npm run db:push
 npm run build
 systemctl restart historia-3001   # replace 3001 with your port
 ```
@@ -314,7 +315,7 @@ systemctl stop historia-3001
 nano /opt/historia/.env
 
 # Update to latest
-cd /opt/historia && git pull && npm run setup && npm run build && systemctl restart historia-3001
+cd /opt/historia && git pull && npm run setup && npm run db:push && npm run build && systemctl restart historia-3001
 
 # Re-auth Vertex AI
 gcloud auth application-default login --no-browser

@@ -57,6 +57,7 @@ async function _generateWithImagen(prompt: string, model: string, aspectRatio = 
     instances: [{ prompt }],
     parameters: {
       aspectRatio,
+      sampleImageSize: "1024",
       sampleCount: 1,
       personGeneration: "allow_all",
       safetySettings: "block_few",
