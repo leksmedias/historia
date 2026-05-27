@@ -37,6 +37,19 @@ router.post("/", async (req: Request, res: Response) => {
       return res.json({ status: r.status, data });
     }
 
+    if (action === "nvidia-chat") {
+      const key = apiKey || process.env.NVIDIA_API_KEY || "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";
+      const r = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify(payload),
+      });
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
+      return res.json({ status: r.status, data });
+    }
+
     if (action === "claude-chat") {
       const key = apiKey || process.env.ANTHROPIC_API_KEY;
       if (!key) return res.json({ status: 500, data: { error: "ANTHROPIC_API_KEY not configured" } });

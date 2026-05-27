@@ -21,6 +21,8 @@ export interface ProviderSettings {
   groqApiKey: string;
   anthropicApiKey: string;
   claudeModel: string;
+  nvidiaApiKey: string;
+  textProvider: "groq" | "claude" | "nvidia";
   inworldApiKey: string;
   customVoices: CustomVoice[];
   skipImageGeneration: boolean;
@@ -84,6 +86,8 @@ const DEFAULTS: ProviderSettings = {
   groqApiKey: "",
   anthropicApiKey: "",
   claudeModel: "claude-haiku-4-5-20251001",
+  nvidiaApiKey: "",
+  textProvider: "groq",
   inworldApiKey: "",
   customVoices: [],
   skipImageGeneration: false,
@@ -129,6 +133,9 @@ async function apiProxy(body: any): Promise<any> {
 
 export const COMPACT_STYLE_SUFFIX =
   `in a Digital oil painting, heavy impasto style, 17th-century academic military realism, cinematic oil painting, thick impasto brushstrokes, visible canvas texture, muted earth tones, dramatic chiaroscuro lighting, smoky atmosphere, historical accuracy, aged parchment cartography, vintage textured infographics, hand-inked military schematics, premium documentary look, desaturated palette, immersive cinematic composition, 16:9, highly detailed`;
+
+export const COMPACT_WWII_STYLE_SUFFIX =
+  `in an ultra-realistic WWII archival photograph, cinematic black-and-white war photojournalism, dramatic chiaroscuro lighting, deep shadows, authentic wool military uniforms, shallow depth of field, captured on vintage 35mm Kodak Tri-X film, subtle film grain, documentary realism, historically accurate, cinematic composition, masterpiece quality, 16:9`;
 
 /** System prompt used when project has a stylePrompt — Groq generates ONLY the [Subject] part. */
 const STYLE_PROMPT_BATCH_IMAGE_PROMPT = `You are a visual content director for a historical epic documentary.
@@ -224,6 +231,41 @@ Return ONLY valid JSON matching this exact schema:
       "historical_period": "derived from title and scene context",
       "visual_priority": "character|environment|object",
       "image_prompt": "One complete cinematic sentence ending with a period.",
+      "fallback_prompts": [
+        "Fallback with different camera angle, one sentence.",
+        "Fallback focusing on environment, one sentence.",
+        "Fallback symbolic/aftermath angle, one sentence."
+      ]
+    }
+  ]
+}`;
+
+const BATCH_WWII_IMAGE_PROMPT = `You are the Lead Creative Director and Historical Consultant for a high-end educational documentary series. You produce historical videos exploring World War II warfare through a human-centered tactical lens.
+
+For each numbered scene below, generate ONE cinematic image prompt and THREE fallback prompts.
+Each image prompt must follow the script — not random — it must follow the story.
+
+1. VISUAL AESTHETIC
+All imagery must be rendered as WWII Archival Photorealism — ultra-realistic, cinematic black-and-white war photojournalism. Every image must feel like an authentic recovered wartime photograph: emotionally raw, historically accurate, and documentary in nature. Apply dramatic chiaroscuro lighting with deep shadows and sharp focal highlights on faces, uniforms, weapons, and machinery. All images must simulate 35mm film grain using textures consistent with Kodak Tri-X film stock. Apply shallow depth of field where the foreground subject is razor-sharp and the background dissolves into grain and smoke. Smoke, mud, rain, fire, and atmospheric battlefield haze must appear as recurring visual elements creating depth and tension. All figures must feature hyper-detailed period-accurate textures: authentic wool military uniforms, wet leather, rusted steel, canvas webbing, and weathered skin with visible emotional expression. The overall aesthetic must feel like a masterpiece-quality wartime press photograph — grave, cinematic, historically immersive.
+
+2. INFORMATIONAL ASSET DESIGN
+All maps must use an Aged Wartime Document style: yellowed or tea-stained paper with visible fold creases, water damage, and foxing spots. Terrain rendered in hand-drafted 1940s military cartographic style with contour lines, river crossings, and village names in vintage serif type. Tactical arrows in deep charcoal for Allied forces and dense gray hatching for Axis forces, maintaining full monochrome consistency. Stamps such as "CLASSIFIED," "TOP SECRET," or operation names in faded block type. Typewritten annotations for dates and unit labels. All infographics must follow an Aged Military Intelligence aesthetic: yellowed paper background, period hand-drafted line art, OSS or War Office document styling, faded stamps, and foxing. Unit icons use period military silhouettes for infantry, armor, artillery, and air assets alongside national insignia such as the Allied star, Wehrmacht eagle, Soviet hammer, and Rising Sun as header or corner devices. All typography must use a Hybrid Vintage-Modern approach: high-contrast vintage serif fonts for titles and clean legible sans-serif for data labels. Diagrams must use flowchart logic for causality chains such as: Air Superiority → Supply Disruption → Front Collapse. Scanned archival document aesthetic throughout — everything must feel declassified and reproduced from microfilm.
+
+3. TACTICAL SPECIFICS
+When depicting any WWII engagement, all multinational force compositions must be explicitly visualized through varying uniform textures, national insignia, and unit markings representing American, British, Soviet, German, French, Italian, and Japanese forces where relevant. Field identification markers, unit patches, rank insignia, and vehicle markings must appear prominently in close-up scenes and be labeled in infographics.
+
+4. HARD CONSTRAINTS
+No color imagery. No oil painting or painterly textures. No visible brushstrokes. No CGI renders or digital illustration aesthetics. No bright or tonal gradients inconsistent with monochrome film. No flat 2D vector-style illustrations. No rapid cutting below the 9-second average image interval.
+
+Return ONLY valid JSON matching this exact schema:
+{
+  "scenes": [
+    {
+      "scene_number": 1,
+      "scene_type": "character|location|crowd|battle_light|artifact|transition",
+      "historical_period": "WWII",
+      "visual_priority": "character|environment|object",
+      "image_prompt": "One complete cinematic WWII archival black-and-white photo prompt.",
       "fallback_prompts": [
         "Fallback with different camera angle, one sentence.",
         "Fallback focusing on environment, one sentence.",
@@ -376,11 +418,13 @@ async function callGroqForBatch(
   scenes: Array<{ scene_number: number; script_text: string }>,
   groqApiKey: string,
   retryOnRateLimit = true,
-  stylePrompt?: string
+  stylePrompt?: string,
+  visualTheme?: "impasto" | "ww2"
 ): Promise<BatchPromptResult[]> {
+  const basePrompt = visualTheme === "ww2" ? BATCH_WWII_IMAGE_PROMPT : BATCH_IMAGE_PROMPT;
   const systemPrompt = stylePrompt
-    ? `${BATCH_IMAGE_PROMPT}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
-    : BATCH_IMAGE_PROMPT;
+    ? `${basePrompt}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
+    : basePrompt;
   const scenesText = scenes
     .map(s => `Scene ${s.scene_number}: "${s.script_text}"`)
     .join("\n");
@@ -450,11 +494,13 @@ async function callClaudeForBatch(
   anthropicApiKey: string,
   retryOnRateLimit = true,
   stylePrompt?: string,
-  claudeModel = "claude-haiku-4-5-20251001"
+  claudeModel = "claude-haiku-4-5-20251001",
+  visualTheme?: "impasto" | "ww2"
 ): Promise<BatchPromptResult[]> {
+  const basePrompt = visualTheme === "ww2" ? BATCH_WWII_IMAGE_PROMPT : BATCH_IMAGE_PROMPT;
   const systemPrompt = stylePrompt
-    ? `${BATCH_IMAGE_PROMPT}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
-    : BATCH_IMAGE_PROMPT;
+    ? `${basePrompt}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
+    : basePrompt;
   const scenesText = scenes
     .map(s => `Scene ${s.scene_number}: "${s.script_text}"`)
     .join("\n");
@@ -504,6 +550,80 @@ async function callClaudeForBatch(
   }
 }
 
+async function callNvidiaForBatch(
+  title: string,
+  scenes: Array<{ scene_number: number; script_text: string }>,
+  nvidiaApiKey: string,
+  retryOnRateLimit = true,
+  stylePrompt?: string,
+  visualTheme?: "impasto" | "ww2"
+): Promise<BatchPromptResult[]> {
+  const basePrompt = visualTheme === "ww2" ? BATCH_WWII_IMAGE_PROMPT : BATCH_IMAGE_PROMPT;
+  const systemPrompt = stylePrompt
+    ? `${basePrompt}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
+    : basePrompt;
+  const scenesText = scenes
+    .map(s => `Scene ${s.scene_number}: "${s.script_text}"`)
+    .join("\n");
+
+  const userPrompt = `Video Title: ${title}\n\nGenerate image prompts for these ${scenes.length} scenes:\n\n${scenesText}\n\nReturn ONLY the JSON object.`;
+
+  const result = await apiProxy({
+    action: "nvidia-chat",
+    apiKey: nvidiaApiKey,
+    payload: {
+      model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.6,
+      top_p: 0.95,
+      max_tokens: 65536,
+      extra_body: {
+        chat_template_kwargs: { enable_thinking: true },
+        reasoning_budget: 16384
+      },
+    },
+  });
+
+  if (result.status && result.status >= 400) {
+    const errText = typeof result.data === "string"
+      ? result.data
+      : JSON.stringify(result.data || {}).substring(0, 500);
+    if (result.status === 429) {
+      if (retryOnRateLimit) {
+        console.log("[nvidia] Rate limited — waiting 15s before retry...");
+        await delay(15000);
+        return callNvidiaForBatch(title, scenes, nvidiaApiKey, false, stylePrompt);
+      }
+      throw new Error("NVIDIA rate limited — try again in a moment.");
+    }
+    if (result.status === 401) throw new Error("NVIDIA API key is invalid. Update it in Settings.");
+    throw new Error(`NVIDIA API error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
+  }
+
+  const data = result.data;
+  let content = data?.choices?.[0]?.message?.content;
+  if (!content) throw new Error("No content from NVIDIA");
+
+  const reasoning = data?.choices?.[0]?.message?.reasoning_content;
+  if (reasoning) {
+    console.log("[NVIDIA Reasoning]:", reasoning);
+  }
+
+  content = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+
+  try {
+    const parsed = JSON.parse(content);
+    return parsed.scenes || [];
+  } catch (err: any) {
+    const recovered = recoverPartialScenes(content);
+    if (recovered.length > 0) return recovered;
+    throw new Error(`NVIDIA returned malformed JSON (${content.length} chars): ${err.message}.`);
+  }
+}
+
 export async function generateScenesForChunk(
   title: string,
   chunk: string,
@@ -514,16 +634,23 @@ export async function generateScenesForChunk(
   splitMode: "smart" | "exact" | "duration" | "two" = "smart",
   stylePrompt?: string,
   anthropicApiKey?: string,
-  claudeModel?: string
+  claudeModel?: string,
+  nvidiaApiKey?: string,
+  textProvider?: "groq" | "claude" | "nvidia",
+  visualTheme?: "impasto" | "ww2"
 ): Promise<SceneManifest[]> {
   const sceneChunks = (splitMode === "duration"
     ? splitScriptByDuration(chunk)
     : splitScriptIntoScenes(chunk, splitMode === "exact" ? "exact" : splitMode === "two" ? "two" : "smart")
   ).map((s, idx) => ({ ...s, scene_number: startSceneNumber + idx }));
 
-  const prompts = anthropicApiKey
-    ? await callClaudeForBatch(title, sceneChunks, anthropicApiKey, true, stylePrompt, claudeModel)
-    : await callGroqForBatch(title, sceneChunks, groqApiKey, true, stylePrompt);
+  const useProvider = textProvider || (anthropicApiKey ? "claude" : "groq");
+
+  const prompts = useProvider === "nvidia" && nvidiaApiKey
+    ? await callNvidiaForBatch(title, sceneChunks, nvidiaApiKey, true, stylePrompt, visualTheme)
+    : useProvider === "claude" && anthropicApiKey
+      ? await callClaudeForBatch(title, sceneChunks, anthropicApiKey, true, stylePrompt, claudeModel, visualTheme)
+      : await callGroqForBatch(title, sceneChunks, groqApiKey, true, stylePrompt, visualTheme);
 
   return sceneChunks.map((sc, idx) => {
     const p = prompts[idx] || {} as BatchPromptResult;
@@ -551,13 +678,17 @@ export async function generateSceneManifest(
   onChunkProgress?: (current: number, total: number) => void,
   stylePrompt?: string,
   anthropicApiKey?: string,
-  claudeModel?: string
+  claudeModel?: string,
+  nvidiaApiKey?: string,
+  textProvider?: "groq" | "claude" | "nvidia",
+  visualTheme?: "impasto" | "ww2"
 ): Promise<SceneManifest[]> {
   const sceneChunks = splitMode === "duration"
     ? splitScriptByDuration(script)
     : splitScriptIntoScenes(script, splitMode === "exact" ? "exact" : splitMode === "two" ? "two" : "smart");
 
-  const BATCH_SIZE = anthropicApiKey ? 5 : 10;
+  const useProvider = textProvider || (anthropicApiKey ? "claude" : "groq");
+  const BATCH_SIZE = useProvider === "nvidia" ? 40 : (useProvider === "claude" ? 5 : 10);
   const totalBatches = Math.ceil(sceneChunks.length / BATCH_SIZE);
   const allScenes: SceneManifest[] = [];
 
@@ -566,9 +697,12 @@ export async function generateSceneManifest(
 
     const batch = sceneChunks.slice(i, i + BATCH_SIZE);
     const batchIdx = Math.floor(i / BATCH_SIZE);
-    const prompts = anthropicApiKey
-      ? await callClaudeForBatch(title, batch, anthropicApiKey, true, stylePrompt, claudeModel)
-      : await callGroqForBatch(title, batch, groqApiKey, true, stylePrompt);
+    
+    const prompts = useProvider === "nvidia" && nvidiaApiKey
+      ? await callNvidiaForBatch(title, batch, nvidiaApiKey, true, stylePrompt, visualTheme)
+      : useProvider === "claude" && anthropicApiKey
+        ? await callClaudeForBatch(title, batch, anthropicApiKey, true, stylePrompt, claudeModel, visualTheme)
+        : await callGroqForBatch(title, batch, groqApiKey, true, stylePrompt, visualTheme);
 
     const merged: SceneManifest[] = batch.map((sc, idx) => {
       const p = prompts[idx] || {} as BatchPromptResult;
@@ -679,9 +813,28 @@ export async function regenerateImagePrompt(
   groqApiKey: string,
   _styleSummary?: any,
   anthropicApiKey?: string,
-  claudeModel?: string
+  claudeModel?: string,
+  nvidiaApiKey?: string,
+  textProvider?: "groq" | "claude" | "nvidia",
+  visualTheme?: "impasto" | "ww2"
 ): Promise<string> {
-  const systemPrompt = `You are a visual content director generating a single image prompt for a YouTube history documentary scene.
+  const systemPrompt = visualTheme === "ww2"
+    ? `You are a visual content director generating a single image prompt for a WWII documentary scene.
+
+PROMPT STRUCTURE (exactly one sentence):
+[Who is present] + [what they are doing] + [where they are] + [camera angle/framing] + [lighting and mood]
+
+STYLE RULES:
+- WWII Archival Photorealism, ultra-realistic black-and-white photojournalism, Kodak Tri-X film stock simulation
+- Dramatic chiaroscuro lighting, deep shadows, atmospheric haze, smoke, mud, rain
+- Figures splattered in mud, wool uniforms, helmets, emotional expressions
+- Clear visible action — never a static description
+- Camera options: close-up of hands/weapons/eyes, medium shot, wide battlefield, over-the-shoulder, ground-level, high angle
+
+RESTRICTIONS: No color, no painterly textures, no text overlays, no identifiable faces, no CGI/digital illustration aesthetics.
+
+Return ONLY the prompt text — one sentence ending with a period. No JSON, no markdown, no explanation.`
+    : `You are a visual content director generating a single image prompt for a YouTube history documentary scene.
 
 PROMPT STRUCTURE (exactly one sentence):
 [Who is present] + [what they are doing] + [where they are] + [camera angle/framing] + [lighting and mood]
@@ -700,7 +853,41 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
 
   const userPrompt = `Script text to visualize:\n${scriptText}\n\nGenerate one cinematic image prompt for this scene.`;
 
-  if (anthropicApiKey) {
+  const useProvider = textProvider || (anthropicApiKey ? "claude" : "groq");
+
+  if (useProvider === "nvidia" && nvidiaApiKey) {
+    const result = await apiProxy({
+      action: "nvidia-chat",
+      apiKey: nvidiaApiKey,
+      payload: {
+        model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.6,
+        top_p: 0.95,
+        max_tokens: 1024,
+        extra_body: {
+          chat_template_kwargs: { enable_thinking: true },
+          reasoning_budget: 256
+        },
+      },
+    });
+
+    if (result.status && result.status >= 400) {
+      const errText = typeof result.data === "string"
+        ? result.data
+        : JSON.stringify(result.data || {}).substring(0, 500);
+      throw new Error(`NVIDIA error: ${result.status} - ${errText}`);
+    }
+
+    const content = result.data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error("No content from NVIDIA");
+    return content.trim();
+  }
+
+  if (useProvider === "claude" && anthropicApiKey) {
     const result = await apiProxy({
       action: "claude-chat",
       apiKey: anthropicApiKey,

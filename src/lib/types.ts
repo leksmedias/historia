@@ -58,6 +58,7 @@ export interface ProjectSettings {
   audioConcurrency: number;
   historyMode: boolean;
   splitMode?: "smart" | "exact" | "duration";
+  visualTheme?: "impasto" | "ww2";
 }
 
 export interface Project {

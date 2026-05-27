@@ -20,6 +20,7 @@ export default function ProjectPreview() {
   const { projectId } = useParams<{ projectId: string }>();
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [projectTitle, setProjectTitle] = useState("");
+  const [visualTheme, setVisualTheme] = useState<"impasto" | "ww2">("impasto");
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -79,6 +80,7 @@ export default function ProjectPreview() {
       setProjectTitle(data.project.title);
       setProjectStatus(data.project.status);
       setScenes(data.scenes);
+      setVisualTheme(data.project.settings?.visualTheme || "impasto");
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -263,7 +265,10 @@ export default function ProjectPreview() {
   const handleRegenPrompt = async () => {
     if (!scene) return;
     const settings = loadProviderSettings();
-    if (!settings.groqApiKey && !settings.anthropicApiKey) { toast.error("No API key configured for prompt generation"); return; }
+    if (!settings.groqApiKey && !settings.anthropicApiKey && !settings.nvidiaApiKey) {
+      toast.error("No API key configured for prompt generation. Update it in Settings.");
+      return;
+    }
     setRegenPrompt(true);
     try {
       const newPrompt = await regenerateImagePrompt(
@@ -271,7 +276,10 @@ export default function ProjectPreview() {
         settings.groqApiKey, 
         null, 
         settings.anthropicApiKey,
-        settings.claudeModel
+        settings.claudeModel,
+        settings.nvidiaApiKey,
+        settings.textProvider,
+        visualTheme
       );
       setEditPrompt(newPrompt);
       toast.success("New prompt generated");

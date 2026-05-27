@@ -30,6 +30,15 @@ const DEFAULT_STYLE_SUMMARY = {
   historicalLook: "realistic period atmosphere, grounded environments, era-appropriate architecture, clothing, and objects",
 };
 
+const WW2_STYLE_SUMMARY = {
+  palette: "monochrome, black and white, high-contrast, vintage archival film tones",
+  lighting: "harsh side lighting, pre-dawn blue-gray shadows, fire glow, dramatic chiaroscuro",
+  framing: "action combat photojournalism, wide battlefield debris, low-angle tank grinds, close exhausted portraits",
+  people: "anonymous soldiers in wool uniforms, helmets, mud-splattered faces, raw expressions",
+  mood: "grave, intense, historically immersive, documentary realism",
+  historicalLook: "period-accurate WWII equipment, authentic weapons, canvas webbing, destroyed trenches, bombed-out villages",
+};
+
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -90,7 +99,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 
 router.post("/", upload.fields([{ name: "style1", maxCount: 1 }, { name: "style2", maxCount: 1 }]), async (req: Request, res: Response) => {
   try {
-    const { title, script, imageProvider, ttsProvider, voiceId, modelId, splitMode, stylePrompt } = req.body;
+    const { title, script, imageProvider, ttsProvider, voiceId, modelId, splitMode, stylePrompt, visualTheme } = req.body;
     if (!title || !script) return res.status(400).json({ error: "Title and script are required" });
 
     const projectId = generateProjectId();
@@ -108,6 +117,9 @@ router.post("/", upload.fields([{ name: "style1", maxCount: 1 }, { name: "style2
       fs.renameSync(files.style2[0].path, dest);
     }
 
+    const theme = visualTheme || "impasto";
+    const styleSummary = theme === "ww2" ? WW2_STYLE_SUMMARY : DEFAULT_STYLE_SUMMARY;
+
     await db.insert(projects).values({
       id: projectId,
       title,
@@ -122,9 +134,10 @@ router.post("/", upload.fields([{ name: "style1", maxCount: 1 }, { name: "style2
         audioConcurrency: 2,
         historyMode: true,
         splitMode: splitMode || "smart",
+        visualTheme: theme,
         ...(stylePrompt ? { stylePrompt } : {}),
       },
-      style_summary: DEFAULT_STYLE_SUMMARY,
+      style_summary: styleSummary,
       stats: { sceneCount: 0, imagesCompleted: 0, audioCompleted: 0, imagesFailed: 0, audioFailed: 0, needsReviewCount: 0 },
     });
 

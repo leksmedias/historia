@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createProjectFrontend } from "@/lib/api";
-import { loadProviderSettings, saveProviderSettings, getAvailableVoices, COMPACT_STYLE_SUFFIX, IMAGE_MODELS } from "@/lib/providers";
+import { loadProviderSettings, saveProviderSettings, getAvailableVoices, COMPACT_STYLE_SUFFIX, COMPACT_WWII_STYLE_SUFFIX, IMAGE_MODELS } from "@/lib/providers";
 import { Upload, Scroll, Loader2, Sparkles, Type, Image, Cpu } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,10 +18,20 @@ export default function ProjectForm() {
   const allVoices = getAvailableVoices(settings);
   const [title, setTitle] = useState("");
   const [script, setScript] = useState("");
+  const [visualTheme, setVisualTheme] = useState<"impasto" | "ww2">("impasto");
   const [imageMode, setImageMode] = useState<"refs" | "style-prompt">("refs");
   const [style1, setStyle1] = useState<File | null>(null);
   const [style2, setStyle2] = useState<File | null>(null);
   const [stylePrompt, setStylePrompt] = useState(COMPACT_STYLE_SUFFIX);
+
+  const handleThemeChange = (theme: "impasto" | "ww2") => {
+    setVisualTheme(theme);
+    if (theme === "ww2") {
+      setStylePrompt(COMPACT_WWII_STYLE_SUFFIX);
+    } else {
+      setStylePrompt(COMPACT_STYLE_SUFFIX);
+    }
+  };
   const [imageModel, setImageModel] = useState(settings.imageModel || "imagen-4.0-fast-generate-001");
   const [voiceId, setVoiceId] = useState(settings.voiceId || "Dennis");
   const [splitMode, setSplitMode] = useState<"smart" | "exact" | "duration" | "two">("smart");
@@ -38,8 +48,8 @@ export default function ProjectForm() {
     if (!canSubmit) return;
 
     const settings = loadProviderSettings();
-    if (!settings.groqApiKey && !settings.anthropicApiKey) {
-      toast.error("Groq or Anthropic API key required. Go to Settings to configure it.");
+    if (!settings.groqApiKey && !settings.anthropicApiKey && !settings.nvidiaApiKey) {
+      toast.error("An API key (Groq, Anthropic, or Nvidia) is required. Go to Settings to configure it.");
       return;
     }
 
@@ -56,7 +66,7 @@ export default function ProjectForm() {
         script.trim(),
         imageMode === "refs" ? style1 : null,
         imageMode === "refs" ? style2 : null,
-        { voiceId, splitMode, stylePrompt: imageMode === "style-prompt" ? stylePrompt.trim() : undefined },
+        { voiceId, splitMode, stylePrompt: imageMode === "style-prompt" ? stylePrompt.trim() : undefined, visualTheme },
         {
           onPhase: (p) => setPhase(p),
           onSceneProgress: () => {},
@@ -126,6 +136,22 @@ export default function ProjectForm() {
                   {script.split(/\s+/).length} words
                 </p>
               )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Visual Theme Style</label>
+              <Select value={visualTheme} onValueChange={(v) => handleThemeChange(v as "impasto" | "ww2")}>
+                <SelectTrigger className="bg-secondary border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="impasto">17th Century Impasto (Default)</SelectItem>
+                  <SelectItem value="ww2">WWII Archival Photorealism (B&W)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Determines the aesthetic style of generated scene assets (e.g., dramatic oil painting or historical monochrome photojournalism).
+              </p>
             </div>
 
             {/* Image mode toggle */}

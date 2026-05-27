@@ -2,6 +2,23 @@
 
 All notable changes to Historia are documented here.
 
+## [1.0.0] — 2026-05-27
+
+### Added
+- **NVIDIA LLM API Integration**:
+  - Integrated `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` with 65k context window support.
+  - Added new connection field, visibility toggle, and connection test button in Settings under the Connections tab.
+  - Expanded text provider selection to support Nvidia alongside Groq and Claude under the Providers tab.
+  - Set a custom 65536 max tokens limit and 16384 reasoning budget.
+  - Increased script chunk size to 40,000 words for NVIDIA provider (up from 800 words) for processing massive scripts in a single call.
+- **WWII Archival Photorealism Visual Theme**:
+  - Added `WW2_STYLE_SUMMARY` metadata (B&W high-contrast palette, combat photojournalism framing, wool uniforms, mud, graves/trenches look).
+  - Added visual theme select dropdown in Project Creation form (`ProjectForm.tsx`) and project settings database tracking.
+  - Automatic prompt suffix injection switching to `COMPACT_WWII_STYLE_SUFFIX` when WWII theme is active.
+  - Dynamic visual theme loading in `ProjectPreview.tsx` for scene-specific prompt regenerations via the correct aesthetic rules.
+
+---
+
 ## [0.9.0] — 2026-05-24
 
 ### Added

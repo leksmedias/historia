@@ -102,14 +102,31 @@ async function processRemainingChunks(
   splitMode: "smart" | "exact" | "duration" | "two",
   stylePrompt?: string,
   anthropicApiKey?: string,
-  claudeModel?: string
+  claudeModel?: string,
+  nvidiaApiKey?: string,
+  textProvider?: "groq" | "claude" | "nvidia",
+  visualTheme?: "impasto" | "ww2"
 ): Promise<void> {
   let nextSceneNumber = startSceneNumber;
   for (let i = chunkStartIdx; i < totalChunks; i++) {
     await new Promise(r => setTimeout(r, 3000));
     try {
       console.log(`[progressive] Processing chunk ${i + 1} of ${totalChunks}...`);
-      const chunkScenes = await generateScenesForChunk(title, chunks[i], i, totalChunks, nextSceneNumber, groqApiKey, splitMode, stylePrompt, anthropicApiKey, claudeModel);
+      const chunkScenes = await generateScenesForChunk(
+        title,
+        chunks[i],
+        i,
+        totalChunks,
+        nextSceneNumber,
+        groqApiKey,
+        splitMode,
+        stylePrompt,
+        anthropicApiKey,
+        claudeModel,
+        nvidiaApiKey,
+        textProvider,
+        visualTheme
+      );
       await appendScenesToProject(projectId, chunkScenes);
       nextSceneNumber += chunkScenes.length;
       console.log(`[progressive] Chunk ${i + 1} appended: ${chunkScenes.length} scenes`);
@@ -124,16 +141,20 @@ export async function createProjectFrontend(
   script: string,
   style1: File | null,
   style2: File | null,
-  options: { voiceId?: string; splitMode?: "smart" | "exact" | "duration" | "two"; stylePrompt?: string },
+  options: { voiceId?: string; splitMode?: "smart" | "exact" | "duration" | "two"; stylePrompt?: string; visualTheme?: "impasto" | "ww2" },
   callbacks: PipelineCallbacks
 ): Promise<{ projectId: string; serverPipeline: boolean; sceneCount: number }> {
   const settings = loadProviderSettings();
-  if (!settings.groqApiKey && !settings.anthropicApiKey) throw new Error("No AI API key configured. Add a Groq or Anthropic API key in Settings.");
+  if (!settings.groqApiKey && !settings.anthropicApiKey && !settings.nvidiaApiKey) {
+    throw new Error("No AI API key configured. Add a Groq, Anthropic, or Nvidia API key in Settings.");
+  }
 
-  const chunks = splitScriptIntoChunks(script, 800);
+  const useProvider = settings.textProvider || (settings.anthropicApiKey ? "claude" : "groq");
+  const chunkLimit = useProvider === "nvidia" ? 40000 : 800;
+  const chunks = splitScriptIntoChunks(script, chunkLimit);
   const totalChunks = chunks.length;
 
-  const aiProvider = settings.anthropicApiKey ? "Claude" : "Groq";
+  const aiProvider = useProvider === "nvidia" ? "Nvidia" : (useProvider === "claude" ? "Claude" : "Groq");
   callbacks.onPhase(totalChunks > 1
     ? `Generating scenes via ${aiProvider} (chunk 1 of ${totalChunks})...`
     : `Generating scene manifest via ${aiProvider}...`
@@ -141,7 +162,21 @@ export async function createProjectFrontend(
 
   let firstChunkScenes: SceneManifest[];
   try {
-    firstChunkScenes = await generateScenesForChunk(title, chunks[0], 0, totalChunks, 1, settings.groqApiKey, options.splitMode || "smart", options.stylePrompt, settings.anthropicApiKey || undefined, settings.claudeModel || undefined);
+    firstChunkScenes = await generateScenesForChunk(
+      title,
+      chunks[0],
+      0,
+      totalChunks,
+      1,
+      settings.groqApiKey,
+      options.splitMode || "smart",
+      options.stylePrompt,
+      settings.anthropicApiKey || undefined,
+      settings.claudeModel || undefined,
+      settings.nvidiaApiKey || undefined,
+      settings.textProvider,
+      options.visualTheme
+    );
   } catch (e: any) {
     throw new Error(`Scene generation failed: ${e.message}`);
   }
@@ -157,6 +192,7 @@ export async function createProjectFrontend(
   formData.append("modelId", settings.modelId);
   formData.append("splitMode", options.splitMode || "smart");
   if (options.stylePrompt) formData.append("stylePrompt", options.stylePrompt);
+  if (options.visualTheme) formData.append("visualTheme", options.visualTheme);
   if (style1) formData.append("style1", style1);
   if (style2) formData.append("style2", style2);
 
@@ -179,8 +215,22 @@ export async function createProjectFrontend(
 
   if (totalChunks > 1) {
     const nextSceneNumber = firstChunkScenes.length + 1;
-    processRemainingChunks(title, chunks, 1, totalChunks, nextSceneNumber, serverProjectId, settings.groqApiKey, options.splitMode || "smart", options.stylePrompt, settings.anthropicApiKey || undefined, settings.claudeModel || undefined)
-      .catch(e => console.error("[progressive] background processing error:", e.message));
+    processRemainingChunks(
+      title,
+      chunks,
+      1,
+      totalChunks,
+      nextSceneNumber,
+      serverProjectId,
+      settings.groqApiKey,
+      options.splitMode || "smart",
+      options.stylePrompt,
+      settings.anthropicApiKey || undefined,
+      settings.claudeModel || undefined,
+      settings.nvidiaApiKey || undefined,
+      settings.textProvider,
+      options.visualTheme
+    ).catch(e => console.error("[progressive] background processing error:", e.message));
   }
 
   return { projectId: serverProjectId, serverPipeline: !!scenesRes.serverPipeline, sceneCount: firstChunkScenes.length };

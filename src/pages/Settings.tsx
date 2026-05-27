@@ -33,9 +33,12 @@ export default function Settings() {
   const [showGroq, setShowGroq] = useState(false);
   const [showAnthropic, setShowAnthropic] = useState(false);
   const [showInworld, setShowInworld] = useState(false);
+  const [showNvidia, setShowNvidia] = useState(false);
 
   const [groqStatus, setGroqStatus] = useState<HealthStatus>("idle");
   const [groqMsg, setGroqMsg] = useState("");
+  const [nvidiaStatus, setNvidiaStatus] = useState<HealthStatus>("idle");
+  const [nvidiaMsg, setNvidiaMsg] = useState("");
   const [inworldStatus, setInworldStatus] = useState<HealthStatus>("idle");
   const [inworldMsg, setInworldMsg] = useState("");
   const [renderStatus, setRenderStatus] = useState<HealthStatus>("idle");
@@ -59,6 +62,35 @@ export default function Settings() {
       setGroqStatus("ok");
     } catch (e: any) {
       setGroqStatus("error"); setGroqMsg(e.message?.includes("fetch") ? "Network error" : e.message);
+    }
+  };
+
+  const testNvidia = async () => {
+    const key = settings.nvidiaApiKey || "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";
+    setNvidiaStatus("checking"); setNvidiaMsg("");
+    try {
+      const res = await fetch("/api/gemini-proxy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "nvidia-chat",
+          apiKey: key,
+          payload: {
+            model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            messages: [{ role: "user", content: "Say ok" }],
+            max_tokens: 10,
+            extra_body: {
+              chat_template_kwargs: { enable_thinking: false }
+            }
+          }
+        })
+      });
+      const data = await res.json();
+      if (res.status === 401 || data?.status === 401) { setNvidiaStatus("error"); setNvidiaMsg("Invalid API key"); return; }
+      if (!res.ok || data?.error) { setNvidiaStatus("error"); setNvidiaMsg(data?.error || `HTTP ${res.status}`); return; }
+      setNvidiaStatus("ok");
+    } catch (e: any) {
+      setNvidiaStatus("error"); setNvidiaMsg(e.message?.includes("fetch") ? "Network error" : e.message);
     }
   };
 
@@ -98,7 +130,7 @@ export default function Settings() {
     }
   };
 
-  const testAll = () => { testGroq(); testInworld(); testRenderApi(); };
+  const testAll = () => { testGroq(); testNvidia(); testInworld(); testRenderApi(); };
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "connections", label: "Connections", icon: <Key className="h-4 w-4" /> },
@@ -246,6 +278,34 @@ export default function Settings() {
 
               <div className="border-t border-border" />
 
+              {/* Nvidia */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-foreground">Nvidia API Key</label>
+                  <div className="flex items-center gap-2">
+                    <StatusIndicator status={nvidiaStatus} message={nvidiaMsg} />
+                    <Button variant="ghost" size="sm" onClick={testNvidia} className="text-xs h-7">
+                      {nvidiaStatus === "checking" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    type={showNvidia ? "text" : "password"}
+                    placeholder="nvapi-..."
+                    value={settings.nvidiaApiKey}
+                    onChange={(e) => { setSettings(s => ({ ...s, nvidiaApiKey: e.target.value })); setNvidiaStatus("idle"); }}
+                    className="bg-secondary flex-1"
+                  />
+                  <Button variant="ghost" size="icon" onClick={() => setShowNvidia(!showNvidia)}>
+                    {showNvidia ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">Nemotron reasoning model key — optional (falls back to default key if empty)</p>
+              </div>
+
+              <div className="border-t border-border" />
+
               {/* Inworld */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -279,6 +339,32 @@ export default function Settings() {
       {/* ── PROVIDERS TAB ─────────────────────────────────────────────── */}
       {activeTab === "providers" && (
         <div className="space-y-6">
+          {/* Text Generation */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-display">Text Generation / Script Parsing</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">AI Text Provider</label>
+                <Select
+                  value={settings.textProvider || "groq"}
+                  onValueChange={(v) => setSettings(s => ({ ...s, textProvider: v as "groq" | "claude" | "nvidia" }))}
+                >
+                  <SelectTrigger className="bg-secondary">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="groq">Llama 3.3 70B (Groq)</SelectItem>
+                    <SelectItem value="claude">Claude (Anthropic)</SelectItem>
+                    <SelectItem value="nvidia">Nemotron 3 Nano Reasoning (Nvidia - 65k context)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Select the AI provider used for scene manifest creation and prompt generation.</p>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base font-display">Image Generation</CardTitle>
