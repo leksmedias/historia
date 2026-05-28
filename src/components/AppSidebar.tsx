@@ -1,4 +1,4 @@
-import { Plus, FolderOpen, Settings, AlertTriangle, FileJson, FlaskConical } from "lucide-react";
+import { Plus, FolderOpen, Settings, AlertTriangle, FileJson, FlaskConical, FileCode } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import {
@@ -18,6 +18,7 @@ const items = [
   { title: "New Project", url: "/", icon: Plus },
   { title: "Projects", url: "/projects", icon: FolderOpen },
   { title: "JSON Import", url: "/json-to-video", icon: FileJson },
+  { title: "Script → JSON", url: "/script-to-json", icon: FileCode },
   { title: "Image Test", url: "/image-test", icon: FlaskConical },
   { title: "Error Log", url: "/errors", icon: AlertTriangle },
   { title: "Settings", url: "/settings", icon: Settings },
