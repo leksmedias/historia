@@ -57,7 +57,13 @@ export function estimateSceneCount(wordCount: number, secondsPerScene: number): 
  */
 export function chunkScript(text: string, maxWords: number): string[] {
   // Split on sentence-ending punctuation followed by whitespace or end of string
-  const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g) ?? [text];
+  const matched = text.match(/[^.!?]+[.!?]+(\s|$)/g) ?? [];
+  // Collect any trailing text not captured by the sentence regex
+  const coveredLength = matched.reduce((sum, s) => sum + s.length, 0);
+  const trailing = text.slice(coveredLength).trim();
+  const sentences = matched.length > 0
+    ? (trailing ? [...matched, trailing] : matched)
+    : [text];
   const chunks: string[] = [];
   let current: string[] = [];
   let currentWordCount = 0;

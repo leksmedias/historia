@@ -54,6 +54,13 @@ describe("chunkScript", () => {
       expect(trimmed[trimmed.length - 1]).toMatch(/[.!?]/);
     }
   });
+
+  it("preserves trailing text without terminal punctuation", () => {
+    const script = "First sentence. Trailing fragment";
+    const chunks = chunkScript(script, 2000);
+    const allText = chunks.join(" ");
+    expect(allText).toContain("Trailing fragment");
+  });
 });
 
 describe("parseJsonResponse", () => {
@@ -73,7 +80,7 @@ describe("parseJsonResponse", () => {
     expect(() => parseJsonResponse("not json")).toThrow();
   });
 
-  it("handles JSON embedded after reasoning text", () => {
+  it("handles JSON in code fence after reasoning text", () => {
     const input = 'Some reasoning here...\n```json\n{"scenes":[]}\n```\nmore text';
     expect(parseJsonResponse(input)).toEqual({ scenes: [] });
   });
