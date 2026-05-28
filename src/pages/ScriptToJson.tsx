@@ -29,7 +29,11 @@ interface Progress {
 }
 
 function highlightJson(json: string): string {
-  return json
+  const escaped = json
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return escaped
     .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*")\s*:/g, '<span class="text-violet-400">$1</span>:')
     .replace(/: ("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*")/g, ': <span class="text-emerald-400">$1</span>')
     .replace(/: (null)/g, ': <span class="text-slate-500">$1</span>');
@@ -94,10 +98,14 @@ export default function ScriptToJson() {
   const displayOutput = result ?? (partialScenes.length > 0 ? { title, scenes: partialScenes } : null);
   const jsonString = displayOutput ? JSON.stringify(displayOutput, null, 2) : "";
 
-  function handleCopy() {
+  async function handleCopy() {
     if (!jsonString) return;
-    navigator.clipboard.writeText(jsonString);
-    toast({ title: "Copied to clipboard" });
+    try {
+      await navigator.clipboard.writeText(jsonString);
+      toast({ title: "Copied to clipboard" });
+    } catch {
+      toast({ title: "Copy failed", description: "Clipboard access denied", variant: "destructive" });
+    }
   }
 
   function handleDownload() {
