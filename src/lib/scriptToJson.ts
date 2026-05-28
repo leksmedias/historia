@@ -204,7 +204,8 @@ async function callPass1(
   secondsPerScene: number,
   provider: "groq" | "nvidia",
   apiKey: string,
-  retryOnRateLimit = true
+  retryOnRateLimit = true,
+  retryOnParseFailure = true
 ): Promise<SplitScene[]> {
   const systemPrompt = buildPass1SystemPrompt(wordsPerScene, secondsPerScene, startId);
   const userPrompt = `Split this script excerpt into scenes:\n\n${chunk}\n\nReturn ONLY the JSON object.`;
@@ -248,7 +249,7 @@ async function callPass1(
     if (result.status === 429 && retryOnRateLimit) {
       console.log(`[${provider}] Pass1 rate limited — waiting 15s...`);
       await delay(15000);
-      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, false);
+      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, false, retryOnParseFailure);
     }
     if (result.status === 401)
       throw new Error(`${provider === "groq" ? "Groq" : "NVIDIA"} API key is invalid. Update it in Settings.`);
@@ -263,9 +264,9 @@ async function callPass1(
     return (parsed.scenes ?? []) as SplitScene[];
   } catch {
     // Retry once with explicit no-markdown instruction
-    if (retryOnRateLimit) {
+    if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass1 JSON parse failed — retrying with strict instruction`);
-      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, false);
+      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, retryOnRateLimit, false);
     }
     throw new Error(`${provider} returned malformed JSON during scene splitting`);
   }
