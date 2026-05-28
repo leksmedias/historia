@@ -25,7 +25,7 @@ Historia is a cinematic historical documentary generator: script → AI scene sp
 - **Routing**: React Router v6. Routes defined in `App.tsx`.
 - **State**: TanStack Query v5 for server data; localStorage (via helpers in `src/lib/providers.ts`) for API keys and user settings.
 - **Global state**: `src/lib/GenerationContext` wraps the entire app to track active pipeline state.
-- **Pages** in `src/pages/`: Index → Projects → ProjectStatus → ProjectPreview → Settings → ErrorLog → JsonToVideo
+- **Pages** in `src/pages/`: Index → Projects → ProjectStatus → ProjectPreview → Settings → ErrorLog → JsonToVideo → ImageModelTest (`/image-test`, side-by-side image model comparison)
 - **Core logic** lives in two files:
   - `src/lib/api.ts` — pipeline orchestration, all API calls, progressive batching, polling, bulk operations
   - `src/lib/providers.ts` — AI integrations (Groq, Gemini, Inworld TTS), script splitting, settings management
@@ -33,9 +33,10 @@ Historia is a cinematic historical documentary generator: script → AI scene sp
 ### Backend (Express 5, `server/`)
 - Entry: `server/index.ts` — starts on `PORT` (default 5000), serves static `dist/` + SPA fallback
 - Routes: `server/routes/` — `projects.ts`, `assets.ts`, `regenerate.ts`, `gemini-proxy.ts`, `render.ts`
-- `/api/gemini-proxy` is a multi-service server-side proxy handling three actions:
+- `/api/gemini-proxy` is a multi-service server-side proxy handling four actions:
   - `generate` — Vertex AI Imagen image generation via `gcloud` access tokens (`server/lib/gemini.ts`)
   - `groq-chat` — Groq API proxy (uses `apiKey` from request or `GROQ_API_KEY` env)
+  - `nvidia-chat` — NVIDIA API proxy using `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (uses `apiKey` or `NVIDIA_API_KEY` env, falls back to a hardcoded key)
   - `claude-chat` — Anthropic API proxy (uses `apiKey` from request or `ANTHROPIC_API_KEY` env)
 - `server/lib/veo.ts` — Veo video animation via Vertex AI (`us-central1` only)
 - `server/routes/regenerate.ts` — `POST /api/regenerate` regenerates a single scene's image or audio server-side (body: `{ projectId, sceneNumber, type: "image"|"audio", voiceOverride? }`)
@@ -47,6 +48,7 @@ Historia is a cinematic historical documentary generator: script → AI scene sp
 ### Database
 - PostgreSQL via Drizzle ORM. Two tables: `projects` (metadata, settings, style_summary, stats as JSONB) and `scenes` (per-scene prompts, file paths, statuses, error logs).
 - Key scene fields: `script_text` (display text), `tts_text` (text sent to TTS — may differ), `image_prompt`, `motion_prompt` (Veo animation description, falls back to `image_prompt`), `fallback_prompts` (JSONB array), `needs_review` (set true on generation failure).
+- `splitMode` options: `"smart"` (2–3 sentences/scene), `"exact"` (1 sentence), `"two"` (2 sentences), `"duration"` (time-based splits).
 - Schema changes: edit `shared/schema.ts` → `npm run db:push`
 
 ### Asset file storage (`uploads/`)
@@ -92,7 +94,9 @@ The `stats.serverPipeline` boolean in the `projects` table is the flag the front
 
 ## Key Conventions
 
-- **AI providers** (Groq key, Inworld key, Anthropic key) are stored in `localStorage` and set via the Settings page. The Groq key is **never** in `.env`; it can be passed as `apiKey` in the `groq-chat` proxy request.
+- **AI providers** (Groq key, Inworld key, Anthropic key, NVIDIA key) are stored in `localStorage` and set via the Settings page. The Groq key is **never** in `.env`; it can be passed as `apiKey` in the `groq-chat` proxy request.
+- **Text provider** (`textProvider` in `ProviderSettings`): `"groq"` (default, batch 10), `"claude"` (batch 5), or `"nvidia"` (batch 40, uses `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`). Determines which LLM generates scene image prompts.
+- **Visual theme** (`visualTheme` in `ProviderSettings`): `"impasto"` (default — digital oil painting, heavy impasto style) or `"ww2"` (WWII archival photorealism, B&W film grain). Switches both the system prompt and image style suffix (`COMPACT_STYLE_SUFFIX` / `COMPACT_WWII_STYLE_SUFFIX` in `providers.ts`).
 - **Image models** selectable in Settings: `imagen-4.0-fast-generate-001` (default), `imagen-4.0-generate-001`, `imagen-4.0-ultra-generate-001`, `gemini-2.5-flash-image`.
 - `skipImageGeneration` setting (in `ProviderSettings`) bypasses Imagen calls entirely — useful for testing audio/script flows without consuming quota.
 - **shadcn/ui** components live in `src/components/ui/`. Fonts: Cinzel (headings), Source Sans 3 (body).
@@ -123,6 +127,7 @@ VEO_MODEL_ID=veo-3.1-lite-generate-001
 # Optional server-side LLM keys (can also be passed per-request)
 ANTHROPIC_API_KEY=<key>
 GROQ_API_KEY=<key>
+NVIDIA_API_KEY=<key>                       # Falls back to hardcoded key if absent
 CLIP_CONCURRENCY=3                         # Parallel clip generation workers (default: 3)
 ```
 

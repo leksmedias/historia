@@ -104,7 +104,7 @@ async function callPass1(
   secondsPerScene: number,
   provider: "groq" | "nvidia",
   apiKey: string,
-  retryOnRateLimit = true,
+  rateLimitRetries = 3,
   retryOnParseFailure = true
 ): Promise<SplitScene[]> {
   const systemPrompt = buildPass1SystemPrompt(wordsPerScene, secondsPerScene, startId);
@@ -146,18 +146,28 @@ async function callPass1(
       typeof result.data === "string"
         ? result.data
         : JSON.stringify(result.data || {}).substring(0, 500);
-    if ((result.status === 429 || result.status === 413) && retryOnRateLimit) {
-      console.log(`[${provider}] Pass1 rate limited (${result.status}) — waiting 15s...`);
-      await delay(15000);
-      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, false, retryOnParseFailure);
+    if ((result.status === 429 || result.status === 413) && rateLimitRetries > 0) {
+      const waitTime = (4 - rateLimitRetries) * 15000;
+      console.log(`[${provider}] Pass1 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
+      await delay(waitTime);
+      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, rateLimitRetries - 1, retryOnParseFailure);
     }
     if (result.status === 401)
       throw new Error(`${provider === "groq" ? "Groq" : "NVIDIA"} API key is invalid.`);
     throw new Error(`${provider} Pass 1 error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
-  const content: string = result.data?.choices?.[0]?.message?.content ?? "";
-  if (!content) throw new Error(`No content from ${provider} during scene splitting`);
+  let content: string = result.data?.choices?.[0]?.message?.content ?? "";
+  if (!content && result.data?.choices?.[0]?.message?.reasoning_content) {
+    content = result.data.choices[0].message.reasoning_content;
+  }
+  if (!content && result.data?.choices?.[0]?.message?.reasoning) {
+    content = result.data.choices[0].message.reasoning;
+  }
+  if (!content) {
+    console.error(`[${provider}] Pass1 result data:`, JSON.stringify(result.data));
+    throw new Error(`No content from ${provider} during scene splitting`);
+  }
 
   try {
     const parsed = parseJsonResponse(content);
@@ -165,7 +175,7 @@ async function callPass1(
   } catch {
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass1 JSON parse failed — retrying`);
-      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, retryOnRateLimit, false);
+      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, rateLimitRetries, false);
     }
     throw new Error(`${provider} returned malformed JSON during scene splitting`);
   }
@@ -180,7 +190,7 @@ async function callPass2Batch(
   provider: "groq" | "nvidia",
   apiKey: string,
   continuityAnchor: string,
-  retryOnRateLimit = true,
+  rateLimitRetries = 3,
   retryOnParseFailure = true
 ): Promise<Array<{ id: number; prompt: string }>> {
   const baseSystem = style === "ww2" ? PASS2_WWII_SYSTEM : PASS2_IMPASTO_SYSTEM;
@@ -227,18 +237,28 @@ async function callPass2Batch(
       typeof result.data === "string"
         ? result.data
         : JSON.stringify(result.data || {}).substring(0, 500);
-    if ((result.status === 429 || result.status === 413) && retryOnRateLimit) {
-      console.log(`[${provider}] Pass2 rate limited (${result.status}) — waiting 15s...`);
-      await delay(15000);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, false, retryOnParseFailure);
+    if ((result.status === 429 || result.status === 413) && rateLimitRetries > 0) {
+      const waitTime = (4 - rateLimitRetries) * 15000;
+      console.log(`[${provider}] Pass2 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
+      await delay(waitTime);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, rateLimitRetries - 1, retryOnParseFailure);
     }
     if (result.status === 401)
       throw new Error(`${provider === "groq" ? "Groq" : "NVIDIA"} API key is invalid.`);
     throw new Error(`${provider} Pass 2 error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
-  const content: string = result.data?.choices?.[0]?.message?.content ?? "";
-  if (!content) throw new Error(`No content from ${provider} during prompt generation`);
+  let content: string = result.data?.choices?.[0]?.message?.content ?? "";
+  if (!content && result.data?.choices?.[0]?.message?.reasoning_content) {
+    content = result.data.choices[0].message.reasoning_content;
+  }
+  if (!content && result.data?.choices?.[0]?.message?.reasoning) {
+    content = result.data.choices[0].message.reasoning;
+  }
+  if (!content) {
+    console.error(`[${provider}] Pass2 result data:`, JSON.stringify(result.data));
+    throw new Error(`No content from ${provider} during prompt generation`);
+  }
 
   try {
     const parsed = parseJsonResponse(content);
@@ -246,7 +266,7 @@ async function callPass2Batch(
   } catch {
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass2 JSON parse failed — retrying`);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, retryOnRateLimit, false);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, rateLimitRetries, false);
     }
     console.error(`[${provider}] Pass2 JSON parse failed twice — using placeholders`);
     return scenes.map((s) => ({ id: s.id, prompt: "[generation failed]" }));
@@ -269,6 +289,10 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
     let nextId = 1;
 
     for (let i = 0; i < chunks.length; i++) {
+      if (i > 0) {
+        // Space out requests to avoid hitting TPM rate limits
+        await delay(2000);
+      }
       const scenes = await callPass1(
         chunks[i],
         nextId,
@@ -293,6 +317,10 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
     const completedForAnchor: Array<{ script: string; prompt: string }> = [];
 
     for (let b = 0; b < totalBatches; b++) {
+      if (b > 0) {
+        // Space out requests to avoid hitting TPM rate limits
+        await delay(2000);
+      }
       const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);
       const anchor = buildContinuityAnchor(completedForAnchor);
       const results = await callPass2Batch(title, batch, style, provider, apiKey, anchor);
