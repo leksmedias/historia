@@ -292,7 +292,9 @@ async function callPass2Batch(
   const scenesText = scenes
     .map((s) => `Scene ${s.id}: "${s.script}"`)
     .join("\n");
-  const userPrompt = `Documentary title: "${title}"\n\nGenerate ONE image prompt for each scene below. Return ONLY a JSON object with a "scenes" array:\n\n${scenesText}\n\nReturn format: {"scenes":[{"id":1,"prompt":"..."},{"id":2,"prompt":"..."}]}`;
+  const firstId = scenes[0].id;
+  const secondId = scenes.length > 1 ? scenes[1].id : firstId + 1;
+  const userPrompt = `Documentary title: "${title}"\n\nGenerate ONE image prompt for each scene below. Return ONLY a JSON object with a "scenes" array:\n\n${scenesText}\n\nReturn format: {"scenes":[{"id":${firstId},"prompt":"..."},{"id":${secondId},"prompt":"..."}]}`;
 
   const isGroq = provider === "groq";
   const result = await apiProxy({
@@ -386,6 +388,8 @@ export async function runScriptToJson(
       provider,
       apiKey
     );
+    // Normalize IDs regardless of what the AI returned — ensures sequential IDs across chunks
+    scenes.forEach((s, idx) => { s.id = nextId + idx; });
     if (scenes.length === 0) {
       console.warn(`[${provider}] Pass1 chunk ${i + 1}/${chunks.length} returned 0 scenes`);
     }
