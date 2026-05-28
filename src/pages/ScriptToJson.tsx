@@ -1,16 +1,11 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Copy, Download, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Copy, Download, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { loadProviderSettings } from "@/lib/providers";
-import {
-  estimateSceneCount,
-  runScriptToJson,
-  type OutputScene,
-  type ProgressCallback,
-} from "@/lib/scriptToJson";
+import { estimateSceneCount, type OutputScene } from "@/lib/scriptToJson";
 
 const DURATION_OPTIONS = [
   { value: 10, label: "10s", words: 19 },
@@ -27,6 +22,8 @@ interface Progress {
   done: number;
   total: number;
 }
+
+const STORAGE_KEY = "stj_job";
 
 function highlightJson(json: string): string {
   const escaped = json
@@ -53,6 +50,87 @@ export default function ScriptToJson() {
   const [partialScenes, setPartialScenes] = useState<OutputScene[]>([]);
   const [result, setResult] = useState<{ title: string; scenes: OutputScene[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const pollJob = useCallback(async (jobId: string) => {
+    try {
+      const res = await fetch(`/api/script-to-json/${jobId}`);
+      if (res.status === 404) {
+        stopPolling();
+        setGenerating(false);
+        setProgress(null);
+        setActiveJobId(null);
+        localStorage.removeItem(STORAGE_KEY);
+        setError("Job was lost (server restarted). Please regenerate.");
+        return;
+      }
+      const job = await res.json();
+      if (job.progress) {
+        setProgress({ phase: job.progress.phase, done: job.progress.done, total: job.progress.total });
+        if (job.progress.partialScenes?.length) setPartialScenes(job.progress.partialScenes);
+      }
+      if (job.status === "completed") {
+        stopPolling();
+        setResult(job.result);
+        setGenerating(false);
+        setProgress(null);
+        setPartialScenes([]);
+        setActiveJobId(null);
+        localStorage.removeItem(STORAGE_KEY);
+      } else if (job.status === "failed") {
+        stopPolling();
+        setError(job.error ?? "Generation failed");
+        toast({ title: "Generation failed", description: job.error, variant: "destructive" });
+        setGenerating(false);
+        setProgress(null);
+        setActiveJobId(null);
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    } catch {
+      // Network hiccup — will retry on next tick
+    }
+  }, [stopPolling, toast]);
+
+  const startPolling = useCallback((jobId: string) => {
+    stopPolling();
+    pollRef.current = setInterval(() => pollJob(jobId), 2000);
+    // Poll immediately
+    pollJob(jobId);
+  }, [pollJob, stopPolling]);
+
+  // Resume any in-progress job on mount
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      try {
+        const { jobId, savedTitle } = JSON.parse(stored);
+        setActiveJobId(jobId);
+        if (savedTitle) setTitle(savedTitle);
+        setGenerating(true);
+        startPolling(jobId);
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    }
+    return () => stopPolling();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleCancel = useCallback(() => {
+    stopPolling();
+    setGenerating(false);
+    setProgress(null);
+    setActiveJobId(null);
+    localStorage.removeItem(STORAGE_KEY);
+  }, [stopPolling]);
 
   const wordCount = script.trim() ? script.trim().split(/\s+/).length : 0;
   const estimatedScenes = wordCount > 0 ? estimateSceneCount(wordCount, secondsPerScene) : 0;
@@ -66,34 +144,32 @@ export default function ScriptToJson() {
     setPartialScenes([]);
     setProgress(null);
 
-    const onProgress: ProgressCallback = (phase, done, total, partial) => {
-      setProgress({ phase, done, total });
-      if (partial) setPartialScenes(partial);
-    };
-
     try {
-      const output = await runScriptToJson(
-        {
+      const res = await fetch("/api/script-to-json", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           title: title.trim(),
           script: script.trim(),
           secondsPerScene,
           style,
           provider,
-          groqApiKey: settings.groqApiKey,
-          nvidiaApiKey: settings.nvidiaApiKey,
-        },
-        onProgress
-      );
-      setResult(output);
-      setPartialScenes([]);
+          apiKey,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(body.error ?? `Failed to start job (HTTP ${res.status})`);
+      }
+      const { jobId } = await res.json();
+      setActiveJobId(jobId);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ jobId, savedTitle: title.trim() }));
+      startPolling(jobId);
     } catch (e: any) {
-      setError(e.message ?? "Generation failed");
-      toast({ title: "Generation failed", description: e.message, variant: "destructive" });
-    } finally {
+      setError(e.message ?? "Failed to start generation");
       setGenerating(false);
-      setProgress(null);
     }
-  }, [title, script, secondsPerScene, style, provider, settings, toast]);
+  }, [title, script, secondsPerScene, style, provider, apiKey, startPolling]);
 
   const displayOutput = result ?? (partialScenes.length > 0 ? { title, scenes: partialScenes } : null);
   const jsonString = displayOutput ? JSON.stringify(displayOutput, null, 2) : "";
@@ -270,8 +346,8 @@ export default function ScriptToJson() {
           </div>
         </div>
 
-        {/* Generate button */}
-        <div className="px-5 pb-5 shrink-0">
+        {/* Generate / Cancel button */}
+        <div className="px-5 pb-5 shrink-0 flex flex-col gap-2">
           <Button
             onClick={handleGenerate}
             disabled={!canGenerate}
@@ -287,6 +363,15 @@ export default function ScriptToJson() {
               "▶ Generate Scene Manifest"
             )}
           </Button>
+          {generating && (
+            <button
+              onClick={handleCancel}
+              className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-3 w-3" />
+              Cancel
+            </button>
+          )}
         </div>
       </div>
 
@@ -323,6 +408,21 @@ export default function ScriptToJson() {
             </Button>
           </div>
         </div>
+
+        {/* Background job banner */}
+        {generating && (
+          <div className="px-5 py-2.5 border-b border-border bg-primary/5 shrink-0 flex items-center gap-2">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+            <span className="text-xs text-primary">
+              Running in background — you can navigate away and return to see results
+            </span>
+            {activeJobId && (
+              <span className="text-[10px] text-muted-foreground ml-auto font-mono">
+                {activeJobId.slice(0, 8)}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Progress */}
         {progress && (
