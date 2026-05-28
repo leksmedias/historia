@@ -1,4 +1,6 @@
 import { Router, Request, Response } from "express";
+import fs from "fs";
+import path from "path";
 import {
   type OutputScene,
   type ScriptToJsonResult,
@@ -9,6 +11,8 @@ import {
   NVIDIA_BATCH_SIZE,
   chunkScript,
   parseJsonResponse,
+  recoverScenesRegex,
+  recoverPromptsRegex,
   buildContinuityAnchor,
   buildPass1SystemPrompt,
   PASS2_IMPASTO_SYSTEM,
@@ -45,16 +49,47 @@ interface JobParams {
 // ── Job store ─────────────────────────────────────────────────────────────────
 
 const jobs = new Map<string, Job>();
+const JOBS_FILE_PATH = path.join(process.cwd(), "uploads", "script_to_json_jobs.json");
 
-// Clean up jobs older than 2 hours
-const cleanup = setInterval(() => {
-  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
-  for (const [id, job] of jobs) {
-    if (job.createdAt < cutoff) jobs.delete(id);
+function saveJobsToDisk() {
+  try {
+    const dir = path.dirname(JOBS_FILE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const data = Array.from(jobs.entries());
+    fs.writeFileSync(JOBS_FILE_PATH, JSON.stringify(data, null, 2), "utf-8");
+  } catch (e: any) {
+    console.error("[scriptToJson] Failed to save jobs to disk:", e.message);
   }
-}, 60 * 60 * 1000);
-// Allow process to exit cleanly (don't block shutdown)
-if (cleanup.unref) cleanup.unref();
+}
+
+function loadJobsFromDisk() {
+  try {
+    if (fs.existsSync(JOBS_FILE_PATH)) {
+      const text = fs.readFileSync(JOBS_FILE_PATH, "utf-8");
+      const data = JSON.parse(text) as Array<[string, Job]>;
+      let updated = false;
+      for (const [id, job] of data) {
+        if (job.status === "running") {
+          job.status = "failed";
+          job.error = "Job interrupted by server restart";
+          updated = true;
+        }
+        jobs.set(id, job);
+      }
+      console.log(`[scriptToJson] Loaded ${jobs.size} jobs from history.`);
+      if (updated) {
+        saveJobsToDisk();
+      }
+    }
+  } catch (e: any) {
+    console.error("[scriptToJson] Failed to load jobs from disk:", e.message);
+  }
+}
+
+// Load jobs on startup
+loadJobsFromDisk();
 
 const FALLBACK_NVIDIA_KEY =
   "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";
@@ -172,12 +207,17 @@ async function callPass1(
   try {
     const parsed = parseJsonResponse(content);
     return (parsed.scenes ?? []) as SplitScene[];
-  } catch {
+  } catch (err: any) {
+    const recovered = recoverScenesRegex(content);
+    if (recovered.length > 0) {
+      console.log(`[${provider}] Pass1: Recovered ${recovered.length} scenes via regex from malformed/truncated output.`);
+      return recovered;
+    }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass1 JSON parse failed — retrying`);
       return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, rateLimitRetries, false);
     }
-    throw new Error(`${provider} returned malformed JSON during scene splitting`);
+    throw new Error(`${provider} returned malformed JSON during scene splitting: ${err.message}`);
   }
 }
 
@@ -263,12 +303,17 @@ async function callPass2Batch(
   try {
     const parsed = parseJsonResponse(content);
     return parsed.scenes ?? [];
-  } catch {
+  } catch (err: any) {
+    const recovered = recoverPromptsRegex(content);
+    if (recovered.length > 0) {
+      console.log(`[${provider}] Pass2: Recovered ${recovered.length} prompts via regex from malformed/truncated output.`);
+      return recovered;
+    }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass2 JSON parse failed — retrying`);
       return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, rateLimitRetries, false);
     }
-    console.error(`[${provider}] Pass2 JSON parse failed twice — using placeholders`);
+    console.error(`[${provider}] Pass2 JSON parse failed twice — using placeholders. Error: ${err.message}`);
     return scenes.map((s) => ({ id: s.id, prompt: "[generation failed]" }));
   }
 }
@@ -284,6 +329,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
     // Pass 1
     const chunks = chunkScript(script, PASS1_CHUNK_MAX_WORDS);
     job.progress = { phase: "pass1", done: 0, total: chunks.length };
+    saveJobsToDisk();
 
     const allSplitScenes: SplitScene[] = [];
     let nextId = 1;
@@ -305,6 +351,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
       allSplitScenes.push(...scenes);
       nextId += scenes.length;
       job.progress = { phase: "pass1", done: i + 1, total: chunks.length };
+      saveJobsToDisk();
     }
 
     if (allSplitScenes.length === 0) throw new Error("No scenes were generated from the script");
@@ -312,6 +359,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
     // Pass 2
     const totalBatches = Math.ceil(allSplitScenes.length / batchSize);
     job.progress = { phase: "pass2", done: 0, total: allSplitScenes.length };
+    saveJobsToDisk();
 
     const promptMap = new Map<number, string>();
     const completedForAnchor: Array<{ script: string; prompt: string }> = [];
@@ -326,7 +374,11 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
       const results = await callPass2Batch(title, batch, style, provider, apiKey, anchor);
 
       for (const r of results) {
-        promptMap.set(r.id, r.prompt);
+        const idVal = r.id ?? r.scene_number ?? r.sceneNumber ?? r.scene_id ?? r.scene_Id;
+        const promptVal = r.prompt ?? r.image_prompt ?? r.description ?? r.imagePrompt;
+        if (idVal !== undefined && promptVal !== undefined) {
+          promptMap.set(Number(idVal), promptVal);
+        }
       }
       for (const scene of batch) {
         const prompt = promptMap.get(scene.id) ?? "[generation failed]";
@@ -343,6 +395,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
           overlay_text: s.overlay_text,
         }));
       job.progress = { phase: "pass2", done: doneSoFar, total: allSplitScenes.length, partialScenes };
+      saveJobsToDisk();
     }
 
     const scenes: OutputScene[] = allSplitScenes.map((s) => ({
@@ -354,16 +407,24 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
 
     job.status = "completed";
     job.result = { title, scenes };
+    saveJobsToDisk();
   } catch (e: any) {
     job.status = "failed";
     job.error = e.message ?? "Unknown error";
     console.error(`[scriptToJson] Job ${job.id} failed:`, e.message);
+    saveJobsToDisk();
   }
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 const router = Router();
+
+// GET all jobs (history)
+router.get("/", (_req: Request, res: Response) => {
+  const jobList = Array.from(jobs.values()).sort((a, b) => b.createdAt - a.createdAt);
+  res.json(jobList);
+});
 
 router.post("/", (req: Request, res: Response) => {
   const { title, script, secondsPerScene, style, provider, apiKey } = req.body as JobParams;
@@ -383,11 +444,12 @@ router.post("/", (req: Request, res: Response) => {
     id: jobId,
     status: "running",
     progress: { phase: "pass1", done: 0, total: 1 },
-    result: null,
+    result: { title, scenes: [] },
     error: null,
     createdAt: Date.now(),
   };
   jobs.set(jobId, job);
+  saveJobsToDisk();
 
   // Fire and forget — runs in background
   runJob(job, { title, script, secondsPerScene: secondsPerScene ?? 15, style: style ?? "impasto", provider, apiKey: apiKey ?? "" });
@@ -405,6 +467,18 @@ router.get("/:jobId", (req: Request, res: Response) => {
     result: job.result,
     error: job.error,
   });
+});
+
+// DELETE a specific job from history
+router.delete("/:jobId", (req: Request, res: Response) => {
+  const { jobId } = req.params;
+  if (jobs.has(jobId)) {
+    jobs.delete(jobId);
+    saveJobsToDisk();
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: "Job not found" });
+  }
 });
 
 export default router;

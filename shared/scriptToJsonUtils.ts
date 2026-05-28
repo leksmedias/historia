@@ -70,10 +70,10 @@ export function chunkScript(text: string, maxWords: number): string[] {
 export function parseJsonResponse(text: string): any {
   // Try code fence first
   const fenceMatch = text.match(/```json\s*([\s\S]*?)```/);
-  if (fenceMatch) return JSON.parse(fenceMatch[1].trim());
+  const rawText = fenceMatch ? fenceMatch[1].trim() : text;
 
   // Strip <thinking>...</thinking> blocks (NVIDIA reasoning output)
-  const stripped = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").trim();
+  const stripped = rawText.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").trim();
 
   // Extract first JSON object or array, ignoring preamble/postamble text
   const firstBrace = stripped.indexOf("{");
@@ -87,10 +87,187 @@ export function parseJsonResponse(text: string): any {
   if (start !== -1) {
     const closeChar = stripped[start] === "{" ? "}" : "]";
     const lastClose = stripped.lastIndexOf(closeChar);
-    if (lastClose > start) return JSON.parse(stripped.slice(start, lastClose + 1));
+    if (lastClose > start) {
+      const sliced = stripped.slice(start, lastClose + 1);
+      try {
+        return JSON.parse(sliced);
+      } catch {
+        // Try cleaning trailing commas
+        try {
+          const cleaned = sliced.replace(/,\s*([\]}])/g, '$1');
+          return JSON.parse(cleaned);
+        } catch (e) {
+          throw e;
+        }
+      }
+    }
   }
 
-  return JSON.parse(stripped);
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    const cleaned = stripped.replace(/,\s*([\]}])/g, '$1');
+    return JSON.parse(cleaned);
+  }
+}
+
+function parseLooseObject(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {}
+
+  let cleaned = text.replace(/,\s*([\]}])/g, '$1');
+  try {
+    return JSON.parse(cleaned);
+  } catch {}
+
+  try {
+    cleaned = cleaned.replace(/(['"])?([a-zA-Z0-9_]+)\1\s*:/g, '"$2":');
+    cleaned = cleaned.replace(/:\s*'((?:[^'\\]|\\.)*)'/g, (m, val) => {
+      const escapedVal = val.replace(/\\'/g, "'").replace(/"/g, '\\"');
+      return `: "${escapedVal}"`;
+    });
+    return JSON.parse(cleaned);
+  } catch {}
+
+  return null;
+}
+
+function extractLooseObjects(text: string): any[] {
+  const objects: any[] = [];
+  let braceDepth = 0;
+  let inString = false;
+  let stringChar = '';
+  let startIdx = -1;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const prevChar = i > 0 ? text[i - 1] : '';
+
+    if (inString) {
+      if (char === stringChar && prevChar !== '\\') {
+        inString = false;
+      }
+    } else {
+      if (char === '"' || char === "'") {
+        inString = true;
+        stringChar = char;
+      } else if (char === '{') {
+        if (braceDepth === 0) {
+          startIdx = i;
+        }
+        braceDepth++;
+      } else if (char === '}') {
+        braceDepth--;
+        if (braceDepth === 0 && startIdx !== -1) {
+          const candidate = text.slice(startIdx, i + 1);
+          const parsed = parseLooseObject(candidate);
+          if (parsed !== null) {
+            objects.push(parsed);
+          }
+          startIdx = -1;
+        }
+        if (braceDepth < 0) {
+          braceDepth = 0;
+        }
+      }
+    }
+  }
+
+  if (braceDepth > 0 && startIdx !== -1) {
+    let candidate = text.slice(startIdx);
+    if (inString) {
+      candidate += stringChar;
+    }
+    for (let d = 0; d < braceDepth; d++) {
+      candidate += '}';
+    }
+    const parsed = parseLooseObject(candidate);
+    if (parsed !== null) {
+      objects.push(parsed);
+    }
+  }
+
+  return objects;
+}
+
+function flattenObjects(val: any, list: any[]) {
+  if (!val) return;
+  if (Array.isArray(val)) {
+    for (const item of val) {
+      flattenObjects(item, list);
+    }
+  } else if (typeof val === 'object') {
+    const hasId = val.id !== undefined || val.sceneId !== undefined || val.scene_id !== undefined || val.scene_Id !== undefined;
+    const hasScriptOrPrompt = val.script !== undefined || val.text !== undefined || val.narration !== undefined || val.prompt !== undefined || val.image_prompt !== undefined || val.description !== undefined || val.imagePrompt !== undefined;
+
+    if (hasId && hasScriptOrPrompt) {
+      list.push(val);
+    } else {
+      for (const k of Object.keys(val)) {
+        flattenObjects(val[k], list);
+      }
+    }
+  }
+}
+
+export function recoverScenesRegex(text: string): SplitScene[] {
+  const scenes: SplitScene[] = [];
+  try {
+    const rawObjs = extractLooseObjects(text);
+    const objs: any[] = [];
+    for (const raw of rawObjs) {
+      flattenObjects(raw, objs);
+    }
+
+    for (const obj of objs) {
+      const idVal = obj.id ?? obj.scene_number ?? obj.sceneNumber ?? obj.sceneId ?? obj.scene_id ?? obj.scene_Id;
+      if (idVal === undefined || idVal === null) continue;
+      const id = typeof idVal === 'number' ? idVal : parseInt(idVal, 10);
+      if (isNaN(id)) continue;
+
+      const script = obj.script ?? obj.text ?? obj.narration ?? obj.narration_text;
+      if (typeof script !== 'string') continue;
+
+      let overlay_text = obj.overlay_text ?? obj.overlayText ?? obj.overlay ?? null;
+      if (typeof overlay_text === 'string') {
+        overlay_text = overlay_text.trim();
+      } else {
+        overlay_text = null;
+      }
+
+      scenes.push({ id, script: script.trim(), overlay_text });
+    }
+  } catch (e) {
+    console.error("[recoverScenesRegex] failed:", e);
+  }
+  return scenes;
+}
+
+export function recoverPromptsRegex(text: string): Array<{ id: number; prompt: string }> {
+  const prompts: Array<{ id: number; prompt: string }> = [];
+  try {
+    const rawObjs = extractLooseObjects(text);
+    const objs: any[] = [];
+    for (const raw of rawObjs) {
+      flattenObjects(raw, objs);
+    }
+
+    for (const obj of objs) {
+      const idVal = obj.id ?? obj.scene_number ?? obj.sceneNumber ?? obj.sceneId ?? obj.scene_id ?? obj.scene_Id;
+      if (idVal === undefined || idVal === null) continue;
+      const id = typeof idVal === 'number' ? idVal : parseInt(idVal, 10);
+      if (isNaN(id)) continue;
+
+      const prompt = obj.prompt ?? obj.image_prompt ?? obj.description ?? obj.imagePrompt;
+      if (typeof prompt !== 'string') continue;
+
+      prompts.push({ id, prompt: prompt.trim() });
+    }
+  } catch (e) {
+    console.error("[recoverPromptsRegex] failed:", e);
+  }
+  return prompts;
 }
 
 export function buildContinuityAnchor(

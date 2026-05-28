@@ -4,6 +4,8 @@ import {
   chunkScript,
   parseJsonResponse,
   buildContinuityAnchor,
+  recoverScenesRegex,
+  recoverPromptsRegex,
 } from "../lib/scriptToJson";
 
 describe("estimateSceneCount", () => {
@@ -83,6 +85,44 @@ describe("parseJsonResponse", () => {
   it("handles JSON in code fence after reasoning text", () => {
     const input = 'Some reasoning here...\n```json\n{"scenes":[]}\n```\nmore text';
     expect(parseJsonResponse(input)).toEqual({ scenes: [] });
+  });
+});
+
+describe("regex recovery functions", () => {
+  it("recovers scenes with standard key ordering", () => {
+    const input = '{"scenes":[{"id":1,"script":"test","overlay_text":"Rhine 1945"},{"id":2,"script":"another","overlay_text":null}]}';
+    expect(recoverScenesRegex(input)).toEqual([
+      { id: 1, script: "test", overlay_text: "Rhine 1945" },
+      { id: 2, script: "another", overlay_text: null }
+    ]);
+  });
+
+  it("recovers scenes from truncated or malformed inputs", () => {
+    const input = 'Some text {"id": 1, "script": "hello", "overlay_text": "Rhine"} but then it cut off';
+    expect(recoverScenesRegex(input)).toEqual([
+      { id: 1, script: "hello", overlay_text: "Rhine" }
+    ]);
+  });
+
+  it("recovers scenes with out-of-order keys", () => {
+    const input = '{"scenes":[{"id":1,"overlay_text":"Rhine 1945","script":"test"}]}';
+    expect(recoverScenesRegex(input)).toEqual([
+      { id: 1, script: "test", overlay_text: "Rhine 1945" }
+    ]);
+  });
+
+  it("recovers scenes with missing overlay_text key", () => {
+    const input = '{"scenes":[{"id":1,"script":"test"}]}';
+    expect(recoverScenesRegex(input)).toEqual([
+      { id: 1, script: "test", overlay_text: null }
+    ]);
+  });
+
+  it("recovers scenes with camelCase keys", () => {
+    const input = '{"scenes":[{"id":1,"script":"test","overlayText":"Rhine 1945"}]}';
+    expect(recoverScenesRegex(input)).toEqual([
+      { id: 1, script: "test", overlay_text: "Rhine 1945" }
+    ]);
   });
 });
 

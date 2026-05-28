@@ -4,6 +4,8 @@ export {
   chunkScript,
   parseJsonResponse,
   buildContinuityAnchor,
+  recoverScenesRegex,
+  recoverPromptsRegex,
   type OutputScene,
   type ScriptToJsonResult,
   type ScriptToJsonParams,
@@ -20,6 +22,8 @@ import {
   NVIDIA_BATCH_SIZE,
   chunkScript,
   parseJsonResponse,
+  recoverScenesRegex,
+  recoverPromptsRegex,
   buildContinuityAnchor,
   buildPass1SystemPrompt,
   PASS2_IMPASTO_SYSTEM,
@@ -131,12 +135,17 @@ async function callPass1(
   try {
     const parsed = parseJsonResponse(content);
     return (parsed.scenes ?? []) as SplitScene[];
-  } catch {
+  } catch (err: any) {
+    const recovered = recoverScenesRegex(content);
+    if (recovered.length > 0) {
+      console.log(`[${provider}] Pass1: Recovered ${recovered.length} scenes via regex from malformed/truncated output.`);
+      return recovered;
+    }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass1 JSON parse failed — retrying with strict instruction`);
       return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, rateLimitRetries, false);
     }
-    throw new Error(`${provider} returned malformed JSON during scene splitting`);
+    throw new Error(`${provider} returned malformed JSON during scene splitting: ${err.message}`);
   }
 }
 
@@ -222,12 +231,17 @@ async function callPass2Batch(
   try {
     const parsed = parseJsonResponse(content);
     return parsed.scenes ?? [];
-  } catch {
+  } catch (err: any) {
+    const recovered = recoverPromptsRegex(content);
+    if (recovered.length > 0) {
+      console.log(`[${provider}] Pass2: Recovered ${recovered.length} prompts via regex from malformed/truncated output.`);
+      return recovered;
+    }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass2 JSON parse failed — retrying`);
       return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, rateLimitRetries, false);
     }
-    console.error(`[${provider}] Pass2 JSON parse failed twice — using placeholders`);
+    console.error(`[${provider}] Pass2 JSON parse failed twice — using placeholders. Error: ${err.message}`);
     return scenes.map((s) => ({ id: s.id, prompt: "[generation failed]" }));
   }
 }
@@ -294,7 +308,11 @@ export async function runScriptToJson(
     const results = await callPass2Batch(title, batch, style, provider, apiKey, anchor);
 
     for (const r of results) {
-      promptMap.set(r.id, r.prompt);
+      const idVal = r.id ?? r.scene_number ?? r.sceneNumber ?? r.scene_id ?? r.scene_Id;
+      const promptVal = r.prompt ?? r.image_prompt ?? r.description ?? r.imagePrompt;
+      if (idVal !== undefined && promptVal !== undefined) {
+        promptMap.set(Number(idVal), promptVal);
+      }
     }
     for (const scene of batch) {
       const prompt = promptMap.get(scene.id) ?? "[generation failed]";
