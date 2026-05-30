@@ -24,6 +24,15 @@ interface JobProgress {
   partialScenes?: OutputScene[];
 }
 
+interface JobParams {
+  title: string;
+  script: string;
+  secondsPerScene: number;
+  style: "impasto" | "ww2";
+  provider: "groq" | "nvidia";
+  apiKey?: string;
+}
+
 interface Job {
   id: string;
   status: "running" | "completed" | "failed";
@@ -31,6 +40,7 @@ interface Job {
   result: { title: string; scenes: OutputScene[] } | null;
   error: string | null;
   createdAt: number;
+  params?: Omit<JobParams, "apiKey">;
 }
 
 function highlightJson(json: string): string {
@@ -70,8 +80,20 @@ export default function ScriptToJson() {
   const [jobsList, setJobsList] = useState<Job[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"new" | "history">("new");
+  const [rightTab, setRightTab] = useState<"json" | "script">("json");
 
   const selectedJob = useMemo(() => jobsList.find((j) => j.id === selectedJobId) || null, [jobsList, selectedJobId]);
+
+  // Auto-switch right panel tab based on selected job status
+  useEffect(() => {
+    if (selectedJob) {
+      if (selectedJob.status === "failed") {
+        setRightTab("script");
+      } else {
+        setRightTab("json");
+      }
+    }
+  }, [selectedJobId, selectedJob?.status]);
 
   const displayOutput = useMemo(() => {
     if (!selectedJob) return null;
@@ -202,13 +224,48 @@ export default function ScriptToJson() {
     }
   }, [title, script, secondsPerScene, style, provider, apiKey, fetchJobs, toast]);
 
+  const handleLoadAndRetry = useCallback(() => {
+    if (!selectedJob?.params) return;
+    const { title, script, secondsPerScene, style, provider } = selectedJob.params;
+    setTitle(title || "");
+    setScript(script || "");
+    setSecondsPerScene((secondsPerScene as 10 | 15 | 20 | 30) || 15);
+    setStyle(style || "impasto");
+    setProvider(provider || "groq");
+    setActiveTab("new");
+    toast({
+      title: "Settings loaded",
+      description: "Original script and generator settings loaded into the editor.",
+    });
+  }, [selectedJob, toast]);
+
   async function handleCopy() {
     if (!jsonString) return;
     try {
-      await navigator.clipboard.writeText(jsonString);
-      toast({ title: "Copied to clipboard" });
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(jsonString);
+        toast({ title: "Copied to clipboard" });
+      } else {
+        throw new Error("Clipboard API not available");
+      }
     } catch {
-      toast({ title: "Copy failed", description: "Clipboard access denied", variant: "destructive" });
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = jsonString;
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        if (successful) {
+          toast({ title: "Copied to clipboard" });
+        } else {
+          throw new Error("Fallback copy failed");
+        }
+      } catch (err) {
+        toast({ title: "Copy failed", description: "Clipboard access denied", variant: "destructive" });
+      }
     }
   }
 
@@ -500,26 +557,58 @@ export default function ScriptToJson() {
             )}
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopy}
-              disabled={!jsonString}
-            >
-              <Copy className="h-3.5 w-3.5 mr-1.5" />
-              Copy
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDownload}
-              disabled={!displayOutput || selectedJob?.status !== "completed"}
-            >
-              <Download className="h-3.5 w-3.5 mr-1.5" />
-              Download .json
-            </Button>
+            {rightTab === "json" && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopy}
+                  disabled={!jsonString}
+                >
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  Copy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownload}
+                  disabled={!displayOutput || selectedJob?.status !== "completed"}
+                >
+                  <Download className="h-3.5 w-3.5 mr-1.5" />
+                  Download .json
+                </Button>
+              </>
+            )}
           </div>
         </div>
+
+        {/* Right Panel Tabs */}
+        {selectedJob?.params && (
+          <div className="flex border-b border-border shrink-0 bg-muted/15">
+            {selectedJob.status !== "failed" && (
+              <button
+                onClick={() => setRightTab("json")}
+                className={`px-5 py-2.5 text-xs font-semibold border-b-2 transition-all ${
+                  rightTab === "json"
+                    ? "border-primary text-primary bg-background"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                JSON Manifest
+              </button>
+            )}
+            <button
+              onClick={() => setRightTab("script")}
+              className={`px-5 py-2.5 text-xs font-semibold border-b-2 transition-all ${
+                rightTab === "script"
+                  ? "border-primary text-primary bg-background"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Original Script
+            </button>
+          </div>
+        )}
 
         {/* Background job banner */}
         {selectedJob?.status === "running" && (
@@ -568,8 +657,46 @@ export default function ScriptToJson() {
           </div>
         )}
 
-        {/* JSON display */}
-        {jsonString ? (
+        {/* Content Panel */}
+        {rightTab === "script" && selectedJob?.params ? (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-auto p-5 space-y-4">
+              <div className="rounded-lg border border-border bg-muted/20 p-4 shrink-0">
+                <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">
+                  Generator Configuration
+                </h3>
+                <div className="grid grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Scene Duration:</span>{" "}
+                    <span className="font-semibold text-foreground">{selectedJob.params.secondsPerScene}s</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Visual Style:</span>{" "}
+                    <span className="font-semibold text-foreground capitalize">{selectedJob.params.style}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">AI Provider:</span>{" "}
+                    <span className="font-semibold text-foreground capitalize">{selectedJob.params.provider}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0 flex flex-col">
+                <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">
+                  Original Script Text
+                </h3>
+                <pre className="flex-1 overflow-auto p-4 rounded-lg border border-border bg-card font-mono text-xs whitespace-pre-wrap leading-relaxed text-foreground select-text">
+                  {selectedJob.params.script}
+                </pre>
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-border bg-card shrink-0 flex justify-end">
+              <Button onClick={handleLoadAndRetry} size="sm">
+                <History className="h-3.5 w-3.5 mr-1.5" />
+                Load into Generator
+              </Button>
+            </div>
+          </div>
+        ) : jsonString ? (
           <div className="flex-1 overflow-auto p-5">
             <pre
               className="text-xs leading-relaxed font-mono whitespace-pre-wrap"

@@ -35,6 +35,7 @@ interface Job {
   result: ScriptToJsonResult | null;
   error: string | null;
   createdAt: number;
+  params?: Omit<JobParams, "apiKey">;
 }
 
 interface JobParams {
@@ -447,6 +448,13 @@ router.post("/", (req: Request, res: Response) => {
     result: { title, scenes: [] },
     error: null,
     createdAt: Date.now(),
+    params: {
+      title: title.trim(),
+      script: script.trim(),
+      secondsPerScene: secondsPerScene ?? 15,
+      style: style ?? "impasto",
+      provider,
+    }
   };
   jobs.set(jobId, job);
   saveJobsToDisk();

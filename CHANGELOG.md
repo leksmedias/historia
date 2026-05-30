@@ -2,6 +2,20 @@
 
 All notable changes to Historia are documented here.
 
+## [1.1.1] — 2026-05-30
+
+### Added
+- **Script Inspection & Form Reload in History**:
+  - Added an "Original Script" tab in the generator details panel to view the configuration metadata and script text of past completed or failed jobs.
+  - Automatically defaults to the "Original Script" tab if a task generation fails.
+  - Added a **"Load into Generator"** action button that populates all form states (title, script, style, duration, provider) from the selected history task back into the editor form.
+
+### Fixed
+- **Robust Clipboard Copy Fallback**: Updated the copy button handler to employ a document selection and `execCommand('copy')` fallback when the modern `navigator.clipboard` API is blocked or permission is denied.
+- **Persistent Job Configs**: Modified the job storage to serialize task configurations on creation, enabling history inspection.
+
+---
+
 ## [1.1.0] — 2026-05-30
 
 ### Added
