@@ -2,6 +2,27 @@
 
 All notable changes to Historia are documented here.
 
+## [1.1.0] — 2026-05-30
+
+### Added
+- **Script → JSON Manifest Generator**:
+  - Added a new page at `/script-to-json` that splits documentary scripts into scene manifests with visual prompts and overlay text.
+  - Supports visual style guides: **Impasto Oil Painting** and **WWII Archival Photograph**.
+  - Integrated dual provider engines: **Groq** (using `llama-3.3-70b-versatile` in batches of 8) and **NVIDIA** (using `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` in batches of 20).
+  - Implemented background job execution on the backend that periodically saves status and maps active sessions.
+  - Added a job history sidebar with persistent storage (`uploads/script_to_json_jobs.json`) across server restarts.
+  - Built-in visual continuity tracking by feeding the previous 2 prompts back into the generator pipeline.
+
+### Fixed
+- Resolved key mismatch between user prompts and system style guides by mapping both standard and alternate keys (`id` / `scene_number` and `prompt` / `image_prompt`) during extraction.
+- Allowed script generation when local API keys are empty by falling back to server-side environment variables.
+- Added regex recovery fallback for extracting custom schema keys (`scene_number` and `sceneNumber`) from truncated or malformed responses.
+- Fixed job title display to show the documentary title for active and failed history items instead of showing "Untitled Generation".
+- Added failed-state handling in the details view to explicitly report error details for failed jobs instead of the empty selection prompt.
+- Fixed startup state syncing so that running jobs interrupted by a restart are saved back to disk as failed.
+
+---
+
 ## [1.0.0] — 2026-05-27
 
 ### Added
