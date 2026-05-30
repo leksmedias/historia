@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,22 +17,60 @@ interface RawScene {
   narration_text: string;
   visual_prompt: string;
   motion_prompt?: string;
+  overlay_text?: string | null;
 }
 
-function parseSceneJson(raw: string): { scenes: RawScene[]; error: string | null } {
+function parseSceneJson(raw: string): { scenes: RawScene[]; title?: string; error: string | null } {
   if (!raw.trim()) return { scenes: [], error: null };
   try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return { scenes: [], error: 'JSON must be an array of scene objects' };
+    let parsed = JSON.parse(raw);
+    let extractedTitle: string | undefined;
+
+    // Handle envelope object (e.g. {"title": "...", "scenes": [...]})
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      if (typeof parsed.title === "string") {
+        extractedTitle = parsed.title;
+      }
+      if (Array.isArray(parsed.scenes)) {
+        parsed = parsed.scenes;
+      } else {
+        return { scenes: [], error: 'JSON object must contain a "scenes" array' };
+      }
+    }
+
+    if (!Array.isArray(parsed)) return { scenes: [], error: 'JSON must be an array of scene objects or an object containing a "scenes" array' };
     if (parsed.length === 0) return { scenes: [], error: 'JSON must contain at least one scene' };
+
+    const normalizedScenes: RawScene[] = [];
+
     for (let i = 0; i < parsed.length; i++) {
       const s = parsed[i];
-      if (typeof s.narration_text !== "string" || !s.narration_text.trim())
-        return { scenes: [], error: `Scene ${i + 1}: missing or empty "narration_text"` };
-      if (typeof s.visual_prompt !== "string" || !s.visual_prompt.trim())
-        return { scenes: [], error: `Scene ${i + 1}: missing or empty "visual_prompt"` };
+      if (!s || typeof s !== "object") {
+        return { scenes: [], error: `Scene ${i + 1}: is not a valid object` };
+      }
+
+      // Check either Format A (narration_text) or Format B (script)
+      const narration = s.narration_text || s.script;
+      if (typeof narration !== "string" || !narration.trim()) {
+        return { scenes: [], error: `Scene ${i + 1}: missing or empty "narration_text" or "script"` };
+      }
+
+      // Check either Format A (visual_prompt) or Format B (prompt)
+      const visual = s.visual_prompt || s.prompt;
+      if (typeof visual !== "string" || !visual.trim()) {
+        return { scenes: [], error: `Scene ${i + 1}: missing or empty "visual_prompt" or "prompt"` };
+      }
+
+      normalizedScenes.push({
+        scene_id: s.scene_id || s.image || String(i + 1).padStart(3, "0"),
+        narration_text: narration.trim(),
+        visual_prompt: visual.trim(),
+        motion_prompt: s.motion_prompt || undefined,
+        overlay_text: s.overlay_text || null,
+      });
     }
-    return { scenes: parsed as RawScene[], error: null };
+
+    return { scenes: normalizedScenes, title: extractedTitle, error: null };
   } catch (e: any) {
     return { scenes: [], error: `JSON parse error: ${e.message}` };
   }
@@ -58,7 +96,14 @@ export default function JsonToVideo() {
   const file1Ref = useRef<HTMLInputElement>(null);
   const file2Ref = useRef<HTMLInputElement>(null);
 
-  const { scenes: parsedScenes, error: parseError } = parseSceneJson(jsonInput);
+  const { scenes: parsedScenes, title: parsedTitle, error: parseError } = parseSceneJson(jsonInput);
+
+  // Autofill title from JSON if available
+  useEffect(() => {
+    if (parsedTitle && !title) {
+      setTitle(parsedTitle);
+    }
+  }, [parsedTitle, title]);
 
   const missingInworld = !settings.inworldApiKey;
 
