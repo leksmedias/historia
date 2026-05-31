@@ -2,6 +2,16 @@
 
 All notable changes to Historia are documented here.
 
+## [1.1.3] — 2026-05-31
+
+### Fixed
+- **FFmpeg Merge Failure due to Corrupt Clips**:
+  - Implemented robust clip validation using `ffprobe` to check for missing `moov` atoms, zero-byte file truncation, and decoding failures.
+  - Enhanced the merge process (`mergeVideo`) to automatically delete and regenerate missing or corrupted scene clips inline before proceeding with the FFmpeg merge command, ensuring a self-healing pipeline.
+  - Added immediate validation checks inside `generateClips` (Phase 1) to verify newly rendered clip files and delete them if invalid, avoiding corrupt files being left on disk.
+
+---
+
 ## [1.1.2] — 2026-05-30
 
 ### Added

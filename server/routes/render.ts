@@ -178,6 +178,18 @@ function hasAudioStream(file: string): boolean {
   } catch { return false; }
 }
 
+function isValidVideoClip(file: string): boolean {
+  try {
+    if (!fs.existsSync(file)) return false;
+    const stats = fs.statSync(file);
+    if (stats.size === 0) return false;
+    execSync(`ffprobe -v error "${file}"`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Routes ─────────────────────────────────────────────────────────────────
 
 /**
@@ -653,10 +665,15 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
             await buildImageClip(img, audioPath, dur, width, height, clipPath, effect);
           }
 
+          if (!isValidVideoClip(clipPath)) {
+            throw new Error("Generated clip is invalid or corrupted (e.g. missing moov atom)");
+          }
+
           clipJobs[projectId].done = ++counters.done;
           console.log(`[clips] ${projectId}: scene ${num} done (${counters.done}/${total})`);
         } catch (e: any) {
           console.error(`[clips] scene ${num} failed — skipping:`, e.message);
+          try { fs.unlinkSync(clipPath); } catch {}
         }
       }
 
@@ -772,42 +789,58 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
 
   const clips: string[] = [];
   const durations: number[] = [];
-  const tempClips: string[] = []; // inline-generated, cleaned up after merge
 
-  // Use pre-generated clips if available
-  for (const s of sceneList) {
-    const clip = path.join(clipsDir, `${s.scene_number}.mp4`);
+  let prevEffect: KBEffect | undefined;
+  for (let i = 0; i < sceneList.length; i++) {
+    const s = sceneList[i];
+    const num = s.scene_number;
+    const clip = path.join(clipsDir, `${num}.mp4`);
+    let isValid = false;
+
     if (fs.existsSync(clip)) {
-      clips.push(clip);
-      durations.push(getAudioDuration(clip));
+      if (isValidVideoClip(clip)) {
+        isValid = true;
+      } else {
+        console.warn(`[merge] clip ${clip} is corrupted (e.g. missing moov atom). Deleting and regenerating.`);
+        try { fs.unlinkSync(clip); } catch {}
+      }
     }
-  }
 
-  // Fallback: generate clips inline (backward-compat when user skips Phase 1)
-  if (clips.length === 0) {
-    let prevEffect: KBEffect | undefined;
-    for (let i = 0; i < sceneList.length; i++) {
-      const s = sceneList[i];
-      const num = s.scene_number;
+    if (!isValid) {
       const img = findImageFile(projectId, num, s.image_file);
       const audioPath = path.join("uploads", projectId, "audio", s.audio_file ?? `${num}.mp3`);
       if (!img || !fs.existsSync(audioPath)) {
+        console.warn(`[merge] scene ${num}: missing image or audio, cannot generate clip. Skipping scene.`);
         mergeJobs[projectId].progress = Math.round(((i + 1) / sceneList.length) * 78);
         continue;
       }
+
       const dur = parseFloat(getAudioDuration(audioPath).toFixed(3));
-      const effect = pickEffect(prevEffect);
-      prevEffect = effect;
-      const clip = path.join(renderDir, `tmp_${i}.mp4`);
-      console.log(`[merge-inline] scene ${num}: generating locally (${effect}, ${dur}s)`);
-      
-      await buildImageClip(img, audioPath, dur, width, height, clip, effect);
-      
-      clips.push(clip);
-      tempClips.push(clip);
-      durations.push(getAudioDuration(clip));
-      mergeJobs[projectId].progress = Math.round(((i + 1) / sceneList.length) * 78);
+      const veoPath = path.join("uploads", projectId, "videos", `${num}.mp4`);
+
+      try {
+        if (fs.existsSync(veoPath)) {
+          console.log(`[merge] scene ${num}: regenerating Veo video clip inline`);
+          await buildVeoClip(veoPath, audioPath, dur, width, height, clip);
+        } else {
+          const effect = pickEffect(prevEffect);
+          prevEffect = effect;
+          console.log(`[merge] scene ${num}: regenerating Ken Burns clip inline (${effect}, ${dur}s)`);
+          await buildImageClip(img, audioPath, dur, width, height, clip, effect);
+        }
+        isValid = true;
+      } catch (e: any) {
+        console.error(`[merge] failed to regenerate clip for scene ${num}:`, e.message);
+        mergeJobs[projectId].progress = Math.round(((i + 1) / sceneList.length) * 78);
+        continue;
+      }
     }
+
+    if (isValid) {
+      clips.push(clip);
+      durations.push(getAudioDuration(clip));
+    }
+    mergeJobs[projectId].progress = Math.round(((i + 1) / sceneList.length) * 78);
   }
 
   if (clips.length === 0) throw new Error("No clips available — check scenes have image and audio.");
@@ -848,8 +881,7 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
     }
   }
 
-  // Clean up only inline temp clips (keep clips/ dir intact)
-  tempClips.forEach(c => { try { fs.unlinkSync(c); } catch {} });
+  // Pre-generated and regenerated clips are stored persistently in clipsDir. No tempClips to clean up.
 
   mergeJobs[projectId] = { status: "done", progress: 100, total: sceneList.length, resolution: mergeJobs[projectId].resolution };
   console.log(`[merge] ${projectId}: done → ${outPath}`);
