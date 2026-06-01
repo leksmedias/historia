@@ -1,5 +1,4 @@
 import express, { Request, Response } from "express";
-import multer from "multer";
 import { db } from "../db.js";
 import { projects, scenes } from "../../shared/schema.js";
 import { eq } from "drizzle-orm";
@@ -10,23 +9,6 @@ import archiver from "archiver";
 import { generateVeoClip } from "../lib/veo.js";
 
 const router = express.Router();
-const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-
-// ── External render API ────────────────────────────────────────────────────
-const RENDER_API = (process.env.RENDER_API_URL ?? "http://5.189.146.143").replace(/\/$/, "");
-const RENDER_API_KEY = process.env.RENDER_API_KEY ?? "";
-// Default to the actual port the app runs on (3001), not 5000
-const SERVER_URL = (process.env.SERVER_URL ?? `http://localhost:${process.env.PORT ?? 3001}`).replace(/\/$/, "");
-
-async function callRenderApi(endpoint: string, body: object): Promise<any> {
-  const res = await fetch(`${RENDER_API}${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-API-Key": RENDER_API_KEY },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`Render API ${endpoint} failed: ${res.status} ${await res.text()}`);
-  return res.json();
-}
 
 
 // ── Ken Burns effect types ─────────────────────────────────────────────────
@@ -191,75 +173,6 @@ function isValidVideoClip(file: string): boolean {
 }
 
 // ── Routes ─────────────────────────────────────────────────────────────────
-
-/**
- * GET /api/render/health
- * Pings the external render API and reports connectivity + response time.
- */
-router.get("/health", async (_req: Request, res: Response) => {
-  const url = RENDER_API;
-  const start = Date.now();
-  try {
-    const r = await fetch(`${url}/health`, {
-      method: "GET",
-      headers: { "X-API-Key": RENDER_API_KEY },
-      signal: AbortSignal.timeout(5000),
-    });
-    const ms = Date.now() - start;
-    // Accept any HTTP response — a 404 still means the server is reachable
-    return res.json({ ok: true, url, status: r.status, ms });
-  } catch (e: any) {
-    const ms = Date.now() - start;
-    return res.json({ ok: false, url, ms, error: e.message ?? "Unreachable" });
-  }
-});
-
-/**
- * POST /api/render/image-to-video
- * Convert a single uploaded image to an animated video clip.
- * Body: multipart/form-data — image (required), animation, duration, resolution
- * Returns: { url: string }  — the video URL from the render API (download directly)
- */
-router.post("/image-to-video", memUpload.single("image"), async (req: Request, res: Response) => {
-  const file = (req as any).file as Express.Multer.File | undefined;
-  if (!file) return res.status(400).json({ error: "No image file provided" });
-
-  const animation = req.body.animation || "random";
-  const duration = Math.min(Math.max(parseFloat(req.body.duration) || 5, 1), 30);
-  const resKey = RESOLUTIONS[req.body.resolution] ? req.body.resolution : "720p";
-  const [W, H] = RESOLUTIONS[resKey];
-  const FPS = 25;
-
-  // Save image to a temporary folder so the render API can fetch it
-  const tmpId = `itv_${Date.now()}`;
-  const tmpDir = path.join("uploads", tmpId, "images");
-  fs.mkdirSync(tmpDir, { recursive: true });
-  const ext = path.extname(file.originalname || "image.jpg") || ".jpg";
-  const imgPath = path.join(tmpDir, `1${ext}`);
-  fs.writeFileSync(imgPath, file.buffer);
-
-  try {
-    const imgUrl = `${SERVER_URL}/${imgPath.replace(/\\/g, "/")}`;
-    const chosenAnim = animation === "random" ? KB_TO_API[pickEffect()] : animation;
-
-    const animRes = await callRenderApi("/animate", {
-      media_url:  imgUrl,
-      media_type: "image",
-      animation:  chosenAnim,
-      duration,
-      fps:        FPS,
-      resolution: `${W}x${H}`,
-      folder:     tmpId,
-    });
-
-    return res.json({ url: animRes.url, animation: chosenAnim, duration, resolution: `${W}x${H}` });
-  } catch (e: any) {
-    return res.status(500).json({ error: e.message });
-  } finally {
-    // Clean up temp image (video lives on render API side)
-    try { fs.rmSync(path.join("uploads", tmpId), { recursive: true, force: true }); } catch {}
-  }
-});
 
 /**
  * POST /api/render/:id/clips
@@ -849,36 +762,49 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
 
   mergeJobs[projectId].progress = 90;
 
-  if (clips.length === 1) {
-    fs.copyFileSync(clips[0], outPath);
-  } else {
-    const XD = 1.0; // crossfade duration in seconds
-    // Use xfade when all clips are long enough; fall back to simple concat for edge cases
-    const canXfade = clips.length <= 200 && durations.every(d => d > XD * 2);
-
-    if (canXfade) {
-      console.log(`[merge] ${projectId}: xfade dissolve (${clips.length} clips, ${XD}s crossfade)`);
-      const filterComplex = buildXfadeFilter(durations, XD);
-      const inputs = clips.flatMap(c => ["-i", c]);
-      await ffmpeg([
-        "-y", ...inputs,
-        "-filter_complex", filterComplex,
-        "-map", "[vout]", "-map", "[aout]",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
-        outPath,
-      ]);
+  try {
+    if (clips.length === 1) {
+      fs.copyFileSync(clips[0], outPath);
     } else {
-      console.log(`[merge] ${projectId}: simple concat (${clips.length} clips)`);
-      const listPath = path.join(renderDir, "concat_list.txt");
-      const listContent = clips.map(c => `file '${path.resolve(c).replace(/'/g, "'\\''")}'`).join("\n");
-      fs.writeFileSync(listPath, listContent);
-      await ffmpeg([
-        "-y", "-f", "concat", "-safe", "0", "-i", listPath,
-        "-c", "copy", outPath,
-      ]);
-      fs.unlinkSync(listPath);
+      const XD = 1.0; // crossfade duration in seconds
+      // Use xfade when all clips are long enough; fall back to simple concat for edge cases
+      const canXfade = clips.length <= 200 && durations.every(d => d > XD * 2);
+
+      if (canXfade) {
+        console.log(`[merge] ${projectId}: xfade dissolve (${clips.length} clips, ${XD}s crossfade)`);
+        const filterComplex = buildXfadeFilter(durations, XD);
+        const inputs = clips.flatMap(c => ["-i", c]);
+        await ffmpeg([
+          "-y", ...inputs,
+          "-filter_complex", filterComplex,
+          "-map", "[vout]", "-map", "[aout]",
+          "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+          "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+          outPath,
+        ]);
+      } else {
+        console.log(`[merge] ${projectId}: simple concat (${clips.length} clips)`);
+        const listPath = path.join(renderDir, "concat_list.txt");
+        const listContent = clips.map(c => `file '${path.resolve(c).replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n");
+        fs.writeFileSync(listPath, listContent);
+        try {
+          await ffmpeg([
+            "-y", "-f", "concat", "-safe", "0", "-i", listPath,
+            "-c", "copy", outPath,
+          ]);
+        } finally {
+          try { fs.unlinkSync(listPath); } catch {}
+        }
+      }
     }
+  } catch (e: any) {
+    console.error(`[merge] FFmpeg merging failed, deleting corrupt output file:`, e.message);
+    try {
+      if (fs.existsSync(outPath)) {
+        fs.unlinkSync(outPath);
+      }
+    } catch {}
+    throw e;
   }
 
   // Pre-generated and regenerated clips are stored persistently in clipsDir. No tempClips to clean up.

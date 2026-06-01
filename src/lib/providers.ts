@@ -29,10 +29,10 @@ export interface ProviderSettings {
 }
 
 export const IMAGE_MODELS = [
-  { id: "imagen-4.0-fast-generate-001",         label: "Imagen 4 Fast" },
-  { id: "imagen-4.0-generate-001",              label: "Imagen 4" },
-  { id: "imagen-4.0-ultra-generate-001",        label: "Imagen 4 Ultra" },
-  { id: "gemini-2.5-flash-image",               label: "Gemini 2.5 Flash" },
+  { id: "imagen-4.0-fast-generate-001", label: "Imagen 4 Fast" },
+  { id: "imagen-4.0-generate-001", label: "Imagen 4" },
+  { id: "imagen-4.0-ultra-generate-001", label: "Imagen 4 Ultra" },
+  { id: "gemini-2.5-flash-image", label: "Gemini 2.5 Flash" },
 ] as const;
 
 export const ASPECT_RATIOS = [
@@ -144,15 +144,14 @@ For each numbered scene below, generate ONE short subject description and THREE 
 
 PURPOSE: These will be combined with a style suffix later. Generate ONLY the [Subject] part.
 Do NOT include any style, mood, aesthetic, or quality words — those are added automatically.
-
-sample
-
-sample 
+sample .
 
 
 Digital oil painting, heavy impasto. Black void frame, ancient Near Eastern landscape emerging from total darkness. A river surface occupies the lower third, catching gold late-afternoon light in broken, textured brushstrokes. The far bank is a steep dark mass, barely visible, with the silhouettes of Persian horsemen massed on the ridge like a wall. Deep chiaroscuro. No faces visible yet. Atmospheric, ominous. Title treatment: "GRANICUS" in high-contrast serif over the composition.
  
 Tactical Parchment map. Tea-stained aged vellum with visible creases. The Aegean coast of Asia Minor rendered in 17th-century cartographic hand with decorative compass rose lower right. The Hellespont crossing marked with a bold arrow in Williamite blue. Alexander's march route traced in blue from the crossing south to the Granicus River, marked with a crossed-lance icon. Hand-calligraphic place names: "Hellespont," "Granicus River," "Zelia," "Troy." Decorative border with Macedonian star motif. Clean sans-serif annotation: "Alexander's advance, Spring 334 BCE."
+ 
+Digital oil painting, visible brushwork throughout. Mid-shot of Alexander of Macedon standing at the river's edge, back three-quarters to the viewer, surveying the far bank. He wears a Hellenistic bronze breastplate with detailed impasto highlighting, a white-plumed Boeotian helmet. His posture is still, deliberate, charged with suppressed energy. The Granicus River fills the middle ground, swirling current rendered in thick fluid brushstrokes of gray-green and gold. The far bank is a dark, chaotic mass of Persian cavalry silhouettes. Late afternoon light from the upper left. Heavy shadow across the lower composition.
  
 
 HISTORICAL ACCURACY: Match uniforms, weapons, terrain, and props to the historical period in the video title.
@@ -202,7 +201,7 @@ No photorealistic textures or clean CGI renders. No modern sans-serif fonts used
 OPERATIONAL TRIGGER:
 When given a historical event, output the full script with word count, a scene-by-scene visual storyboard specifying image type (narrative or infographic
 
-PROMPT STRUCTURE — each prompt must be exactly 2 to 4 sentence:
+PROMPT STRUCTURE — each prompt must be exactly 5 to 7 sentence:
 [Who is present] + [what they are doing] + [where they are] + [camera angle/framing] + [lighting and mood]
 
 Every prompt MUST contain a CLEAR VISIBLE ACTION — never a static description.
@@ -216,7 +215,7 @@ HISTORICAL PERIOD ACCURACY — match weapons/armor/environment to the period in 
 - Mongol: composite bows on horseback, lamellar armor, open steppe
 - Medieval Crusades: iron chainmail, kite shields, siege towers, walled city backgrounds
 - Roman: lorica segmentata, scutum shields, formation marching, stone roads and fortifications
-- THE MAP
+- THE Detailed real historical MAPs with animated routes.
 - Infographics
 
 
@@ -454,7 +453,7 @@ async function callGroqForBatch(
       if (retryOnRateLimit) {
         console.log("[groq] Rate limited — waiting 15s before retry...");
         await delay(15000);
-        return callGroqForBatch(title, scenes, groqApiKey, false, stylePrompt);
+        return callGroqForBatch(title, scenes, groqApiKey, false, stylePrompt, visualTheme);
       }
       throw new Error("Groq rate limited — try again in a moment.");
     }
@@ -526,7 +525,7 @@ async function callClaudeForBatch(
       if (retryOnRateLimit) {
         console.log("[claude] Rate limited — waiting 15s before retry...");
         await delay(15000);
-        return callClaudeForBatch(title, scenes, anthropicApiKey, false, stylePrompt, claudeModel);
+        return callClaudeForBatch(title, scenes, anthropicApiKey, false, stylePrompt, claudeModel, visualTheme);
       }
       throw new Error("Claude rate limited — try again in a moment.");
     }
@@ -595,7 +594,7 @@ async function callNvidiaForBatch(
       if (retryOnRateLimit) {
         console.log("[nvidia] Rate limited — waiting 15s before retry...");
         await delay(15000);
-        return callNvidiaForBatch(title, scenes, nvidiaApiKey, false, stylePrompt);
+        return callNvidiaForBatch(title, scenes, nvidiaApiKey, false, stylePrompt, visualTheme);
       }
       throw new Error("NVIDIA rate limited — try again in a moment.");
     }
@@ -697,7 +696,7 @@ export async function generateSceneManifest(
 
     const batch = sceneChunks.slice(i, i + BATCH_SIZE);
     const batchIdx = Math.floor(i / BATCH_SIZE);
-    
+
     const prompts = useProvider === "nvidia" && nvidiaApiKey
       ? await callNvidiaForBatch(title, batch, nvidiaApiKey, true, stylePrompt, visualTheme)
       : useProvider === "claude" && anthropicApiKey
@@ -836,7 +835,7 @@ RESTRICTIONS: No color, no painterly textures, no text overlays, no identifiable
 Return ONLY the prompt text — one sentence ending with a period. No JSON, no markdown, no explanation.`
     : `You are a visual content director generating a single image prompt for a YouTube history documentary scene.
 
-PROMPT STRUCTURE (exactly one sentence):
+PROMPT STRUCTURE (exactly 3 to 5 sentences):
 [Who is present] + [what they are doing] + [where they are] + [camera angle/framing] + [lighting and mood]
 
 STYLE RULES:
@@ -867,7 +866,7 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
         ],
         temperature: 0.6,
         top_p: 0.95,
-        max_tokens: 1024,
+        max_tokens: 5024,
         extra_body: {
           chat_template_kwargs: { enable_thinking: true },
           reasoning_budget: 256
@@ -893,7 +892,7 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
       apiKey: anthropicApiKey,
       payload: {
         model: claudeModel || "claude-haiku-4-5-20251001",
-        max_tokens: 200,
+        max_tokens: 1000,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
       },

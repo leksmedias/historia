@@ -114,21 +114,22 @@ export function parseJsonResponse(text: string): any {
 function parseLooseObject(text: string): any {
   try {
     return JSON.parse(text);
-  } catch {}
+  } catch { }
 
   let cleaned = text.replace(/,\s*([\]}])/g, '$1');
   try {
     return JSON.parse(cleaned);
-  } catch {}
+  } catch { }
 
   try {
-    cleaned = cleaned.replace(/(['"])?([a-zA-Z0-9_]+)\1\s*:/g, '"$2":');
+    cleaned = cleaned.replace(/(^|[{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":');
+    cleaned = cleaned.replace(/(^|[{,]\s*)'([a-zA-Z0-9_]+)'\s*:/g, '$1"$2":');
     cleaned = cleaned.replace(/:\s*'((?:[^'\\]|\\.)*)'/g, (m, val) => {
       const escapedVal = val.replace(/\\'/g, "'").replace(/"/g, '\\"');
       return `: "${escapedVal}"`;
     });
     return JSON.parse(cleaned);
-  } catch {}
+  } catch { }
 
   return null;
 }
@@ -212,6 +213,7 @@ function flattenObjects(val: any, list: any[]) {
 }
 
 export function recoverScenesRegex(text: string): SplitScene[] {
+  if (typeof text !== 'string') return [];
   const scenes: SplitScene[] = [];
   try {
     const rawObjs = extractLooseObjects(text);
@@ -245,6 +247,7 @@ export function recoverScenesRegex(text: string): SplitScene[] {
 }
 
 export function recoverPromptsRegex(text: string): Array<{ id: number; prompt: string }> {
+  if (typeof text !== 'string') return [];
   const prompts: Array<{ id: number; prompt: string }> = [];
   try {
     const rawObjs = extractLooseObjects(text);
@@ -329,7 +332,7 @@ HARD CONSTRAINTS:
 - Prompt must directly match the provided narration — never introduce events not yet narrated
 - No photorealistic textures or clean CGI renders
 - No flat 2D vector illustrations
-- 120–250 words per prompt`;
+- 150–250 words per prompt`;
 
 export const PASS2_WWII_SYSTEM = `You are the Lead Creative Director for a WWII/WWI historical documentary series.
 
@@ -350,4 +353,4 @@ For INFOGRAPHIC scenes — begin with: "Museum archive infographic." Include: ol
 HARD CONSTRAINTS:
 - Prompt must directly match the provided narration — never introduce events not yet narrated
 - No CGI, no modern gear, no bright colors, no clean battlefields
-- 120–250 words per prompt`;
+- 150–250 words per prompt`;

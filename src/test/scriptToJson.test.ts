@@ -124,6 +124,27 @@ describe("regex recovery functions", () => {
       { id: 1, script: "test", overlay_text: "Rhine 1945" }
     ]);
   });
+
+  it("recovers scenes with unquoted keys", () => {
+    const input = '{ scenes: [{ id: 1, script: "unquoted text", overlayText: "Rhine 1945" }] }';
+    expect(recoverScenesRegex(input)).toEqual([
+      { id: 1, script: "unquoted text", overlay_text: "Rhine 1945" }
+    ]);
+  });
+
+  it("recovers scenes with single-quoted keys", () => {
+    const input = "{ 'scenes': [{ 'id': 1, 'script': 'single quotes', 'overlayText': 'Rhine 1945' }] }";
+    expect(recoverScenesRegex(input)).toEqual([
+      { id: 1, script: "single quotes", overlay_text: "Rhine 1945" }
+    ]);
+  });
+
+  it("handles null/undefined/non-string input gracefully", () => {
+    expect(recoverScenesRegex(null as any)).toEqual([]);
+    expect(recoverScenesRegex(undefined as any)).toEqual([]);
+    expect(recoverPromptsRegex(null as any)).toEqual([]);
+    expect(recoverPromptsRegex(undefined as any)).toEqual([]);
+  });
 });
 
 describe("buildContinuityAnchor", () => {
