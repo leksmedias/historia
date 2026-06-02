@@ -221,6 +221,10 @@ Create `/opt/historia/.env`:
 # ── Server ─────────────────────────────────────────────────────────────────────
 PORT=3001
 
+# JWT secret for admin session cookies — generate with:
+# node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+JWT_SECRET=your_64_byte_hex_secret_here
+
 # ── PostgreSQL ─────────────────────────────────────────────────────────────────
 DATABASE_URL=postgresql://historia:YourSecurePasswordHere@localhost:5432/historia
 
@@ -369,7 +373,9 @@ Certbot rewrites the Nginx config and sets up automatic renewal.
 
 ## 9. In-App Configuration (Settings Page)
 
-After starting the server, open the app and go to **Settings** to configure:
+**First-time setup:** On the very first visit to the app, you will see a setup screen to create your admin username and password. This can only be done once — the setup screen disappears permanently after account creation. Every subsequent visit requires login. Sessions last 30 days.
+
+After logging in, go to **Settings** to configure:
 
 | Setting | Description |
 |---------|-------------|
