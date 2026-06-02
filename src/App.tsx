@@ -34,6 +34,7 @@ const App = () => (
             <Routes>
               <Route path="/setup" element={<Setup />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/overlay-test" element={<OverlayTest />} />
               <Route
                 path="/*"
                 element={
@@ -49,7 +50,6 @@ const App = () => (
                         <Route path="/json-to-video" element={<JsonToVideo />} />
                         <Route path="/image-test" element={<ImageModelTest />} />
                         <Route path="/script-to-json" element={<ScriptToJson />} />
-                        <Route path="/overlay-test" element={<OverlayTest />} />
                         <Route path="*" element={<NotFound />} />
                       </Routes>
                     </AppLayout>

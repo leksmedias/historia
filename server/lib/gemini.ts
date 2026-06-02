@@ -110,14 +110,34 @@ async function _generateWithImagen(prompt: string, model: string, aspectRatio = 
 async function _generateWithGemini(prompt: string, model: string, aspectRatio = "16:9"): Promise<string> {
   const url = `https://${GEMINI_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${GEMINI_LOCATION}/publishers/google/models/${model}:generateContent`;
 
+  const isGemini31 = model === "gemini-3.1-flash-image-preview";
+
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseModalities: ["TEXT", "IMAGE"],
-      imageConfig: {
-        aspectRatio,
-      },
-    },
+    generationConfig: isGemini31
+      ? {
+          temperature: 1,
+          maxOutputTokens: 32768,
+          responseModalities: ["TEXT", "IMAGE"],
+          topP: 0.95,
+          imageConfig: {
+            aspectRatio: aspectRatio || "auto",
+            imageSize: "1K",
+            imageOutputOptions: {
+              mimeType: "image/png",
+            },
+            personGeneration: "ALLOW_ALL",
+          },
+          thinkingConfig: {
+            thinkingLevel: "MINIMAL",
+          },
+        }
+      : {
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig: {
+            aspectRatio,
+          },
+        },
     safetySettings: [
       { category: "HARM_CATEGORY_HATE_SPEECH",        threshold: "OFF" },
       { category: "HARM_CATEGORY_DANGEROUS_CONTENT",  threshold: "OFF" },

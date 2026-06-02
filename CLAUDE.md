@@ -97,7 +97,7 @@ The `stats.serverPipeline` boolean in the `projects` table is the flag the front
 - **AI providers** (Groq key, Inworld key, Anthropic key, NVIDIA key) are stored in `localStorage` and set via the Settings page. The Groq key is **never** in `.env`; it can be passed as `apiKey` in the `groq-chat` proxy request.
 - **Text provider** (`textProvider` in `ProviderSettings`): `"groq"` (default, batch 10), `"claude"` (batch 5), or `"nvidia"` (batch 40, uses `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`). Determines which LLM generates scene image prompts.
 - **Visual theme** (`visualTheme` in `ProviderSettings`): `"impasto"` (default — digital oil painting, heavy impasto style) or `"ww2"` (WWII archival photorealism, B&W film grain). Switches both the system prompt and image style suffix (`COMPACT_STYLE_SUFFIX` / `COMPACT_WWII_STYLE_SUFFIX` in `providers.ts`).
-- **Image models** selectable in Settings: `imagen-4.0-fast-generate-001` (default), `imagen-4.0-generate-001`, `imagen-4.0-ultra-generate-001`, `gemini-2.5-flash-image`.
+- **Image models** selectable in Settings: `imagen-4.0-fast-generate-001` (default), `imagen-4.0-generate-001`, `imagen-4.0-ultra-generate-001`, `gemini-2.5-flash-image`, `gemini-3.1-flash-image-preview`.
 - `skipImageGeneration` setting (in `ProviderSettings`) bypasses Imagen calls entirely — useful for testing audio/script flows without consuming quota.
 - **shadcn/ui** components live in `src/components/ui/`. Fonts: Cinzel (headings), Source Sans 3 (body).
 - Scene status fields (`image_status`, `audio_status`): `pending` | `completed` | `failed`

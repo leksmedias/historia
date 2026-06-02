@@ -384,7 +384,7 @@ After logging in, go to **Settings** to configure:
 | Anthropic API Key | Use Claude as the text provider |
 | NVIDIA API Key | Use NVIDIA Nemotron as the text provider |
 | Text Provider | `groq` (default, batch 10), `claude` (batch 5), or `nvidia` (batch 40) |
-| Image Model | `imagen-4.0-fast-generate-001` (default), `-generate-001`, `-ultra`, or `gemini-2.5-flash-image` |
+| Image Model | `imagen-4.0-fast-generate-001` (default), `-generate-001`, `-ultra`, `gemini-2.5-flash-image`, or `gemini-3.1-flash-image-preview` |
 | Visual Theme | `impasto` (digital oil painting) or `ww2` (B&W archival photorealism) |
 | Skip Image Generation | Bypass Imagen calls entirely — useful for testing script/audio flows |
 
