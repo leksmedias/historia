@@ -473,6 +473,7 @@ export default function Settings() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="inworld-tts-2">TTS 2 (Latest)</SelectItem>
                     <SelectItem value="inworld-tts-1.5-max">TTS 1.5 Max (Best Quality)</SelectItem>
                     <SelectItem value="inworld-tts-1.5-mini">TTS 1.5 Mini (Faster)</SelectItem>
                     <SelectItem value="inworld-tts-1-max">TTS 1.0 Max (Legacy)</SelectItem>
