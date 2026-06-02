@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, jsonb, uuid, serial } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const projects = pgTable("projects", {
@@ -39,4 +39,11 @@ export const scenes = pgTable("scenes", {
   voice_id: text("voice_id"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+export const admin = pgTable("admin", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull(),
+  password_hash: text("password_hash").notNull(),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
