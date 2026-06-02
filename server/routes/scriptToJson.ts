@@ -107,7 +107,7 @@ async function callApi(
 ): Promise<{ status: number; data: any }> {
   if (provider === "claude") {
     const modelName = payload?.model || "";
-    const isVertexClaude = modelName.startsWith("publishers/anthropic/models/") || modelName.includes("@") || modelName.startsWith("claude-haiku-4-5");
+    const isVertexClaude = modelName.startsWith("publishers/") || modelName.includes("@") || modelName === "claude-haiku-4-5";
 
     if (isVertexClaude) {
       try {
@@ -535,7 +535,7 @@ router.post("/", (req: Request, res: Response) => {
     return res.status(400).json({ error: "No Groq API key. Set one in Settings." });
   }
   if (provider === "claude") {
-    const isVertex = claudeModel?.startsWith("publishers/anthropic/models/") || claudeModel?.includes("@") || claudeModel?.startsWith("claude-haiku-4-5");
+    const isVertex = claudeModel?.startsWith("publishers/") || claudeModel?.includes("@") || claudeModel === "claude-haiku-4-5";
     if (!isVertex && !apiKey && !process.env.ANTHROPIC_API_KEY) {
       return res.status(400).json({ error: "No Anthropic API key. Set one in Settings." });
     }

@@ -52,7 +52,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     if (action === "claude-chat") {
       const modelName = payload?.model || "";
-      const isVertexClaude = modelName.startsWith("publishers/anthropic/models/") || modelName.includes("@") || modelName.startsWith("claude-haiku-4-5");
+      const isVertexClaude = modelName.startsWith("publishers/") || modelName.includes("@") || modelName === "claude-haiku-4-5";
 
       if (isVertexClaude) {
         try {
