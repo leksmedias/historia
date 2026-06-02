@@ -32,6 +32,7 @@ export const scenes = pgTable("scenes", {
   audio_attempts: integer("audio_attempts").notNull().default(0),
   image_error: text("image_error"),
   audio_error: text("audio_error"),
+  overlay_text: text("overlay_text"),
   motion_prompt: text("motion_prompt"),
   video_status: text("video_status").notNull().default("none"),
   video_error: text("video_error"),

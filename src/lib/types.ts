@@ -34,6 +34,7 @@ export interface Scene {
   audio_attempts: number;
   image_error: string | null;
   audio_error: string | null;
+  overlay_text?: string | null;
   video_status: "none" | "animating" | "completed" | "failed";
   video_error: string | null;
   needs_review: boolean;

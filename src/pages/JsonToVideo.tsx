@@ -151,6 +151,7 @@ export default function JsonToVideo() {
         script_text: s.narration_text,
         tts_text: s.narration_text,
         image_prompt: [prefix, s.visual_prompt, suffix].filter(Boolean).join(", "),
+        overlay_text: s.overlay_text ?? null,
         motion_prompt: s.motion_prompt || null,
         fallback_prompts: [],
         image_file: `${i + 1}.png`,

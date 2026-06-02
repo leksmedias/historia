@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getProject, getAssetUrl, getDownloadUrl, regenerateAssetFrontend, bulkRegeneratePending, startClipGeneration, getClipStatus, getClipsZipUrl, startRender, getRenderStatus, getRenderDownloadUrl, startAnimateScenes, getAnimateStatus, getAnimateZipUrl } from "@/lib/api";
 import { regenerateImagePrompt } from "@/lib/providers";
@@ -71,6 +71,66 @@ export default function ProjectPreview() {
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const whooshRef = useRef<HTMLAudioElement | null>(null);
+  const [videoOverlayText, setVideoOverlayText] = useState<string | null>(null);
+  const [videoTypedChars, setVideoTypedChars] = useState(0);
+  const videoLastSceneRef = useRef<number>(-1);
+  const videoTypeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Build per-scene start/end timecodes from audio durations (for video overlay)
+  const sceneTimecodes = useMemo(() => {
+    let offset = 0;
+    return scenes.map(s => {
+      const start = offset;
+      const dur = durations[s.scene_number] ?? 0;
+      offset += dur;
+      return { sceneNumber: s.scene_number, overlayText: s.overlay_text ?? null, start, end: offset };
+    });
+  }, [scenes, durations]);
+
+  const playWhoosh = useCallback(() => {
+    if (!whooshRef.current) {
+      whooshRef.current = new Audio("/sfx/whoosh.MP3");
+      whooshRef.current.volume = 0.4;
+    }
+    whooshRef.current.currentTime = 0;
+    whooshRef.current.play().catch(() => {});
+  }, []);
+
+  const startVideoTypewriter = useCallback((text: string) => {
+    if (videoTypeTimerRef.current) clearInterval(videoTypeTimerRef.current);
+    setVideoOverlayText(text);
+    setVideoTypedChars(0);
+    playWhoosh();
+    const total = text.length;
+    const delay = Math.max(30, Math.min(80, 1400 / total));
+    let i = 0;
+    videoTypeTimerRef.current = setInterval(() => {
+      i++;
+      setVideoTypedChars(i);
+      if (i >= total && videoTypeTimerRef.current) {
+        clearInterval(videoTypeTimerRef.current);
+        videoTypeTimerRef.current = null;
+      }
+    }, delay);
+  }, [playWhoosh]);
+
+  const handleVideoTimeUpdate = useCallback(() => {
+    const t = videoRef.current?.currentTime ?? 0;
+    const active = sceneTimecodes.find(tc => t >= tc.start && t < tc.end);
+    const activeNum = active?.sceneNumber ?? -1;
+    if (activeNum !== videoLastSceneRef.current) {
+      videoLastSceneRef.current = activeNum;
+      if (active?.overlayText) {
+        startVideoTypewriter(active.overlayText);
+      } else {
+        if (videoTypeTimerRef.current) clearInterval(videoTypeTimerRef.current);
+        videoTypeTimerRef.current = null;
+        setVideoOverlayText(null);
+      }
+    }
+  }, [sceneTimecodes, startVideoTypewriter]);
 
   const fetchData = useCallback(async () => {
     if (!projectId) return;
@@ -874,13 +934,37 @@ export default function ProjectPreview() {
 
         {/* Image viewer / Video player */}
         {activeTab === "video" ? (
-          <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
+          <div className="flex-1 bg-black relative flex items-center justify-center overflow-hidden">
             <video
+              ref={videoRef}
               key={projectId}
               src={`/uploads/${projectId}/render/output.mp4`}
               controls
+              onTimeUpdate={handleVideoTimeUpdate}
               className="w-full h-full object-contain"
             />
+            {videoOverlayText && (
+              <div
+                className="absolute pointer-events-none select-none"
+                style={{ left: "4%", bottom: "12%", right: "4%" }}
+              >
+                <span style={{
+                  fontFamily: "'Courier New', Courier, monospace",
+                  fontWeight: "bold",
+                  fontSize: "clamp(1.1rem, 3.5vw, 2.6rem)",
+                  color: "#ffffff",
+                  textShadow: "3px 3px 0 rgba(0,0,0,0.95), -1px -1px 0 rgba(0,0,0,0.6)",
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                }}>
+                  {videoOverlayText.slice(0, videoTypedChars)}
+                  {videoTypedChars < videoOverlayText.length && (
+                    <span style={{ fontWeight: 100, marginLeft: 2, animation: "overlayBlink 0.75s infinite" }}>|</span>
+                  )}
+                </span>
+              </div>
+            )}
+            <style>{`@keyframes overlayBlink { 0%,100%{opacity:0} 50%{opacity:1} }`}</style>
           </div>
         ) : (
         <div className="flex-1 relative bg-background flex items-center justify-center overflow-hidden">
