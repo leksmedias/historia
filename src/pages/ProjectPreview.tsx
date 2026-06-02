@@ -116,10 +116,17 @@ export default function ProjectPreview() {
     }, delay);
   }, [playWhoosh]);
 
+  const OVERLAY_VISIBLE_SECS = 4; // overlay stays on screen for 4s then clears
+
   const handleVideoTimeUpdate = useCallback(() => {
     const t = videoRef.current?.currentTime ?? 0;
-    const active = sceneTimecodes.find(tc => t >= tc.start && t < tc.end);
+
+    // Find scene whose start window contains current time
+    const active = sceneTimecodes.find(
+      tc => t >= tc.start && t <= tc.start + OVERLAY_VISIBLE_SECS && tc.overlayText
+    );
     const activeNum = active?.sceneNumber ?? -1;
+
     if (activeNum !== videoLastSceneRef.current) {
       videoLastSceneRef.current = activeNum;
       if (active?.overlayText) {
