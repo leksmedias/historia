@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import path from "path";
 import { fileURLToPath } from "url";
 import * as dotenv from "dotenv";
@@ -9,6 +10,8 @@ import regenerateRouter from "./routes/regenerate.js";
 import geminiProxyRouter from "./routes/gemini-proxy.js";
 import renderRouter from "./routes/render.js";
 import scriptToJsonRouter from "./routes/scriptToJson.js";
+import authRouter from "./routes/auth.js";
+import { requireAuth } from "./middleware/requireAuth.js";
 
 dotenv.config();
 
@@ -22,9 +25,15 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = parseInt(process.env.PORT || "5000", 10);
 
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "50mb" }));
+app.use(cookieParser());
 
+// Auth routes — public, no token required
+app.use("/api/auth", authRouter);
+
+// All other API routes — require valid JWT cookie
+app.use("/api", requireAuth);
 app.use("/api/projects", projectsRouter);
 app.use("/api", assetsRouter);
 app.use("/api/regenerate", regenerateRouter);
