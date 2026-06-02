@@ -63,6 +63,7 @@ export default function ProjectPreview() {
 
   const [showFailedPanel, setShowFailedPanel] = useState(false);
   const [showDownloads, setShowDownloads] = useState(false);
+  const [activeTab, setActiveTab] = useState<"scenes" | "video">("scenes");
   const [failedImageSelected, setFailedImageSelected] = useState<Set<number>>(new Set());
   const [failedAudioSelected, setFailedAudioSelected] = useState<Set<number>>(new Set());
   const [bulkRegenImageRunning, setBulkRegenImageRunning] = useState(false);
@@ -128,6 +129,13 @@ export default function ProjectPreview() {
     return () => { if (renderPollRef.current) clearInterval(renderPollRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  useEffect(() => {
+    if (renderStatus === "done") {
+      setActiveTab("video");
+      toast.success("Video ready — watching now");
+    }
+  }, [renderStatus]);
 
   // Restore animate state on mount
   useEffect(() => {
@@ -838,7 +846,43 @@ export default function ProjectPreview() {
           </div>
         )}
 
-        {/* Image viewer */}
+        {/* Tab bar */}
+        <div className="flex border-b border-border bg-card shrink-0">
+          <button
+            onClick={() => setActiveTab("scenes")}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === "scenes"
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Scenes
+          </button>
+          {renderStatus === "done" && (
+            <button
+              onClick={() => setActiveTab("video")}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                activeTab === "video"
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Video
+            </button>
+          )}
+        </div>
+
+        {/* Image viewer / Video player */}
+        {activeTab === "video" ? (
+          <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
+            <video
+              key={projectId}
+              src={`/uploads/${projectId}/render/output.mp4`}
+              controls
+              className="w-full h-full object-contain"
+            />
+          </div>
+        ) : (
         <div className="flex-1 relative bg-background flex items-center justify-center overflow-hidden">
           {imgUrl ? (
             <img src={imgUrl} alt={`Scene ${scene.scene_number}`} className="max-w-full max-h-full object-contain" />
@@ -853,7 +897,10 @@ export default function ProjectPreview() {
             <p className="text-sm text-foreground text-center leading-relaxed">{scene.script_text}</p>
           </div>
         </div>
+        )}
 
+        {activeTab === "scenes" && (
+          <>
         {/* Audio controls */}
         <div className="flex items-center gap-3 px-4 py-3 border-t border-border bg-card">
           <Button variant="ghost" size="icon" onClick={() => goScene(activeIndex - 1)} disabled={activeIndex === 0}>
@@ -946,6 +993,8 @@ export default function ProjectPreview() {
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
 
       {/* Right sidebar — prompt editor */}
