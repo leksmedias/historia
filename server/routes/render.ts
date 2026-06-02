@@ -243,11 +243,33 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
 });
 
 /** GET /api/render/:id/clips/status */
-router.get("/:id/clips/status", (req: Request, res: Response) => {
-  const job = clipJobs[(req.params.id as string)];
+router.get("/:id/clips/status", async (req: Request, res: Response) => {
+  const projectId = req.params.id as string;
+
+  // 1. In-memory job (authoritative during active run)
+  const job = clipJobs[projectId];
   if (job) return res.json(job);
-  // Check if clips dir already has files (e.g. after server restart)
-  const clipsDir = path.join("uploads", (req.params.id as string), "clips");
+
+  // 2. DB row (survives restarts)
+  try {
+    const [dbJob] = await db.select().from(renderJobs)
+      .where(and(eq(renderJobs.project_id, projectId), eq(renderJobs.type, "clip")));
+    if (dbJob) {
+      if (dbJob.status === "running") {
+        await upsertJobStatus(projectId, "clip", "failed", { error: "Server restarted mid-job — please re-run" });
+        return res.json({ status: "failed", error: "Server restarted mid-job — please re-run" });
+      }
+      if (dbJob.status === "done") {
+        return res.json({ status: "done", progress: 100, done: dbJob.total ?? 0, total: dbJob.total ?? 0, resolution: dbJob.resolution ?? "unknown" });
+      }
+      if (dbJob.status === "failed") {
+        return res.json({ status: "failed", error: dbJob.error ?? "Unknown error" });
+      }
+    }
+  } catch { /* fall through to filesystem */ }
+
+  // 3. Filesystem fallback
+  const clipsDir = path.join("uploads", projectId, "clips");
   if (fs.existsSync(clipsDir)) {
     const clips = fs.readdirSync(clipsDir).filter(f => f.endsWith(".mp4"));
     if (clips.length > 0) {
@@ -339,8 +361,10 @@ router.post("/:id/animate", async (req: Request, res: Response) => {
 });
 
 /** GET /api/render/:id/animate/status */
-router.get("/:id/animate/status", (req: Request, res: Response) => {
-  const videosDir = path.join("uploads", (req.params.id as string), "videos");
+router.get("/:id/animate/status", async (req: Request, res: Response) => {
+  const projectId = req.params.id as string;
+  const videosDir = path.join("uploads", projectId, "videos");
+
   const getAnimatedNums = (): number[] => {
     if (!fs.existsSync(videosDir)) return [];
     return fs.readdirSync(videosDir)
@@ -350,11 +374,23 @@ router.get("/:id/animate/status", (req: Request, res: Response) => {
       .sort((a, b) => a - b);
   };
 
-  const job = animateJobs[(req.params.id as string)];
+  const job = animateJobs[projectId];
   if (job) {
     const animatedSceneNums = getAnimatedNums();
     return res.json({ ...job, animatedSceneNums });
   }
+
+  // DB fallback — only used for "running" reboot detection
+  try {
+    const [dbJob] = await db.select().from(renderJobs)
+      .where(and(eq(renderJobs.project_id, projectId), eq(renderJobs.type, "animate")));
+    if (dbJob?.status === "running") {
+      await upsertJobStatus(projectId, "animate", "failed", { error: "Server restarted mid-job — please re-run" });
+      return res.json({ status: "failed", error: "Server restarted mid-job — please re-run", done: 0, total: 0, sceneErrors: {}, animatedSceneNums: [] });
+    }
+  } catch { /* fall through */ }
+
+  // Filesystem fallback
   const animatedSceneNums = getAnimatedNums();
   if (animatedSceneNums.length > 0) {
     return res.json({ status: "done", progress: 100, done: animatedSceneNums.length, total: animatedSceneNums.length, sceneErrors: {}, animatedSceneNums });
@@ -419,10 +455,26 @@ router.post("/:id/auto", async (req: Request, res: Response) => {
 });
 
 /** GET /api/render/:id/auto/status */
-router.get("/:id/auto/status", (req: Request, res: Response) => {
-  const job = autoJobs[(req.params.id as string)];
+router.get("/:id/auto/status", async (req: Request, res: Response) => {
+  const projectId = req.params.id as string;
+
+  const job = autoJobs[projectId];
   if (job) return res.json(job);
-  const outPath = path.join("uploads", (req.params.id as string), "render", "output.mp4");
+
+  try {
+    const [dbJob] = await db.select().from(renderJobs)
+      .where(and(eq(renderJobs.project_id, projectId), eq(renderJobs.type, "auto")));
+    if (dbJob) {
+      if (dbJob.status === "running") {
+        await upsertJobStatus(projectId, "auto", "failed", { error: "Server restarted mid-job — please re-run" });
+        return res.json({ status: "failed", error: "Server restarted mid-job — please re-run" });
+      }
+      if (dbJob.status === "done") return res.json({ status: "done", resolution: dbJob.resolution ?? "unknown" });
+      if (dbJob.status === "failed") return res.json({ status: "failed", error: dbJob.error ?? "Unknown error" });
+    }
+  } catch { /* fall through */ }
+
+  const outPath = path.join("uploads", projectId, "render", "output.mp4");
   if (fs.existsSync(outPath)) return res.json({ status: "done", resolution: "unknown" });
   res.json({ status: "idle" });
 });
@@ -467,10 +519,30 @@ router.post("/:id", async (req: Request, res: Response) => {
 });
 
 /** GET /api/render/:id/status */
-router.get("/:id/status", (req: Request, res: Response) => {
-  const job = mergeJobs[(req.params.id as string)];
+router.get("/:id/status", async (req: Request, res: Response) => {
+  const projectId = req.params.id as string;
+
+  const job = mergeJobs[projectId];
   if (job) return res.json(job);
-  const outPath = path.join("uploads", (req.params.id as string), "render", "output.mp4");
+
+  try {
+    const [dbJob] = await db.select().from(renderJobs)
+      .where(and(eq(renderJobs.project_id, projectId), eq(renderJobs.type, "merge")));
+    if (dbJob) {
+      if (dbJob.status === "running") {
+        await upsertJobStatus(projectId, "merge", "failed", { error: "Server restarted mid-job — please re-run" });
+        return res.json({ status: "failed", error: "Server restarted mid-job — please re-run" });
+      }
+      if (dbJob.status === "done") {
+        return res.json({ status: "done", progress: 100, total: dbJob.total ?? 0, resolution: dbJob.resolution ?? "unknown" });
+      }
+      if (dbJob.status === "failed") {
+        return res.json({ status: "failed", error: dbJob.error ?? "Unknown error" });
+      }
+    }
+  } catch { /* fall through to filesystem */ }
+
+  const outPath = path.join("uploads", projectId, "render", "output.mp4");
   if (fs.existsSync(outPath)) return res.json({ status: "done", progress: 100, total: 0, resolution: "unknown" });
   res.json({ status: "idle" });
 });
