@@ -189,14 +189,24 @@ A service account does not expire and does not require browser interaction.
 curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
 echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
 sudo apt-get update && sudo apt-get install google-cloud-cli -y
+```
 
-# Authenticate (run as the same OS user the server runs as)
-gcloud auth login --no-browser
-gcloud auth application-default login --no-browser
+Authenticate using `--no-launch-browser` — this prints a URL you open in any browser, sign in, and paste the code back into the server terminal:
+
+```bash
+gcloud auth login --no-launch-browser
+# Opens a URL → sign in with your Google account → paste the code shown back here
+
+gcloud auth application-default login --no-launch-browser
+# Repeat the same process for Application Default Credentials
+
 gcloud config set project YOUR_GCP_PROJECT_ID
+```
 
-# Test
-gcloud auth print-access-token   # should print a token
+Test that it worked:
+
+```bash
+gcloud auth print-access-token   # should print a long token string
 ```
 
 > The server calls `gcloud auth print-access-token` at runtime for every Imagen/Veo request. The OS user running the Node process must be authenticated.
