@@ -15,7 +15,7 @@ const DURATION_OPTIONS = [
 ] as const;
 
 type Style = "impasto" | "ww2";
-type Provider = "groq" | "nvidia";
+type Provider = "groq" | "nvidia" | "claude";
 
 interface JobProgress {
   phase: "pass1" | "pass2";
@@ -29,8 +29,9 @@ interface JobParams {
   script: string;
   secondsPerScene: number;
   style: "impasto" | "ww2";
-  provider: "groq" | "nvidia";
+  provider: "groq" | "nvidia" | "claude";
   apiKey?: string;
+  claudeModel?: string;
 }
 
 interface Job {
@@ -192,7 +193,11 @@ export default function ScriptToJson() {
 
   const wordCount = script.trim() ? script.trim().split(/\s+/).length : 0;
   const estimatedScenes = wordCount > 0 ? estimateSceneCount(wordCount, secondsPerScene) : 0;
-  const apiKey = provider === "groq" ? settings.groqApiKey : settings.nvidiaApiKey;
+  const apiKey = provider === "groq" 
+    ? settings.groqApiKey 
+    : provider === "claude" 
+    ? settings.anthropicApiKey 
+    : settings.nvidiaApiKey;
   
   const generating = useMemo(() => selectedJob?.status === "running", [selectedJob]);
   const canGenerate = title.trim().length > 0 && wordCount > 0 && !generating;
@@ -209,6 +214,7 @@ export default function ScriptToJson() {
           style,
           provider,
           apiKey,
+          claudeModel: settings.claudeModel,
         }),
       });
       if (!res.ok) {
@@ -222,7 +228,7 @@ export default function ScriptToJson() {
     } catch (e: any) {
       toast({ title: "Generation failed", description: e.message, variant: "destructive" });
     }
-  }, [title, script, secondsPerScene, style, provider, apiKey, fetchJobs, toast]);
+  }, [title, script, secondsPerScene, style, provider, apiKey, settings.claudeModel, fetchJobs, toast]);
 
   const handleLoadAndRetry = useCallback(() => {
     if (!selectedJob?.params) return;
@@ -417,37 +423,47 @@ export default function ScriptToJson() {
               <label className="text-xs font-medium text-primary uppercase tracking-wide block mb-2">
                 AI Provider
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {(["groq", "nvidia"] as const).map((p) => {
-                  const key = p === "groq" ? settings.groqApiKey : settings.nvidiaApiKey;
+              <div className="grid grid-cols-3 gap-2">
+                {(["groq", "nvidia", "claude"] as const).map((p) => {
+                  const key = p === "groq" ? settings.groqApiKey : p === "claude" ? settings.anthropicApiKey : settings.nvidiaApiKey;
+                  const isVertex = p === "claude" && (settings.claudeModel?.startsWith("publishers/anthropic/models/") || settings.claudeModel?.includes("@") || settings.claudeModel?.startsWith("claude-haiku-4-5"));
                   return (
                     <button
                       key={p}
                       onClick={() => setProvider(p)}
                       disabled={generating}
-                      className={`rounded-lg border p-3 text-left transition-colors ${
+                      className={`rounded-lg border p-3.5 text-left transition-colors ${
                         provider === p
-                          ? "border-primary bg-primary/10"
-                          : "border-border text-muted-foreground hover:border-primary/50"
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
                       }`}
                     >
                       <div className="text-xs font-semibold">
-                        {p === "groq" ? "Groq" : "NVIDIA"}
+                        {p === "groq" ? "Groq" : p === "nvidia" ? "NVIDIA" : "Claude"}
                       </div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
-                        {p === "groq" ? "Batch 8 scenes" : "Batch 20 scenes"}
+                      <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+                        {p === "groq" ? "Batch 8" : p === "nvidia" ? "Batch 20" : "Batch 5"}
                       </div>
-                      {!key && (
-                        <div className="text-[10px] text-amber-500 mt-0.5">No key set</div>
+                      {p === "claude" && isVertex ? (
+                        <div className="text-[9px] text-emerald-500 font-semibold mt-0.5">Vertex AI</div>
+                      ) : !key ? (
+                        <div className="text-[10px] text-amber-500 mt-0.5">No key</div>
+                      ) : (
+                        <div className="text-[10px] text-emerald-500 mt-0.5">Key set</div>
                       )}
                     </button>
                   );
                 })}
               </div>
-              {apiKey ? (
+              {provider === "claude" && (settings.claudeModel?.startsWith("publishers/anthropic/models/") || settings.claudeModel?.includes("@") || settings.claudeModel?.startsWith("claude-haiku-4-5")) ? (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-500">
                   <CheckCircle2 className="h-3 w-3" />
-                  Using {provider === "groq" ? "Groq" : "NVIDIA"} key from Settings
+                  Using Claude ({settings.claudeModel}) via Vertex AI
+                </div>
+              ) : apiKey ? (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-500">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Using {provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : "NVIDIA"} key from Settings
                 </div>
               ) : (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-500">
