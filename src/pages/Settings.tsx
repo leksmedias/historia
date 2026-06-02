@@ -258,7 +258,7 @@ export default function Settings() {
                 <p className="text-xs text-muted-foreground">Uses Claude for scene &amp; image prompt generation. If set, Groq key is not needed.</p>
               </div>
 
-              {(settings.anthropicApiKey || "").length > 0 && (
+              {(settings.textProvider === "claude" || (settings.anthropicApiKey || "").length > 0) && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Claude Model</label>
                   <Select
@@ -269,8 +269,9 @@ export default function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="claude-haiku-4-5-20251001">Haiku 4.5 — Latest &amp; faster</SelectItem>
-                      <SelectItem value="claude-3-haiku-20240307">Haiku 3 — Classic &amp; cheaper</SelectItem>
+                      <SelectItem value="claude-haiku-4-5-20251001">Haiku 4.5 (Anthropic API)</SelectItem>
+                      <SelectItem value="claude-haiku-4-5@20251001">Haiku 4.5 (Vertex AI)</SelectItem>
+                      <SelectItem value="claude-3-haiku-20240307">Haiku 3 (Anthropic API)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

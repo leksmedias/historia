@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { generateGeminiImage } from "../lib/gemini.js";
+import { generateGeminiImage, PROJECT_ID, getAccessToken } from "../lib/gemini.js";
 
 const router = Router();
 
@@ -51,6 +51,44 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     if (action === "claude-chat") {
+      const modelName = payload?.model || "";
+      const isVertexClaude = modelName.startsWith("publishers/anthropic/models/") || modelName.includes("@") || modelName.startsWith("claude-haiku-4-5");
+
+      if (isVertexClaude) {
+        try {
+          const modelPath = modelName.startsWith("publishers/") 
+            ? modelName 
+            : `publishers/anthropic/models/${modelName}`;
+          
+          const region = "us-east5"; // us-east5 is the primary region for Claude in Vertex AI
+          const url = `https://${region}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${region}/${modelPath}:rawPredict`;
+          const accessToken = getAccessToken();
+
+          const { model, ...bodyWithoutModel } = payload;
+          const vertexPayload = {
+            ...bodyWithoutModel,
+            anthropic_version: "vertex-2023-10-16"
+          };
+
+          const r = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`
+            },
+            body: JSON.stringify(vertexPayload)
+          });
+
+          const text = await r.text();
+          let data;
+          try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
+          return res.json({ status: r.status, data });
+        } catch (e: any) {
+          console.error("[gemini-proxy] claude-vertex error:", e.message);
+          return res.json({ status: 500, data: { error: e.message } });
+        }
+      }
+
       const key = apiKey || process.env.ANTHROPIC_API_KEY;
       if (!key) return res.json({ status: 500, data: { error: "ANTHROPIC_API_KEY not configured" } });
       const r = await fetch("https://api.anthropic.com/v1/messages", {

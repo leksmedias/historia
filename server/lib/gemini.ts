@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import path from "path";
 
-const PROJECT_ID = process.env.VERTEX_PROJECT_ID || "project-f3847793-8610-4a16-945";
+export const PROJECT_ID = process.env.VERTEX_PROJECT_ID || "project-f3847793-8610-4a16-945";
 const LOCATION_ID = process.env.VERTEX_LOCATION_ID || "europe-west4";
 const MODEL_ID = process.env.VERTEX_MODEL_ID || "imagen-4.0-fast-generate-001";
 const API_ENDPOINT = `${LOCATION_ID}-aiplatform.googleapis.com`;
@@ -30,7 +30,7 @@ function releaseImagenSlot(): void {
   if (imagenQueue.length > 0) imagenQueue.shift()!();
 }
 
-function getAccessToken(): string {
+export function getAccessToken(): string {
   try {
     return execSync("gcloud auth print-access-token", { encoding: "utf8" }).trim();
   } catch (e: any) {
