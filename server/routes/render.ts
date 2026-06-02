@@ -1,7 +1,7 @@
 import express, { Request, Response } from "express";
 import { db } from "../db.js";
-import { projects, scenes } from "../../shared/schema.js";
-import { eq } from "drizzle-orm";
+import { projects, scenes, renderJobs } from "../../shared/schema.js";
+import { eq, and } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
 import { execSync, spawn } from "child_process";
@@ -10,6 +10,35 @@ import { generateVeoClip } from "../lib/veo.js";
 
 const router = express.Router();
 
+async function upsertJobStatus(
+  projectId: string,
+  type: "clip" | "merge" | "animate" | "auto",
+  status: "running" | "done" | "failed",
+  opts: { resolution?: string; total?: number; error?: string | null } = {}
+): Promise<void> {
+  try {
+    await db.insert(renderJobs).values({
+      project_id: projectId,
+      type,
+      status,
+      resolution: opts.resolution ?? null,
+      total: opts.total ?? null,
+      error: opts.error ?? null,
+      updated_at: new Date(),
+    }).onConflictDoUpdate({
+      target: [renderJobs.project_id, renderJobs.type],
+      set: {
+        status,
+        resolution: opts.resolution ?? null,
+        total: opts.total ?? null,
+        error: opts.error ?? null,
+        updated_at: new Date(),
+      },
+    });
+  } catch (e) {
+    console.error(`[render-jobs] upsert failed for ${projectId}/${type}:`, e);
+  }
+}
 
 // ── Ken Burns effect types ─────────────────────────────────────────────────
 type KBEffect = "zoom-in" | "zoom-out" | "pan-right" | "pan-left" | "pan-up" | "pan-down";
@@ -200,11 +229,13 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
     const [W, H] = RESOLUTIONS[resKey];
 
     clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
+    await upsertJobStatus(projectId, "clip", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
     generateClips(projectId, ready, W, H).catch(e => {
       console.error(`[clips] ${projectId} failed:`, e.message);
       clipJobs[projectId] = { ...clipJobs[projectId], status: "failed", error: e.message };
+      upsertJobStatus(projectId, "clip", "failed", { error: e.message });
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -292,7 +323,7 @@ router.post("/:id/animate", async (req: Request, res: Response) => {
       total: toAnimate.length,
       sceneErrors: {},
     };
-
+    await upsertJobStatus(projectId, "animate", "running", { total: toAnimate.length });
     res.json({ success: true, total: toAnimate.length });
 
     runVeoAnimation(projectId, toAnimate).catch(e => {
@@ -300,6 +331,7 @@ router.post("/:id/animate", async (req: Request, res: Response) => {
       if (animateJobs[projectId]) {
         animateJobs[projectId] = { ...animateJobs[projectId], status: "failed", error: e.message };
       }
+      upsertJobStatus(projectId, "animate", "failed", { error: e.message });
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -377,10 +409,12 @@ router.get("/:id/animate/zip", (req: Request, res: Response) => {
 router.post("/:id/auto", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);
   const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
+  await upsertJobStatus(projectId, "auto", "running", { resolution: resKey });
   res.json({ success: true, message: "Auto pipeline started in background" });
   runAutoPipeline(projectId, resKey).catch(e => {
     console.error(`[auto] ${projectId} failed:`, e.message);
     if (autoJobs[projectId]) autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: e.message };
+    upsertJobStatus(projectId, "auto", "failed", { error: e.message });
   });
 });
 
@@ -419,11 +453,13 @@ router.post("/:id", async (req: Request, res: Response) => {
     const [W, H] = RESOLUTIONS[resKey];
 
     mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
+    await upsertJobStatus(projectId, "merge", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
     mergeVideo(projectId, ready, W, H).catch(e => {
       console.error(`[merge] ${projectId} failed:`, e.message);
       mergeJobs[projectId] = { ...mergeJobs[projectId], status: "failed", error: e.message };
+      upsertJobStatus(projectId, "merge", "failed", { error: e.message });
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -597,6 +633,7 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
   clipJobs[projectId] = { ...clipJobs[projectId], status: "done", progress: 100 };
+  await upsertJobStatus(projectId, "clip", "done", { total: total });
   console.log(`[clips] ${projectId}: all clips done → ${clipsDir}`);
 }
 
@@ -656,6 +693,7 @@ async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<voi
   await Promise.all(Array.from({ length: VEO_CONCURRENCY }, worker));
   job.status = "done";
   job.progress = 100;
+  await upsertJobStatus(projectId, "animate", "done", { total: total });
   console.log(`[veo] ${projectId}: animation complete`);
 }
 
@@ -810,6 +848,7 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
   // Pre-generated and regenerated clips are stored persistently in clipsDir. No tempClips to clean up.
 
   mergeJobs[projectId] = { status: "done", progress: 100, total: sceneList.length, resolution: mergeJobs[projectId].resolution };
+  await upsertJobStatus(projectId, "merge", "done", { total: sceneList.length });
   console.log(`[merge] ${projectId}: done → ${outPath}`);
 }
 
@@ -859,6 +898,7 @@ async function runAutoPipeline(projectId: string, resKey: string) {
   await mergeVideo(projectId, ready, W, H);
 
   autoJobs[projectId].status = "done";
+  await upsertJobStatus(projectId, "auto", "done");
   console.log(`[auto] ${projectId}: pipeline complete`);
 }
 
