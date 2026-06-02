@@ -44,6 +44,9 @@ app.use("/api/script-to-json", scriptToJsonRouter);
 const uploadsDir = path.join(process.cwd(), "uploads");
 app.use("/uploads", express.static(uploadsDir));
 
+const sfxDir = path.join(process.cwd(), "sfx");
+app.use("/sfx", express.static(sfxDir));
+
 const distPath = path.join(__dirname, "../dist");
 app.use(express.static(distPath));
 
