@@ -12,6 +12,10 @@ import scriptToJsonRouter from "./routes/scriptToJson.js";
 
 dotenv.config();
 
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET must be set in .env — generate one with: node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\"");
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
