@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb, uuid, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, jsonb, uuid, serial, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const projects = pgTable("projects", {
@@ -47,3 +47,17 @@ export const admin = pgTable("admin", {
   password_hash: text("password_hash").notNull(),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
+
+export const renderJobs = pgTable("render_jobs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  project_id: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  status: text("status").notNull(),
+  resolution: text("resolution"),
+  total: integer("total"),
+  error: text("error"),
+  started_at: timestamp("started_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updated_at: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+}, (table) => ({
+  projectTypeIdx: uniqueIndex("render_jobs_project_type_idx").on(table.project_id, table.type),
+}));
