@@ -108,9 +108,10 @@ async function _generateWithImagen(prompt: string, model: string, aspectRatio = 
 }
 
 async function _generateWithGemini(prompt: string, model: string, aspectRatio = "16:9"): Promise<string> {
-  const url = `https://${GEMINI_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${GEMINI_LOCATION}/publishers/google/models/${model}:generateContent`;
-
   const isGemini31 = model === "gemini-3.1-flash-image-preview";
+  const location = isGemini31 ? "global" : GEMINI_LOCATION;
+  const endpoint = isGemini31 ? "aiplatform.googleapis.com" : GEMINI_ENDPOINT;
+  const url = `https://${endpoint}/v1/projects/${PROJECT_ID}/locations/${location}/publishers/google/models/${model}:generateContent`;
 
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
