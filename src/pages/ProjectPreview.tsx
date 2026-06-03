@@ -80,12 +80,30 @@ export default function ProjectPreview() {
 
   // Build per-scene start/end timecodes from audio durations (for video overlay)
   const sceneTimecodes = useMemo(() => {
+    const settings = loadProviderSettings();
+    const delaySec = settings.subtitleDelay ?? 0.8;
+    
+    // Check if the project is rendered using crossfades.
+    // The backend uses xfade if clip count is <= 200 and all durations are > 2.0s.
+    const durArray = Object.values(durations);
+    const canXfade = scenes.length > 1 && scenes.length <= 200 && durArray.length === scenes.length && durArray.every(d => d > 2.0);
+    const xd = canXfade ? 1.0 : 0.0;
+
     let offset = 0;
-    return scenes.map(s => {
+    return scenes.map((s, idx) => {
       const start = offset;
       const dur = durations[s.scene_number] ?? 0;
-      offset += dur;
-      return { sceneNumber: s.scene_number, overlayText: s.overlay_text ?? null, start, end: offset };
+      
+      const clipXd = idx > 0 ? xd : 0.0;
+      offset += dur - clipXd;
+      
+      const visualStart = Math.max(0, start - clipXd) + delaySec;
+      return { 
+        sceneNumber: s.scene_number, 
+        overlayText: s.overlay_text ?? null, 
+        start: visualStart, 
+        end: visualStart + OVERLAY_VISIBLE_SECS 
+      };
     });
   }, [scenes, durations]);
 

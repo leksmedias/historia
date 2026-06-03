@@ -644,6 +644,28 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Subtitles / Overlay */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-display">Video Subtitles / Overlay</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Start Delay: {settings.subtitleDelay ?? 0.8} seconds
+                </label>
+                <Slider
+                  value={[settings.subtitleDelay ?? 0.8]}
+                  onValueChange={([v]) => setSettings(s => ({ ...s, subtitleDelay: v }))}
+                  min={0.0} max={2.0} step={0.1}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Delay before subtitle typing animation starts on each scene (offsetting TTS audio silence/breathing room).
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 

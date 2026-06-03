@@ -29,6 +29,7 @@ export interface ProviderSettings {
   inworldApiKey: string;
   customVoices: CustomVoice[];
   skipImageGeneration: boolean;
+  subtitleDelay?: number;
 }
 
 export const IMAGE_MODELS = [
@@ -98,6 +99,7 @@ const DEFAULTS: ProviderSettings = {
   inworldApiKey: "",
   customVoices: [],
   skipImageGeneration: false,
+  subtitleDelay: 0.8,
 };
 
 export function loadProviderSettings(): ProviderSettings {
