@@ -655,10 +655,12 @@ export async function checkAndFixImages(
 export type VideoResolution = "480p" | "720p" | "1080p" | "1440p";
 
 export async function startClipGeneration(projectId: string, resolution: VideoResolution): Promise<{ total: number; resolution: string }> {
+  const settings = loadProviderSettings();
+  const subtitleDelay = settings.subtitleDelay ?? 0.8;
   return apiRequest(`/render/${projectId}/clips`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resolution }),
+    body: JSON.stringify({ resolution, subtitleDelay }),
   });
 }
 
@@ -678,10 +680,12 @@ export function getClipsZipUrl(projectId: string): string {
 }
 
 export async function startRender(projectId: string, resolution: VideoResolution): Promise<{ total: number; resolution: string }> {
+  const settings = loadProviderSettings();
+  const subtitleDelay = settings.subtitleDelay ?? 0.8;
   return apiRequest(`/render/${projectId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resolution }),
+    body: JSON.stringify({ resolution, subtitleDelay }),
   });
 }
 

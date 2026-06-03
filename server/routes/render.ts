@@ -148,6 +148,68 @@ const animateJobs: Record<string, AnimateJob> = {};
 
 // ── FFmpeg helpers ─────────────────────────────────────────────────────────
 
+function findFontFile(): string | null {
+  const windowsPaths = [
+    "C:/Windows/Fonts/courbd.ttf",
+    "C:/Windows/Fonts/cour.ttf",
+    "C:/Windows/Fonts/consolab.ttf",
+    "C:/Windows/Fonts/lucon.ttf",
+  ];
+  const linuxPaths = [
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeMonoBold.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
+    "/usr/share/fonts/truetype/msttcorefonts/Courier_New_Bold.ttf",
+    "/usr/share/fonts/truetype/msttcorefonts/Courier_New.ttf",
+  ];
+
+  const paths = process.platform === "win32" ? windowsPaths : linuxPaths;
+  for (const p of paths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
+  // Fallback: check other platform paths just in case
+  const allPaths = [...windowsPaths, ...linuxPaths];
+  for (const p of allPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
+  return null;
+}
+
+function escapeFFmpegPath(filePath: string): string {
+  let p = filePath.replace(/\\/g, "/");
+  p = p.replace(/:/g, "\\:");
+  p = p.replace(/'/g, "'\\\\''");
+  return p;
+}
+
+function wordWrap(text: string, maxLen = 50): string {
+  return text.split("\n").map(paragraph => {
+    const words = paragraph.split(" ");
+    const lines: string[] = [];
+    let currentLine = "";
+
+    for (const word of words) {
+      if ((currentLine + (currentLine ? " " : "") + word).length > maxLen) {
+        if (currentLine) lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine += (currentLine ? " " : "") + word;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines.join("\n");
+  }).join("\n");
+}
+
 function ffmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", args);
@@ -227,12 +289,13 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
 
     const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
     const [W, H] = RESOLUTIONS[resKey];
+    const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
 
     clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
     await upsertJobStatus(projectId, "clip", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
-    generateClips(projectId, ready, W, H).catch(e => {
+    generateClips(projectId, ready, W, H, subtitleDelay).catch(e => {
       console.error(`[clips] ${projectId} failed:`, e.message);
       clipJobs[projectId] = { ...clipJobs[projectId], status: "failed", error: e.message };
       upsertJobStatus(projectId, "clip", "failed", { error: e.message });
@@ -445,9 +508,10 @@ router.get("/:id/animate/zip", (req: Request, res: Response) => {
 router.post("/:id/auto", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);
   const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
+  const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
   await upsertJobStatus(projectId, "auto", "running", { resolution: resKey });
   res.json({ success: true, message: "Auto pipeline started in background" });
-  runAutoPipeline(projectId, resKey).catch(e => {
+  runAutoPipeline(projectId, resKey, subtitleDelay).catch(e => {
     console.error(`[auto] ${projectId} failed:`, e.message);
     if (autoJobs[projectId]) autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: e.message };
     upsertJobStatus(projectId, "auto", "failed", { error: e.message });
@@ -503,12 +567,13 @@ router.post("/:id", async (req: Request, res: Response) => {
 
     const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
     const [W, H] = RESOLUTIONS[resKey];
+    const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
 
     mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
     await upsertJobStatus(projectId, "merge", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
-    mergeVideo(projectId, ready, W, H).catch(e => {
+    mergeVideo(projectId, ready, W, H, subtitleDelay).catch(e => {
       console.error(`[merge] ${projectId} failed:`, e.message);
       mergeJobs[projectId] = { ...mergeJobs[projectId], status: "failed", error: e.message };
       upsertJobStatus(projectId, "merge", "failed", { error: e.message });
@@ -569,7 +634,8 @@ const AUDIO_FILTER = `loudnorm=I=-16:LRA=11:TP=-1.5`;
 
 async function buildVeoClip(
   veoPath: string, audioPath: string, dur: number,
-  width: number, height: number, outPath: string
+  width: number, height: number, outPath: string,
+  overlayText?: string | null, delay?: number
 ): Promise<void> {
   const veoDur = getAudioDuration(veoPath);
   const speed  = veoDur / dur; // < 1.0 → Veo shorter than audio
@@ -592,40 +658,64 @@ async function buildVeoClip(
   const vBase = shouldSlowDown
     ? `setpts=PTS/${speed.toFixed(6)},fps=${FPS},${scaleFilter}`
     : `fps=${FPS},${scaleFilter}`;
-  const vFilter = `${vBase},fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5`;
+
+  let drawtextFilter = "";
+  let tempTextFile = "";
+  if (overlayText && overlayText.trim()) {
+    const uppercaseText = wordWrap(overlayText.trim().toUpperCase());
+    tempTextFile = outPath.replace(/\.mp4$/, "_subtitle.txt");
+    fs.writeFileSync(tempTextFile, uppercaseText, "utf8");
+    const fontFile = findFontFile();
+    const escapedFont = fontFile ? escapeFFmpegPath(fontFile) : null;
+    const escapedTextFile = escapeFFmpegPath(tempTextFile);
+    const fontSize = Math.round(height * 0.045);
+    const dVal = delay ?? 0.8;
+    
+    const fontOpt = escapedFont ? `fontfile='${escapedFont}':` : "";
+    drawtextFilter = `,drawtext=${fontOpt}textfile='${escapedTextFile}':fontcolor=white:fontsize=${fontSize}:shadowcolor=black@0.9:shadowx=3:shadowy=3:x=w*0.04:y=h-th-h*0.12:enable='between(t,${dVal},${(dVal + 4.0).toFixed(3)})'`;
+  }
+
+  const vFilter = `${vBase},fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5${drawtextFilter}`;
 
   const encArgs = [
     "-c:v", "libx264", "-preset", "fast", "-crf", "22",
     "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
   ];
 
-  if (veoAudio) {
-    // Slow ambient audio only when slowing video; looped audio plays at natural speed
-    const atempoSpeed = shouldSlowDown ? Math.max(speed, 0.5).toFixed(4) : "1.0";
-    const veoAudioFilter = shouldSlowDown
-      ? `atempo=${atempoSpeed},volume=0.1`
-      : `volume=0.1`;
-    await ffmpeg([
-      "-y", ...veoInputArgs, "-i", audioPath,
-      "-filter_complex",
-        `[0:v]${vFilter}[v];` +
-        `[0:a]${veoAudioFilter}[va];[1:a]${AUDIO_FILTER}[na];[va][na]amix=inputs=2:duration=first,afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
-      "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
-      ...encArgs, outPath,
-    ]);
-  } else {
-    await ffmpeg([
-      "-y", ...veoInputArgs, "-i", audioPath,
-      "-filter_complex", `[0:v]${vFilter}[v];[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
-      "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
-      ...encArgs, outPath,
-    ]);
+  try {
+    if (veoAudio) {
+      // Slow ambient audio only when slowing video; looped audio plays at natural speed
+      const atempoSpeed = shouldSlowDown ? Math.max(speed, 0.5).toFixed(4) : "1.0";
+      const veoAudioFilter = shouldSlowDown
+        ? `atempo=${atempoSpeed},volume=0.1`
+        : `volume=0.1`;
+      await ffmpeg([
+        "-y", ...veoInputArgs, "-i", audioPath,
+        "-filter_complex",
+          `[0:v]${vFilter}[v];` +
+          `[0:a]${veoAudioFilter}[va];[1:a]${AUDIO_FILTER}[na];[va][na]amix=inputs=2:duration=first,afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
+        "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
+        ...encArgs, outPath,
+      ]);
+    } else {
+      await ffmpeg([
+        "-y", ...veoInputArgs, "-i", audioPath,
+        "-filter_complex", `[0:v]${vFilter}[v];[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
+        "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
+        ...encArgs, outPath,
+      ]);
+    }
+  } finally {
+    if (tempTextFile && fs.existsSync(tempTextFile)) {
+      try { fs.unlinkSync(tempTextFile); } catch {}
+    }
   }
 }
 
 async function buildImageClip(
   imagePath: string, audioPath: string, dur: number,
-  width: number, height: number, outPath: string, effect: KBEffect
+  width: number, height: number, outPath: string, effect: KBEffect,
+  overlayText?: string | null, delay?: number
 ): Promise<void> {
   const FPS = 25;
   const kbFilter = buildKB(effect, dur, width, height, 1.3);
@@ -635,23 +725,45 @@ async function buildImageClip(
     "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
   ];
 
+  let drawtextFilter = "";
+  let tempTextFile = "";
+  if (overlayText && overlayText.trim()) {
+    const uppercaseText = wordWrap(overlayText.trim().toUpperCase());
+    tempTextFile = outPath.replace(/\.mp4$/, "_subtitle.txt");
+    fs.writeFileSync(tempTextFile, uppercaseText, "utf8");
+    const fontFile = findFontFile();
+    const escapedFont = fontFile ? escapeFFmpegPath(fontFile) : null;
+    const escapedTextFile = escapeFFmpegPath(tempTextFile);
+    const fontSize = Math.round(height * 0.045);
+    const dVal = delay ?? 0.8;
+    
+    const fontOpt = escapedFont ? `fontfile='${escapedFont}':` : "";
+    drawtextFilter = `,drawtext=${fontOpt}textfile='${escapedTextFile}':fontcolor=white:fontsize=${fontSize}:shadowcolor=black@0.9:shadowx=3:shadowy=3:x=w*0.04:y=h-th-h*0.12:enable='between(t,${dVal},${(dVal + 4.0).toFixed(3)})'`;
+  }
+
   const fadeOutStart = Math.max(0, dur - 0.5).toFixed(3);
-  const vFilter = `[0:v]${kbFilter},fps=${FPS},setsar=1,format=yuv420p,fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5[v]`;
+  const vFilter = `[0:v]${kbFilter},fps=${FPS},setsar=1,format=yuv420p,fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5${drawtextFilter}[v]`;
   const aFilter = `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`;
 
-  await ffmpeg([
-    "-y", "-loop", "1", "-framerate", `${FPS}`, "-i", imagePath, "-i", audioPath,
-    "-filter_complex", `${vFilter};${aFilter}`,
-    "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
-    ...encArgs, outPath,
-  ]);
+  try {
+    await ffmpeg([
+      "-y", "-loop", "1", "-framerate", `${FPS}`, "-i", imagePath, "-i", audioPath,
+      "-filter_complex", `${vFilter};${aFilter}`,
+      "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
+      ...encArgs, outPath,
+    ]);
+  } finally {
+    if (tempTextFile && fs.existsSync(tempTextFile)) {
+      try { fs.unlinkSync(tempTextFile); } catch {}
+    }
+  }
 }
 
 /**
  * Phase 1: generate one MP4 per scene, named by scene number (1.mp4, 2.mp4, …).
  * Duration = audio duration. Ken Burns effect applied at random (no repeat).
  */
-async function generateClips(projectId: string, sceneList: any[], width: number, height: number) {
+async function generateClips(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8) {
   const clipsDir = path.join("uploads", projectId, "clips");
   fs.mkdirSync(clipsDir, { recursive: true });
 
@@ -679,11 +791,11 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
         try {
           if (fs.existsSync(veoPath)) {
             console.log(`[clips] scene ${num}: using Veo video`);
-            await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath);
+            await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath, s.overlay_text, subtitleDelay);
           } else {
             const effect = KB_EFFECTS[idx % KB_EFFECTS.length];
             console.log(`[clips] scene ${num}: generating locally (${effect}, ${dur}s)`);
-            await buildImageClip(img, audioPath, dur, width, height, clipPath, effect);
+            await buildImageClip(img, audioPath, dur, width, height, clipPath, effect, s.overlay_text, subtitleDelay);
           }
 
           if (!isValidVideoClip(clipPath)) {
@@ -805,7 +917,7 @@ function buildXfadeFilter(durations: number[], xd: number): string {
  * Phase 2: merge clips into output.mp4 with xfade transitions.
  * Reads from clips/ dir if pre-generated; otherwise generates clips inline.
  */
-async function mergeVideo(projectId: string, sceneList: any[], width: number, height: number) {
+async function mergeVideo(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8) {
   const clipsDir = path.join("uploads", projectId, "clips");
   const renderDir = path.join("uploads", projectId, "render");
   fs.mkdirSync(renderDir, { recursive: true });
@@ -844,12 +956,12 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
       try {
         if (fs.existsSync(veoPath)) {
           console.log(`[merge] scene ${num}: regenerating Veo video clip inline`);
-          await buildVeoClip(veoPath, audioPath, dur, width, height, clip);
+          await buildVeoClip(veoPath, audioPath, dur, width, height, clip, s.overlay_text, subtitleDelay);
         } else {
           const effect = pickEffect(prevEffect);
           prevEffect = effect;
           console.log(`[merge] scene ${num}: regenerating Ken Burns clip inline (${effect}, ${dur}s)`);
-          await buildImageClip(img, audioPath, dur, width, height, clip, effect);
+          await buildImageClip(img, audioPath, dur, width, height, clip, effect, s.overlay_text, subtitleDelay);
         }
         isValid = true;
       } catch (e: any) {
@@ -928,7 +1040,7 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
  * Full auto-pipeline: poll until all assets ready → generate clips → merge.
  * Runs entirely in-process; browser can be closed.
  */
-async function runAutoPipeline(projectId: string, resKey: string) {
+async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay = 0.8) {
   const [W, H] = RESOLUTIONS[resKey];
   autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
   console.log(`[auto] ${projectId}: waiting for assets (${resKey})`);
@@ -962,12 +1074,12 @@ async function runAutoPipeline(projectId: string, resKey: string) {
   console.log(`[auto] ${projectId}: ${ready.length} scenes ready → generating clips`);
   autoJobs[projectId].status = "generating_clips";
   clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
-  await generateClips(projectId, ready, W, H);
+  await generateClips(projectId, ready, W, H, subtitleDelay);
 
   console.log(`[auto] ${projectId}: clips done → merging`);
   autoJobs[projectId].status = "merging";
   mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
-  await mergeVideo(projectId, ready, W, H);
+  await mergeVideo(projectId, ready, W, H, subtitleDelay);
 
   autoJobs[projectId].status = "done";
   await upsertJobStatus(projectId, "auto", "done");
