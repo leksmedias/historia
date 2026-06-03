@@ -551,8 +551,13 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
 
     for (let i = 0; i < chunks.length; i++) {
       if (i > 0) {
-        // Space out requests to avoid hitting TPM rate limits
-        await delay(provider === "groq" ? delayPass1 : 2000);
+        // Space out requests to avoid hitting TPM/RPM rate limits
+        let waitMs = 2000;
+        if (provider === "groq") waitMs = delayPass1;
+        else if (provider === "claude") waitMs = 12000;
+        else if (provider === "gemini") waitMs = 6000;
+        else if (provider === "nvidia") waitMs = 3000;
+        await delay(waitMs);
       }
       const scenes = await callPass1(
         chunks[i],
@@ -586,8 +591,13 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
 
     for (let b = 0; b < totalBatches; b++) {
       if (b > 0) {
-        // Space out requests to avoid hitting TPM rate limits
-        await delay(provider === "groq" ? delayPass2 : 2000);
+        // Space out requests to avoid hitting TPM/RPM rate limits
+        let waitMs = 2000;
+        if (provider === "groq") waitMs = delayPass2;
+        else if (provider === "claude") waitMs = 12000;
+        else if (provider === "gemini") waitMs = 6000;
+        else if (provider === "nvidia") waitMs = 3000;
+        await delay(waitMs);
       }
       const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);
       const anchor = buildContinuityAnchor(completedForAnchor);
