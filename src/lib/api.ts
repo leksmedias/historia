@@ -145,9 +145,6 @@ export async function createProjectFrontend(
   callbacks: PipelineCallbacks
 ): Promise<{ projectId: string; serverPipeline: boolean; sceneCount: number }> {
   const settings = loadProviderSettings();
-  if (!settings.groqApiKey && !settings.anthropicApiKey && !settings.nvidiaApiKey) {
-    throw new Error("No AI API key configured. Add a Groq, Anthropic, or Nvidia API key in Settings.");
-  }
 
   const useProvider = settings.textProvider || (settings.anthropicApiKey ? "claude" : "groq");
   const chunkLimit = useProvider === "nvidia" ? 40000 : 800;

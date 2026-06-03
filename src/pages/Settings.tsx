@@ -37,6 +37,8 @@ export default function Settings() {
 
   const [groqStatus, setGroqStatus] = useState<HealthStatus>("idle");
   const [groqMsg, setGroqMsg] = useState("");
+  const [anthropicStatus, setAnthropicStatus] = useState<HealthStatus>("idle");
+  const [anthropicMsg, setAnthropicMsg] = useState("");
   const [nvidiaStatus, setNvidiaStatus] = useState<HealthStatus>("idle");
   const [nvidiaMsg, setNvidiaMsg] = useState("");
   const [inworldStatus, setInworldStatus] = useState<HealthStatus>("idle");
@@ -62,6 +64,41 @@ export default function Settings() {
       setGroqStatus("ok");
     } catch (e: any) {
       setGroqStatus("error"); setGroqMsg(e.message?.includes("fetch") ? "Network error" : e.message);
+    }
+  };
+
+  const testAnthropic = async () => {
+    const isVertex = settings.claudeModel?.startsWith("publishers/") || 
+                     settings.claudeModel?.includes("@") || 
+                     settings.claudeModel === "claude-haiku-4-5" || 
+                     settings.claudeModel === "claude-sonnet-4-6";
+    
+    if (!settings.anthropicApiKey && !isVertex) { 
+      setAnthropicStatus("error"); 
+      setAnthropicMsg("No API key provided"); 
+      return; 
+    }
+    setAnthropicStatus("checking"); setAnthropicMsg("");
+    try {
+      const res = await fetch("/api/gemini-proxy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "claude-chat",
+          apiKey: settings.anthropicApiKey,
+          payload: {
+            model: settings.claudeModel || "claude-haiku-4-5-20251001",
+            max_tokens: 10,
+            messages: [{ role: "user", content: "Say ok" }],
+          }
+        })
+      });
+      const data = await res.json();
+      if (res.status === 401 || data?.status === 401) { setAnthropicStatus("error"); setAnthropicMsg("Invalid API key"); return; }
+      if (!res.ok || data?.error) { setAnthropicStatus("error"); setAnthropicMsg(data?.error || `HTTP ${res.status}`); return; }
+      setAnthropicStatus("ok");
+    } catch (e: any) {
+      setAnthropicStatus("error"); setAnthropicMsg(e.message?.includes("fetch") ? "Network error" : e.message);
     }
   };
 
@@ -130,7 +167,7 @@ export default function Settings() {
     }
   };
 
-  const testAll = () => { testGroq(); testNvidia(); testInworld(); testRenderApi(); };
+  const testAll = () => { testGroq(); testAnthropic(); testNvidia(); testInworld(); testRenderApi(); };
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "connections", label: "Connections", icon: <Key className="h-4 w-4" /> },
@@ -241,7 +278,12 @@ export default function Settings() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium text-foreground">Anthropic API Key</label>
-                  <span className="text-xs text-muted-foreground bg-primary/10 text-primary px-2 py-0.5 rounded-full">Takes priority over Groq</span>
+                  <div className="flex items-center gap-2">
+                    <StatusIndicator status={anthropicStatus} message={anthropicMsg} />
+                    <Button variant="ghost" size="sm" onClick={testAnthropic} className="text-xs h-7">
+                      {anthropicStatus === "checking" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <Input

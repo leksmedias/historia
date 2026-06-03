@@ -646,11 +646,11 @@ export async function generateScenesForChunk(
 
   const useProvider = textProvider || (anthropicApiKey ? "claude" : "groq");
 
-  const prompts = useProvider === "nvidia" && nvidiaApiKey
-    ? await callNvidiaForBatch(title, sceneChunks, nvidiaApiKey, true, stylePrompt, visualTheme)
-    : useProvider === "claude" && anthropicApiKey
-      ? await callClaudeForBatch(title, sceneChunks, anthropicApiKey, true, stylePrompt, claudeModel, visualTheme)
-      : await callGroqForBatch(title, sceneChunks, groqApiKey, true, stylePrompt, visualTheme);
+  const prompts = useProvider === "nvidia"
+    ? await callNvidiaForBatch(title, sceneChunks, nvidiaApiKey || "", true, stylePrompt, visualTheme)
+    : useProvider === "claude"
+      ? await callClaudeForBatch(title, sceneChunks, anthropicApiKey || "", true, stylePrompt, claudeModel, visualTheme)
+      : await callGroqForBatch(title, sceneChunks, groqApiKey || "", true, stylePrompt, visualTheme);
 
   return sceneChunks.map((sc, idx) => {
     const p = prompts[idx] || {} as BatchPromptResult;
@@ -698,11 +698,11 @@ export async function generateSceneManifest(
     const batch = sceneChunks.slice(i, i + BATCH_SIZE);
     const batchIdx = Math.floor(i / BATCH_SIZE);
 
-    const prompts = useProvider === "nvidia" && nvidiaApiKey
-      ? await callNvidiaForBatch(title, batch, nvidiaApiKey, true, stylePrompt, visualTheme)
-      : useProvider === "claude" && anthropicApiKey
-        ? await callClaudeForBatch(title, batch, anthropicApiKey, true, stylePrompt, claudeModel, visualTheme)
-        : await callGroqForBatch(title, batch, groqApiKey, true, stylePrompt, visualTheme);
+    const prompts = useProvider === "nvidia"
+      ? await callNvidiaForBatch(title, batch, nvidiaApiKey || "", true, stylePrompt, visualTheme)
+      : useProvider === "claude"
+        ? await callClaudeForBatch(title, batch, anthropicApiKey || "", true, stylePrompt, claudeModel, visualTheme)
+        : await callGroqForBatch(title, batch, groqApiKey || "", true, stylePrompt, visualTheme);
 
     const merged: SceneManifest[] = batch.map((sc, idx) => {
       const p = prompts[idx] || {} as BatchPromptResult;
@@ -855,10 +855,10 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
 
   const useProvider = textProvider || (anthropicApiKey ? "claude" : "groq");
 
-  if (useProvider === "nvidia" && nvidiaApiKey) {
+  if (useProvider === "nvidia") {
     const result = await apiProxy({
       action: "nvidia-chat",
-      apiKey: nvidiaApiKey,
+      apiKey: nvidiaApiKey || "",
       payload: {
         model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
         messages: [
@@ -887,10 +887,10 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
     return content.trim();
   }
 
-  if (useProvider === "claude" && anthropicApiKey) {
+  if (useProvider === "claude") {
     const result = await apiProxy({
       action: "claude-chat",
-      apiKey: anthropicApiKey,
+      apiKey: anthropicApiKey || "",
       payload: {
         model: claudeModel || "claude-haiku-4-5-20251001",
         max_tokens: 1000,
