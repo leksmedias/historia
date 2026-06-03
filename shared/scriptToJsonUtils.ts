@@ -23,12 +23,14 @@ export interface ScriptToJsonParams {
   script: string;
   secondsPerScene: number;
   style: "impasto" | "ww2";
-  provider: "groq" | "nvidia" | "claude";
+  provider: "groq" | "nvidia" | "claude" | "gemini";
   groqApiKey?: string;
   nvidiaApiKey?: string;
   anthropicApiKey?: string;
+  geminiApiKey?: string;
   groqModel?: string;
   claudeModel?: string;
+  geminiModel?: string;
 }
 
 export interface GroqModelConfig {

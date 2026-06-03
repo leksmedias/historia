@@ -22,7 +22,9 @@ export interface ProviderSettings {
   anthropicApiKey: string;
   claudeModel: string;
   nvidiaApiKey: string;
-  textProvider: "groq" | "claude" | "nvidia";
+  geminiApiKey: string;
+  geminiModel: string;
+  textProvider: "groq" | "claude" | "nvidia" | "gemini";
   inworldApiKey: string;
   customVoices: CustomVoice[];
   skipImageGeneration: boolean;
@@ -88,6 +90,8 @@ const DEFAULTS: ProviderSettings = {
   anthropicApiKey: "",
   claudeModel: "claude-haiku-4-5-20251001",
   nvidiaApiKey: "",
+  geminiApiKey: "",
+  geminiModel: "gemini-3.5-flash",
   textProvider: "groq",
   inworldApiKey: "",
   customVoices: [],
@@ -624,6 +628,85 @@ async function callNvidiaForBatch(
   }
 }
 
+async function callGeminiForBatch(
+  title: string,
+  scenes: Array<{ scene_number: number; script_text: string }>,
+  geminiApiKey: string,
+  retryOnRateLimit = true,
+  stylePrompt?: string,
+  geminiModel?: string,
+  visualTheme?: "impasto" | "ww2"
+): Promise<BatchPromptResult[]> {
+  const basePrompt = visualTheme === "ww2" ? BATCH_WWII_IMAGE_PROMPT : BATCH_IMAGE_PROMPT;
+  const systemPrompt = stylePrompt
+    ? `${basePrompt}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
+    : basePrompt;
+  const scenesText = scenes
+    .map(s => `Scene ${s.scene_number}: "${s.script_text}"`)
+    .join("\n");
+
+  const userPrompt = `Video Title: ${title}\n\nGenerate image prompts for these ${scenes.length} scenes:\n\n${scenesText}\n\nReturn ONLY the JSON object.`;
+
+  const result = await apiProxy({
+    action: "gemini-chat",
+    apiKey: geminiApiKey,
+    payload: {
+      model: geminiModel || "gemini-3.5-flash",
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      generationConfig: {
+        temperature: 1,
+        maxOutputTokens: 8192,
+        topP: 0.95,
+        responseMimeType: "application/json",
+        thinkingConfig: {
+          thinkingLevel: "MEDIUM"
+        }
+      },
+      safetySettings: [
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" }
+      ]
+    },
+  });
+
+  if (result.status && result.status >= 400) {
+    const errText = typeof result.data === "string"
+      ? result.data
+      : JSON.stringify(result.data || {}).substring(0, 500);
+    if (result.status === 429) {
+      if (retryOnRateLimit) {
+        console.log("[gemini-text] Rate limited — waiting 15s before retry...");
+        await delay(15000);
+        return callGeminiForBatch(title, scenes, geminiApiKey, false, stylePrompt, geminiModel, visualTheme);
+      }
+      throw new Error("Gemini rate limited — try again in a moment.");
+    }
+    if (result.status === 401) throw new Error("Gemini API key is invalid. Update it in Settings.");
+    throw new Error(`Gemini API error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
+  }
+
+  const data = result.data;
+  let content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!content) {
+    content = data?.choices?.[0]?.message?.content;
+  }
+  if (!content) throw new Error("No content from Gemini");
+  const cleaned = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error(`Gemini did not return valid JSON. Response: ${cleaned.substring(0, 300)}`);
+  try {
+    const parsed = JSON.parse(match[0]);
+    return parsed.scenes || [];
+  } catch {
+    const recovered = recoverPartialScenes(match[0]);
+    if (recovered.length > 0) return recovered;
+    throw new Error(`Gemini returned malformed JSON (${match[0].length} chars). Try reducing batch size.`);
+  }
+}
+
 export async function generateScenesForChunk(
   title: string,
   chunk: string,
@@ -636,21 +719,25 @@ export async function generateScenesForChunk(
   anthropicApiKey?: string,
   claudeModel?: string,
   nvidiaApiKey?: string,
-  textProvider?: "groq" | "claude" | "nvidia",
-  visualTheme?: "impasto" | "ww2"
+  textProvider?: "groq" | "claude" | "nvidia" | "gemini",
+  visualTheme?: "impasto" | "ww2",
+  geminiApiKey?: string,
+  geminiModel?: string
 ): Promise<SceneManifest[]> {
   const sceneChunks = (splitMode === "duration"
     ? splitScriptByDuration(chunk)
     : splitScriptIntoScenes(chunk, splitMode === "exact" ? "exact" : splitMode === "two" ? "two" : "smart")
   ).map((s, idx) => ({ ...s, scene_number: startSceneNumber + idx }));
 
-  const useProvider = textProvider || (anthropicApiKey ? "claude" : "groq");
+  const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : "groq"));
 
   const prompts = useProvider === "nvidia"
     ? await callNvidiaForBatch(title, sceneChunks, nvidiaApiKey || "", true, stylePrompt, visualTheme)
     : useProvider === "claude"
       ? await callClaudeForBatch(title, sceneChunks, anthropicApiKey || "", true, stylePrompt, claudeModel, visualTheme)
-      : await callGroqForBatch(title, sceneChunks, groqApiKey || "", true, stylePrompt, visualTheme);
+      : useProvider === "gemini"
+        ? await callGeminiForBatch(title, sceneChunks, geminiApiKey || "", true, stylePrompt, geminiModel, visualTheme)
+        : await callGroqForBatch(title, sceneChunks, groqApiKey || "", true, stylePrompt, visualTheme);
 
   return sceneChunks.map((sc, idx) => {
     const p = prompts[idx] || {} as BatchPromptResult;
@@ -680,14 +767,16 @@ export async function generateSceneManifest(
   anthropicApiKey?: string,
   claudeModel?: string,
   nvidiaApiKey?: string,
-  textProvider?: "groq" | "claude" | "nvidia",
-  visualTheme?: "impasto" | "ww2"
+  textProvider?: "groq" | "claude" | "nvidia" | "gemini",
+  visualTheme?: "impasto" | "ww2",
+  geminiApiKey?: string,
+  geminiModel?: string
 ): Promise<SceneManifest[]> {
   const sceneChunks = splitMode === "duration"
     ? splitScriptByDuration(script)
     : splitScriptIntoScenes(script, splitMode === "exact" ? "exact" : splitMode === "two" ? "two" : "smart");
 
-  const useProvider = textProvider || (anthropicApiKey ? "claude" : "groq");
+  const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : "groq"));
   const BATCH_SIZE = useProvider === "nvidia" ? 40 : (useProvider === "claude" ? 5 : 10);
   const totalBatches = Math.ceil(sceneChunks.length / BATCH_SIZE);
   const allScenes: SceneManifest[] = [];
@@ -702,7 +791,9 @@ export async function generateSceneManifest(
       ? await callNvidiaForBatch(title, batch, nvidiaApiKey || "", true, stylePrompt, visualTheme)
       : useProvider === "claude"
         ? await callClaudeForBatch(title, batch, anthropicApiKey || "", true, stylePrompt, claudeModel, visualTheme)
-        : await callGroqForBatch(title, batch, groqApiKey || "", true, stylePrompt, visualTheme);
+        : useProvider === "gemini"
+          ? await callGeminiForBatch(title, batch, geminiApiKey || "", true, stylePrompt, geminiModel, visualTheme)
+          : await callGroqForBatch(title, batch, groqApiKey || "", true, stylePrompt, visualTheme);
 
     const merged: SceneManifest[] = batch.map((sc, idx) => {
       const p = prompts[idx] || {} as BatchPromptResult;
@@ -815,8 +906,10 @@ export async function regenerateImagePrompt(
   anthropicApiKey?: string,
   claudeModel?: string,
   nvidiaApiKey?: string,
-  textProvider?: "groq" | "claude" | "nvidia",
-  visualTheme?: "impasto" | "ww2"
+  textProvider?: "groq" | "claude" | "nvidia" | "gemini",
+  visualTheme?: "impasto" | "ww2",
+  geminiApiKey?: string,
+  geminiModel?: string
 ): Promise<string> {
   const systemPrompt = visualTheme === "ww2"
     ? `You are a visual content director generating a single image prompt for a WWII documentary scene.
@@ -853,7 +946,7 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
 
   const userPrompt = `Script text to visualize:\n${scriptText}\n\nGenerate one cinematic image prompt for this scene.`;
 
-  const useProvider = textProvider || (anthropicApiKey ? "claude" : "groq");
+  const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : "groq"));
 
   if (useProvider === "nvidia") {
     const result = await apiProxy({
@@ -908,6 +1001,40 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
 
     const content = result.data?.content?.[0]?.text;
     if (!content) throw new Error("No content from Claude");
+    return content.trim();
+  }
+
+  if (useProvider === "gemini") {
+    const result = await apiProxy({
+      action: "gemini-chat",
+      apiKey: geminiApiKey || "",
+      payload: {
+        model: geminiModel || "gemini-3.5-flash",
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: {
+          temperature: 1,
+          maxOutputTokens: 2048,
+          topP: 0.95,
+          thinkingConfig: {
+            thinkingLevel: "MEDIUM"
+          }
+        },
+      },
+    });
+
+    if (result.status && result.status >= 400) {
+      const errText = typeof result.data === "string"
+        ? result.data
+        : JSON.stringify(result.data || {}).substring(0, 500);
+      throw new Error(`Gemini error: ${result.status} - ${errText}`);
+    }
+
+    let content = result.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content) {
+      content = result.data?.choices?.[0]?.message?.content;
+    }
+    if (!content) throw new Error("No content from Gemini");
     return content.trim();
   }
 

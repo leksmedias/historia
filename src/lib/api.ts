@@ -104,8 +104,10 @@ async function processRemainingChunks(
   anthropicApiKey?: string,
   claudeModel?: string,
   nvidiaApiKey?: string,
-  textProvider?: "groq" | "claude" | "nvidia",
-  visualTheme?: "impasto" | "ww2"
+  textProvider?: "groq" | "claude" | "nvidia" | "gemini",
+  visualTheme?: "impasto" | "ww2",
+  geminiApiKey?: string,
+  geminiModel?: string
 ): Promise<void> {
   let nextSceneNumber = startSceneNumber;
   for (let i = chunkStartIdx; i < totalChunks; i++) {
@@ -125,7 +127,9 @@ async function processRemainingChunks(
         claudeModel,
         nvidiaApiKey,
         textProvider,
-        visualTheme
+        visualTheme,
+        geminiApiKey,
+        geminiModel
       );
       await appendScenesToProject(projectId, chunkScenes);
       nextSceneNumber += chunkScenes.length;
@@ -146,12 +150,12 @@ export async function createProjectFrontend(
 ): Promise<{ projectId: string; serverPipeline: boolean; sceneCount: number }> {
   const settings = loadProviderSettings();
 
-  const useProvider = settings.textProvider || (settings.anthropicApiKey ? "claude" : "groq");
-  const chunkLimit = useProvider === "nvidia" ? 40000 : 800;
+  const useProvider = settings.textProvider || (settings.anthropicApiKey ? "claude" : (settings.geminiApiKey ? "gemini" : "groq"));
+  const chunkLimit = (useProvider === "nvidia" || useProvider === "gemini") ? 40000 : 800;
   const chunks = splitScriptIntoChunks(script, chunkLimit);
   const totalChunks = chunks.length;
 
-  const aiProvider = useProvider === "nvidia" ? "Nvidia" : (useProvider === "claude" ? "Claude" : "Groq");
+  const aiProvider = useProvider === "nvidia" ? "Nvidia" : (useProvider === "claude" ? "Claude" : (useProvider === "gemini" ? "Gemini" : "Groq"));
   callbacks.onPhase(totalChunks > 1
     ? `Generating scenes via ${aiProvider} (chunk 1 of ${totalChunks})...`
     : `Generating scene manifest via ${aiProvider}...`
@@ -172,7 +176,9 @@ export async function createProjectFrontend(
       settings.claudeModel || undefined,
       settings.nvidiaApiKey || undefined,
       settings.textProvider,
-      options.visualTheme
+      options.visualTheme,
+      settings.geminiApiKey || undefined,
+      settings.geminiModel || undefined
     );
   } catch (e: any) {
     throw new Error(`Scene generation failed: ${e.message}`);
@@ -226,7 +232,9 @@ export async function createProjectFrontend(
       settings.claudeModel || undefined,
       settings.nvidiaApiKey || undefined,
       settings.textProvider,
-      options.visualTheme
+      options.visualTheme,
+      settings.geminiApiKey || undefined,
+      settings.geminiModel || undefined
     ).catch(e => console.error("[progressive] background processing error:", e.message));
   }
 

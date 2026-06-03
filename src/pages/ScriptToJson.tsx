@@ -15,7 +15,7 @@ const DURATION_OPTIONS = [
 ] as const;
 
 type Style = "impasto" | "ww2";
-type Provider = "groq" | "nvidia" | "claude";
+type Provider = "groq" | "nvidia" | "claude" | "gemini";
 
 interface JobProgress {
   phase: "pass1" | "pass2";
@@ -29,9 +29,10 @@ interface JobParams {
   script: string;
   secondsPerScene: number;
   style: "impasto" | "ww2";
-  provider: "groq" | "nvidia" | "claude";
+  provider: "groq" | "nvidia" | "claude" | "gemini";
   apiKey?: string;
   claudeModel?: string;
+  geminiModel?: string;
 }
 
 interface Job {
@@ -197,6 +198,8 @@ export default function ScriptToJson() {
     ? settings.groqApiKey 
     : provider === "claude" 
     ? settings.anthropicApiKey 
+    : provider === "gemini"
+    ? settings.geminiApiKey
     : settings.nvidiaApiKey;
   
   const generating = useMemo(() => selectedJob?.status === "running", [selectedJob]);
@@ -215,6 +218,7 @@ export default function ScriptToJson() {
           provider,
           apiKey,
           claudeModel: settings.claudeModel,
+          geminiModel: settings.geminiModel,
         }),
       });
       if (!res.ok) {
@@ -423,38 +427,43 @@ export default function ScriptToJson() {
               <label className="text-xs font-medium text-primary uppercase tracking-wide block mb-2">
                 AI Provider
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(["groq", "nvidia", "claude"] as const).map((p) => {
-                  const key = p === "groq" ? settings.groqApiKey : p === "claude" ? settings.anthropicApiKey : settings.nvidiaApiKey;
+              <div className="grid grid-cols-4 gap-2">
+                {(["groq", "nvidia", "claude", "gemini"] as const).map((p) => {
+                  const key = p === "groq" ? settings.groqApiKey : p === "claude" ? settings.anthropicApiKey : p === "gemini" ? settings.geminiApiKey : settings.nvidiaApiKey;
                   const isVertex = p === "claude" && (
                     settings.claudeModel?.startsWith("publishers/") ||
                     settings.claudeModel?.includes("@") ||
                     settings.claudeModel === "claude-haiku-4-5" ||
                     settings.claudeModel === "claude-sonnet-4-6"
                   );
+                  const isGeminiVertex = p === "gemini" && !settings.geminiApiKey;
                   return (
                     <button
                       key={p}
                       onClick={() => setProvider(p)}
                       disabled={generating}
-                      className={`rounded-lg border p-3.5 text-left transition-colors ${
+                      className={`rounded-lg border p-2.5 text-left transition-colors flex flex-col justify-between h-[82px] ${
                         provider === p
                           ? "border-primary bg-primary/10 text-foreground"
                           : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
                       }`}
                     >
-                      <div className="text-xs font-semibold">
-                        {p === "groq" ? "Groq" : p === "nvidia" ? "NVIDIA" : "Claude"}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
-                        {p === "groq" ? "Batch 8" : p === "nvidia" ? "Batch 20" : "Batch 5"}
+                      <div>
+                        <div className="text-xs font-semibold">
+                          {p === "groq" ? "Groq" : p === "nvidia" ? "NVIDIA" : p === "claude" ? "Claude" : "Gemini"}
+                        </div>
+                        <div className="text-[9px] text-muted-foreground mt-0.5 leading-tight">
+                          {p === "groq" ? "Batch 8" : p === "nvidia" ? "Batch 20" : p === "claude" ? "Batch 5" : "Batch 10"}
+                        </div>
                       </div>
                       {p === "claude" && isVertex ? (
-                        <div className="text-[9px] text-emerald-500 font-semibold mt-0.5">Vertex AI</div>
+                        <div className="text-[9px] text-emerald-500 font-semibold">Vertex AI</div>
+                      ) : p === "gemini" && isGeminiVertex ? (
+                        <div className="text-[9px] text-emerald-500 font-semibold">Vertex AI</div>
                       ) : !key ? (
-                        <div className="text-[10px] text-amber-500 mt-0.5">No key</div>
+                        <div className="text-[9px] text-amber-500 font-semibold">No key</div>
                       ) : (
-                        <div className="text-[10px] text-emerald-500 mt-0.5">Key set</div>
+                        <div className="text-[9px] text-emerald-500 font-semibold">Key set</div>
                       )}
                     </button>
                   );
@@ -473,7 +482,7 @@ export default function ScriptToJson() {
               ) : apiKey ? (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-500">
                   <CheckCircle2 className="h-3 w-3" />
-                  Using {provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : "NVIDIA"} key from Settings
+                  Using {provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "NVIDIA"} key from Settings
                 </div>
               ) : (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-500">

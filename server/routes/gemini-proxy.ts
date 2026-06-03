@@ -107,6 +107,50 @@ router.post("/", async (req: Request, res: Response) => {
       return res.json({ status: r.status, data });
     }
 
+    if (action === "gemini-chat") {
+      const model = payload?.model || "gemini-3.5-flash";
+      const key = apiKey || process.env.GEMINI_API_KEY;
+
+      const { model: _, ...bodyWithoutModel } = payload;
+
+      if (key) {
+        // Developer API / AI Studio endpoint
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bodyWithoutModel),
+        });
+        const text = await r.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
+        return res.json({ status: r.status, data });
+      } else {
+        // Vertex AI endpoint using OAuth
+        try {
+          const accessToken = getAccessToken();
+          const endpoint = "us-central1-aiplatform.googleapis.com";
+          const url = `https://${endpoint}/v1/projects/${PROJECT_ID}/locations/us-central1/publishers/google/models/${model}:generateContent`;
+          
+          const r = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify(bodyWithoutModel),
+          });
+          const text = await r.text();
+          let data;
+          try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
+          return res.json({ status: r.status, data });
+        } catch (e: any) {
+          console.error("[gemini-proxy] gemini-vertex error:", e.message);
+          return res.json({ status: 500, data: { error: e.message } });
+        }
+      }
+    }
+
     res.status(400).json({ error: "Unknown action" });
   } catch (e: any) {
     res.status(500).json({ error: e.message });

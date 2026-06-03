@@ -44,10 +44,11 @@ interface JobParams {
   script: string;
   secondsPerScene: number;
   style: "impasto" | "ww2";
-  provider: "groq" | "nvidia" | "claude";
+  provider: "groq" | "nvidia" | "claude" | "gemini";
   apiKey: string;
   claudeModel?: string;
   groqModel?: string;
+  geminiModel?: string;
 }
 
 // ── Job store ─────────────────────────────────────────────────────────────────
@@ -103,10 +104,50 @@ const FALLBACK_NVIDIA_KEY =
 import { PROJECT_ID, getAccessToken } from "../lib/gemini.js";
 
 async function callApi(
-  provider: "groq" | "nvidia" | "claude",
+  provider: "groq" | "nvidia" | "claude" | "gemini",
   apiKey: string,
   payload: any
 ): Promise<{ status: number; data: any }> {
+  if (provider === "gemini") {
+    const model = payload?.model || "gemini-3.5-flash";
+    const key = apiKey || process.env.GEMINI_API_KEY;
+    const { model: _, ...bodyWithoutModel } = payload;
+
+    if (key) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyWithoutModel),
+      });
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
+      return { status: r.status, data };
+    } else {
+      try {
+        const accessToken = getAccessToken();
+        const endpoint = "us-central1-aiplatform.googleapis.com";
+        const url = `https://${endpoint}/v1/projects/${PROJECT_ID}/locations/us-central1/publishers/google/models/${model}:generateContent`;
+        const r = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(bodyWithoutModel),
+        });
+        const text = await r.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
+        return { status: r.status, data };
+      } catch (e: any) {
+        console.error("[scriptToJson] Vertex Gemini call failed:", e.message);
+        return { status: 500, data: { error: e.message } };
+      }
+    }
+  }
+
   if (provider === "claude") {
     const modelName = payload?.model || "";
     const isVertexClaude = modelName.startsWith("publishers/") || modelName.includes("@") || modelName === "claude-haiku-4-5" || modelName === "claude-sonnet-4-6";
@@ -201,12 +242,13 @@ async function callPass1(
   startId: number,
   wordsPerScene: number,
   secondsPerScene: number,
-  provider: "groq" | "nvidia" | "claude",
+  provider: "groq" | "nvidia" | "claude" | "gemini",
   apiKey: string,
   claudeModel?: string,
   groqModel?: string,
   rateLimitRetries = 3,
-  retryOnParseFailure = true
+  retryOnParseFailure = true,
+  geminiModel?: string
 ): Promise<SplitScene[]> {
   const systemPrompt = buildPass1SystemPrompt(wordsPerScene, secondsPerScene, startId);
   const userPrompt = `Split this script excerpt into scenes:\n\n${chunk}\n\nReturn ONLY the JSON object.`;
@@ -236,6 +278,27 @@ async function callPass1(
           temperature: 0.2,
           max_tokens: 4096,
         }
+      : provider === "gemini"
+      ? {
+          model: geminiModel || "gemini-3.5-flash",
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: {
+            temperature: 1,
+            maxOutputTokens: 8192,
+            topP: 0.95,
+            responseMimeType: "application/json",
+            thinkingConfig: {
+              thinkingLevel: "MEDIUM"
+            }
+          },
+          safetySettings: [
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" }
+          ]
+        }
       : {
           model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
           messages: [
@@ -262,16 +325,21 @@ async function callPass1(
       const waitTime = (4 - rateLimitRetries) * 15000;
       console.log(`[${provider}] Pass1 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
-      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure);
+      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
     }
     if (result.status === 401)
-      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : "NVIDIA"} API key is invalid.`);
+      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "NVIDIA"} API key is invalid.`);
     throw new Error(`${provider} Pass 1 error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
   let content = "";
   if (provider === "claude") {
     content = result.data?.content?.[0]?.text ?? "";
+  } else if (provider === "gemini") {
+    content = result.data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    if (!content) {
+      content = result.data?.choices?.[0]?.message?.content ?? "";
+    }
   } else {
     content = result.data?.choices?.[0]?.message?.content ?? "";
     if (!content && result.data?.choices?.[0]?.message?.reasoning_content) {
@@ -298,7 +366,7 @@ async function callPass1(
     }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass1 JSON parse failed — retrying`);
-      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, groqModel, rateLimitRetries, false);
+      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, groqModel, rateLimitRetries, false, geminiModel);
     }
     throw new Error(`${provider} returned malformed JSON during scene splitting: ${err.message}`);
   }
@@ -310,13 +378,14 @@ async function callPass2Batch(
   title: string,
   scenes: SplitScene[],
   style: "impasto" | "ww2",
-  provider: "groq" | "nvidia" | "claude",
+  provider: "groq" | "nvidia" | "claude" | "gemini",
   apiKey: string,
   continuityAnchor: string,
   claudeModel?: string,
   groqModel?: string,
   rateLimitRetries = 3,
-  retryOnParseFailure = true
+  retryOnParseFailure = true,
+  geminiModel?: string
 ): Promise<Array<{ id: number; prompt: string }>> {
   const baseSystem = style === "ww2" ? PASS2_WWII_SYSTEM : PASS2_IMPASTO_SYSTEM;
   const systemPrompt = continuityAnchor ? `${baseSystem}\n\n${continuityAnchor}` : baseSystem;
@@ -351,6 +420,27 @@ async function callPass2Batch(
           temperature: 0.4,
           max_tokens: 4096,
         }
+      : provider === "gemini"
+      ? {
+          model: geminiModel || "gemini-3.5-flash",
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: {
+            temperature: 1,
+            maxOutputTokens: 8192,
+            topP: 0.95,
+            responseMimeType: "application/json",
+            thinkingConfig: {
+              thinkingLevel: "MEDIUM"
+            }
+          },
+          safetySettings: [
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" }
+          ]
+        }
       : {
           model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
           messages: [
@@ -377,16 +467,21 @@ async function callPass2Batch(
       const waitTime = (4 - rateLimitRetries) * 15000;
       console.log(`[${provider}] Pass2 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
     }
     if (result.status === 401)
-      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : "NVIDIA"} API key is invalid.`);
+      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "NVIDIA"} API key is invalid.`);
     throw new Error(`${provider} Pass 2 error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
   let content = "";
   if (provider === "claude") {
     content = result.data?.content?.[0]?.text ?? "";
+  } else if (provider === "gemini") {
+    content = result.data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    if (!content) {
+      content = result.data?.choices?.[0]?.message?.content ?? "";
+    }
   } else {
     content = result.data?.choices?.[0]?.message?.content ?? "";
     if (!content && result.data?.choices?.[0]?.message?.reasoning_content) {
@@ -413,7 +508,7 @@ async function callPass2Batch(
     }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass2 JSON parse failed — retrying`);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries, false);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries, false, geminiModel);
     }
     console.error(`[${provider}] Pass2 JSON parse failed twice — using placeholders. Error: ${err.message}`);
     return scenes.map((s) => ({ id: s.id, prompt: "[generation failed]" }));
@@ -423,12 +518,14 @@ async function callPass2Batch(
 // ── Pipeline runner ───────────────────────────────────────────────────────────
 
 async function runJob(job: Job, params: JobParams): Promise<void> {
-  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel, groqModel } = params;
+  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel, groqModel, geminiModel } = params;
   const wordsPerScene = Math.floor((WORDS_PER_MINUTE * secondsPerScene) / 60);
   const batchSize = provider === "groq" 
     ? GROQ_BATCH_SIZE 
     : provider === "claude" 
     ? 5 
+    : provider === "gemini"
+    ? 10
     : NVIDIA_BATCH_SIZE;
 
   const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
@@ -465,7 +562,10 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
         provider,
         apiKey,
         claudeModel,
-        groqModel
+        groqModel,
+        3,
+        true,
+        geminiModel
       );
       scenes.forEach((s, idx) => { s.id = nextId + idx; });
       allSplitScenes.push(...scenes);
@@ -491,7 +591,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
       }
       const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);
       const anchor = buildContinuityAnchor(completedForAnchor);
-      const results = await callPass2Batch(title, batch, style, provider, apiKey, anchor, claudeModel, groqModel);
+      const results = await callPass2Batch(title, batch, style, provider, apiKey, anchor, claudeModel, groqModel, 3, true, geminiModel);
 
       for (const r of results) {
         const idVal = r.id ?? r.scene_number ?? r.sceneNumber ?? r.scene_id ?? r.scene_Id;
@@ -547,13 +647,13 @@ router.get("/", (_req: Request, res: Response) => {
 });
 
 router.post("/", (req: Request, res: Response) => {
-  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel, groqModel } = req.body as JobParams;
+  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel, groqModel, geminiModel } = req.body as JobParams;
 
   if (!title || !script || !provider) {
     return res.status(400).json({ error: "title, script, and provider are required" });
   }
-  if (!["groq", "nvidia", "claude"].includes(provider)) {
-    return res.status(400).json({ error: "provider must be groq, nvidia, or claude" });
+  if (!["groq", "nvidia", "claude", "gemini"].includes(provider)) {
+    return res.status(400).json({ error: "provider must be groq, nvidia, claude, or gemini" });
   }
   if (!apiKey && !process.env.GROQ_API_KEY && provider === "groq") {
     return res.status(400).json({ error: "No Groq API key. Set one in Settings." });
@@ -581,13 +681,14 @@ router.post("/", (req: Request, res: Response) => {
       provider,
       claudeModel,
       groqModel,
+      geminiModel,
     }
   };
   jobs.set(jobId, job);
   saveJobsToDisk();
 
   // Fire and forget — runs in background
-  runJob(job, { title, script, secondsPerScene: secondsPerScene ?? 15, style: style ?? "impasto", provider, apiKey: apiKey ?? "", claudeModel, groqModel });
+  runJob(job, { title, script, secondsPerScene: secondsPerScene ?? 15, style: style ?? "impasto", provider, apiKey: apiKey ?? "", claudeModel, groqModel, geminiModel });
 
   res.json({ jobId });
 });
