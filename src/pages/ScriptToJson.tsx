@@ -426,7 +426,12 @@ export default function ScriptToJson() {
               <div className="grid grid-cols-3 gap-2">
                 {(["groq", "nvidia", "claude"] as const).map((p) => {
                   const key = p === "groq" ? settings.groqApiKey : p === "claude" ? settings.anthropicApiKey : settings.nvidiaApiKey;
-                  const isVertex = p === "claude" && (settings.claudeModel?.startsWith("publishers/anthropic/models/") || settings.claudeModel?.includes("@") || settings.claudeModel?.startsWith("claude-haiku-4-5"));
+                  const isVertex = p === "claude" && (
+                    settings.claudeModel?.startsWith("publishers/") ||
+                    settings.claudeModel?.includes("@") ||
+                    settings.claudeModel === "claude-haiku-4-5" ||
+                    settings.claudeModel === "claude-sonnet-4-6"
+                  );
                   return (
                     <button
                       key={p}
@@ -455,7 +460,12 @@ export default function ScriptToJson() {
                   );
                 })}
               </div>
-              {provider === "claude" && (settings.claudeModel?.startsWith("publishers/anthropic/models/") || settings.claudeModel?.includes("@") || settings.claudeModel?.startsWith("claude-haiku-4-5")) ? (
+              {provider === "claude" && (
+                settings.claudeModel?.startsWith("publishers/") ||
+                settings.claudeModel?.includes("@") ||
+                settings.claudeModel === "claude-haiku-4-5" ||
+                settings.claudeModel === "claude-sonnet-4-6"
+              ) ? (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-500">
                   <CheckCircle2 className="h-3 w-3" />
                   Using Claude ({settings.claudeModel}) via Vertex AI

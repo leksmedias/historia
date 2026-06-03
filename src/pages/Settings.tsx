@@ -269,8 +269,10 @@ export default function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="claude-sonnet-4-6@default">Sonnet 4.6 (Vertex AI)</SelectItem>
                       <SelectItem value="claude-haiku-4-5-20251001">Haiku 4.5 (Anthropic API)</SelectItem>
                       <SelectItem value="claude-haiku-4-5@20251001">Haiku 4.5 (Vertex AI)</SelectItem>
+                      <SelectItem value="claude-3-5-sonnet-latest">Sonnet 3.5 (Anthropic API)</SelectItem>
                       <SelectItem value="claude-3-haiku-20240307">Haiku 3 (Anthropic API)</SelectItem>
                     </SelectContent>
                   </Select>

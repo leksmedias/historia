@@ -2,6 +2,15 @@
 
 All notable changes to Historia are documented here.
 
+## [1.1.4] — 2026-06-03
+
+### Added
+- **Claude Sonnet 4.6 & Global Endpoint Routing**:
+  - Added support for the new Claude Sonnet 4.6 model (`claude-sonnet-4-6@default` on Vertex AI and `claude-3-5-sonnet-latest` on the Anthropic API) in Settings and the Generation UI.
+  - Redirected all Vertex AI Claude online predictions to the global multi-region endpoint (`aiplatform.googleapis.com` with `global` location) instead of the single regional `us-east5` endpoint, resolving HTTP 429 quota limits.
+
+---
+
 ## [1.1.3] — 2026-05-31
 
 ### Fixed

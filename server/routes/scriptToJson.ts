@@ -107,7 +107,7 @@ async function callApi(
 ): Promise<{ status: number; data: any }> {
   if (provider === "claude") {
     const modelName = payload?.model || "";
-    const isVertexClaude = modelName.startsWith("publishers/") || modelName.includes("@") || modelName === "claude-haiku-4-5";
+    const isVertexClaude = modelName.startsWith("publishers/") || modelName.includes("@") || modelName === "claude-haiku-4-5" || modelName === "claude-sonnet-4-6";
 
     if (isVertexClaude) {
       try {
@@ -115,8 +115,9 @@ async function callApi(
           ? modelName 
           : `publishers/anthropic/models/${modelName}`;
         
-        const region = "us-east5"; // us-east5 is the primary region for Claude in Vertex AI
-        const url = `https://${region}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${region}/${modelPath}:rawPredict`;
+        const region = "global";
+        const host = "aiplatform.googleapis.com";
+        const url = `https://${host}/v1/projects/${PROJECT_ID}/locations/${region}/${modelPath}:rawPredict`;
         const accessToken = getAccessToken();
 
         const { model, ...bodyWithoutModel } = payload;
