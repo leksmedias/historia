@@ -347,9 +347,9 @@ SPLITTING RULES:
 OVERLAY TEXT RULES:
 - 3 words or fewer
 - Plain letters, numbers, spaces, hyphens only — no colons, commas, or other punctuation
-- K/M shorthand for large numbers (25K, 3M)
+- K/M shorthand for large numbers (25000, 3M)
 - Ranges use hyphen: 3M-5M
-- Examples: "Rhine 1945", "Last Barrier", "Army 25K"
+- Examples: "Rhine 1945", "Last Barrier", "Army of 25000"
 - If nothing meaningful, set overlay_text to null
 
 Output ONLY valid JSON, no markdown, no explanation:
