@@ -160,6 +160,7 @@ export default function ProjectPreview() {
   const fetchData = useCallback(async () => {
     if (!projectId) return;
     try {
+      setDurations({});
       // Reset any mock-placeholder scenes to failed so user can regenerate them
       await fetch(`/api/projects/${projectId}/fix-mocks`, { method: "POST" }).catch(() => {});
       const data = await getProject(projectId);
@@ -264,7 +265,9 @@ export default function ProjectPreview() {
         a.preload = "metadata";
         a.src = url;
         a.onloadedmetadata = () => {
-          setDurations((prev) => ({ ...prev, [s.scene_number]: a.duration }));
+          if (isFinite(a.duration) && a.duration > 0) {
+            setDurations((prev) => ({ ...prev, [s.scene_number]: a.duration }));
+          }
         };
       }
     });
@@ -1072,7 +1075,7 @@ export default function ProjectPreview() {
                     <div className="absolute bottom-0 left-0 right-0 bg-background/80 px-1 py-0.5 flex items-center justify-between">
                       <span className="text-[10px] font-display text-primary font-bold">{s.scene_number}</span>
                       <div className="flex items-center gap-0.5">
-                        {dur && <span className="text-[10px] text-muted-foreground">{dur.toFixed(1)}s</span>}
+                        {dur && isFinite(dur) && <span className="text-[10px] text-muted-foreground">{dur.toFixed(1)}s</span>}
                         {s.image_status === "completed" && (
                           <button
                             onClick={e => { e.stopPropagation(); toggleAnimateScene(s.scene_number); }}
