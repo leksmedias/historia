@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Plus, Trash2, Key, Server, Mic } from "lucide-react";
 import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, IMAGE_MODELS, ASPECT_RATIOS, type ProviderSettings } from "@/lib/providers";
-import { GROQ_MODELS } from "../../../shared/scriptToJsonUtils";
+import { GROQ_MODELS } from "../../shared/scriptToJsonUtils";
 
 type HealthStatus = "idle" | "checking" | "ok" | "error";
 type Tab = "connections" | "providers" | "voices";
