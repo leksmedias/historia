@@ -127,8 +127,8 @@ async function callApi(
     } else {
       try {
         const accessToken = getAccessToken();
-        const endpoint = "us-central1-aiplatform.googleapis.com";
-        const url = `https://${endpoint}/v1/projects/${PROJECT_ID}/locations/us-central1/publishers/google/models/${model}:generateContent`;
+        const endpoint = "aiplatform.googleapis.com";
+        const url = `https://${endpoint}/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${model}:generateContent`;
         const r = await fetch(url, {
           method: "POST",
           headers: {
