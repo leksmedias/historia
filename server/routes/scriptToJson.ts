@@ -212,6 +212,8 @@ async function callPass1(
   const userPrompt = `Split this script excerpt into scenes:\n\n${chunk}\n\nReturn ONLY the JSON object.`;
 
   const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
+  const promptTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 3.8);
+  const maxTokens = Math.max(1024, Math.min(4096, groqConfig.tpm - promptTokens - 200));
   const payload =
     provider === "groq"
       ? {
@@ -221,7 +223,7 @@ async function callPass1(
             { role: "user", content: userPrompt },
           ],
           temperature: 0.2,
-          max_tokens: Math.min(10096, groqConfig.tpm),
+          max_tokens: maxTokens,
           response_format: { type: "json_object" },
         }
       : provider === "claude"
@@ -325,6 +327,8 @@ async function callPass2Batch(
   const userPrompt = `Documentary title: "${title}"\n\nGenerate ONE image prompt for each scene below. Return ONLY a JSON object with a "scenes" array:\n\n${scenesText}\n\nReturn format: {"scenes":[{"id":${firstId},"prompt":"..."},{"id":${secondId},"prompt":"..."}]}`;
 
   const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
+  const promptTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 3.8);
+  const maxTokens = Math.max(1024, Math.min(4096, groqConfig.tpm - promptTokens - 200));
   const payload =
     provider === "groq"
       ? {
@@ -334,7 +338,7 @@ async function callPass2Batch(
             { role: "user", content: userPrompt },
           ],
           temperature: 0.4,
-          max_tokens: Math.min(10096, groqConfig.tpm),
+          max_tokens: maxTokens,
           response_format: { type: "json_object" },
         }
       : provider === "claude"

@@ -78,6 +78,9 @@ async function callPass1(
   const isGroq = provider === "groq";
   const isClaude = provider === "claude";
   const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
+  const promptTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 3.8);
+  const maxTokens = Math.max(1024, Math.min(4096, groqConfig.tpm - promptTokens - 200));
+
   const result = await apiProxy({
     action: isGroq ? "groq-chat" : isClaude ? "claude-chat" : "nvidia-chat",
     apiKey,
@@ -89,7 +92,7 @@ async function callPass1(
           { role: "user", content: userPrompt },
         ],
         temperature: 0.2,
-        max_tokens: Math.min(10096, groqConfig.tpm),
+        max_tokens: maxTokens,
         response_format: { type: "json_object" },
       }
       : isClaude
@@ -194,6 +197,9 @@ async function callPass2Batch(
   const isGroq = provider === "groq";
   const isClaude = provider === "claude";
   const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
+  const promptTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 3.8);
+  const maxTokens = Math.max(1024, Math.min(4096, groqConfig.tpm - promptTokens - 200));
+
   const result = await apiProxy({
     action: isGroq ? "groq-chat" : isClaude ? "claude-chat" : "nvidia-chat",
     apiKey,
@@ -205,7 +211,7 @@ async function callPass2Batch(
           { role: "user", content: userPrompt },
         ],
         temperature: 0.4,
-        max_tokens: Math.min(10096, groqConfig.tpm),
+        max_tokens: maxTokens,
         response_format: { type: "json_object" },
       }
       : isClaude
