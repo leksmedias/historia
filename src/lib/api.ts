@@ -794,12 +794,20 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
         const ext = "png";
         const fd = new FormData();
         fd.append("file", imageBlob!, `${num}.${ext}`);
-        await fetch(`${API_BASE}/assets/${projectId}/images/${num}.${ext}`, { method: "POST", body: fd });
-        await fetch(`${API_BASE}/projects/${projectId}/scenes/${num}`, {
+        const uploadImgRes = await fetch(`${API_BASE}/assets/${projectId}/images/${num}.${ext}`, { method: "POST", body: fd });
+        if (!uploadImgRes.ok) {
+          const errText = await uploadImgRes.text();
+          throw new Error(`Failed to upload image asset (HTTP ${uploadImgRes.status}): ${errText}`);
+        }
+        const patchImgRes = await fetch(`${API_BASE}/projects/${projectId}/scenes/${num}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image_status: "completed", image_attempts: (scene.image_attempts || 0) + 1, image_error: null, needs_review: false }),
         });
+        if (!patchImgRes.ok) {
+          const errText = await patchImgRes.text();
+          throw new Error(`Failed to update scene image status (HTTP ${patchImgRes.status}): ${errText}`);
+        }
         callbacks.onSceneProgress(num, "image", "done");
       } catch (e: any) {
         await fetch(`${API_BASE}/projects/${projectId}/scenes/${num}`, {
@@ -827,12 +835,20 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
         }
         const fd = new FormData();
         fd.append("file", audioBlob, `${num}.mp3`);
-        await fetch(`${API_BASE}/assets/${projectId}/audio/${num}.mp3`, { method: "POST", body: fd });
-        await fetch(`${API_BASE}/projects/${projectId}/scenes/${num}`, {
+        const uploadAudRes = await fetch(`${API_BASE}/assets/${projectId}/audio/${num}.mp3`, { method: "POST", body: fd });
+        if (!uploadAudRes.ok) {
+          const errText = await uploadAudRes.text();
+          throw new Error(`Failed to upload audio asset (HTTP ${uploadAudRes.status}): ${errText}`);
+        }
+        const patchAudRes = await fetch(`${API_BASE}/projects/${projectId}/scenes/${num}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ audio_status: "completed", audio_attempts: (scene.audio_attempts || 0) + 1, audio_error: null, needs_review: false }),
         });
+        if (!patchAudRes.ok) {
+          const errText = await patchAudRes.text();
+          throw new Error(`Failed to update scene audio status (HTTP ${patchAudRes.status}): ${errText}`);
+        }
         callbacks.onSceneProgress(num, "audio", "done");
       } catch (e: any) {
         await fetch(`${API_BASE}/projects/${projectId}/scenes/${num}`, {

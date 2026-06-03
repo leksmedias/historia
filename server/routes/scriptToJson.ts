@@ -17,6 +17,7 @@ import {
   buildPass1SystemPrompt,
   PASS2_IMPASTO_SYSTEM,
   PASS2_WWII_SYSTEM,
+  getGroqModelConfig,
 } from "../../shared/scriptToJsonUtils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ interface JobParams {
   provider: "groq" | "nvidia" | "claude";
   apiKey: string;
   claudeModel?: string;
+  groqModel?: string;
 }
 
 // ── Job store ─────────────────────────────────────────────────────────────────
@@ -202,22 +204,24 @@ async function callPass1(
   provider: "groq" | "nvidia" | "claude",
   apiKey: string,
   claudeModel?: string,
+  groqModel?: string,
   rateLimitRetries = 3,
   retryOnParseFailure = true
 ): Promise<SplitScene[]> {
   const systemPrompt = buildPass1SystemPrompt(wordsPerScene, secondsPerScene, startId);
   const userPrompt = `Split this script excerpt into scenes:\n\n${chunk}\n\nReturn ONLY the JSON object.`;
 
+  const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
   const payload =
     provider === "groq"
       ? {
-          model: "llama-3.3-70b-versatile",
+          model: groqConfig.id,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
           temperature: 0.2,
-          max_tokens: 4096,
+          max_tokens: Math.min(10096, groqConfig.tpm),
           response_format: { type: "json_object" },
         }
       : provider === "claude"
@@ -256,7 +260,7 @@ async function callPass1(
       const waitTime = (4 - rateLimitRetries) * 15000;
       console.log(`[${provider}] Pass1 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
-      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, rateLimitRetries - 1, retryOnParseFailure);
+      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure);
     }
     if (result.status === 401)
       throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : "NVIDIA"} API key is invalid.`);
@@ -292,7 +296,7 @@ async function callPass1(
     }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass1 JSON parse failed — retrying`);
-      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, rateLimitRetries, false);
+      return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, groqModel, rateLimitRetries, false);
     }
     throw new Error(`${provider} returned malformed JSON during scene splitting: ${err.message}`);
   }
@@ -308,6 +312,7 @@ async function callPass2Batch(
   apiKey: string,
   continuityAnchor: string,
   claudeModel?: string,
+  groqModel?: string,
   rateLimitRetries = 3,
   retryOnParseFailure = true
 ): Promise<Array<{ id: number; prompt: string }>> {
@@ -319,16 +324,17 @@ async function callPass2Batch(
   const secondId = scenes.length > 1 ? scenes[1].id : firstId + 1;
   const userPrompt = `Documentary title: "${title}"\n\nGenerate ONE image prompt for each scene below. Return ONLY a JSON object with a "scenes" array:\n\n${scenesText}\n\nReturn format: {"scenes":[{"id":${firstId},"prompt":"..."},{"id":${secondId},"prompt":"..."}]}`;
 
+  const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
   const payload =
     provider === "groq"
       ? {
-          model: "llama-3.3-70b-versatile",
+          model: groqConfig.id,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
           temperature: 0.4,
-          max_tokens: 4096,
+          max_tokens: Math.min(10096, groqConfig.tpm),
           response_format: { type: "json_object" },
         }
       : provider === "claude"
@@ -367,7 +373,7 @@ async function callPass2Batch(
       const waitTime = (4 - rateLimitRetries) * 15000;
       console.log(`[${provider}] Pass2 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, rateLimitRetries - 1, retryOnParseFailure);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure);
     }
     if (result.status === 401)
       throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : "NVIDIA"} API key is invalid.`);
@@ -403,7 +409,7 @@ async function callPass2Batch(
     }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass2 JSON parse failed — retrying`);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, rateLimitRetries, false);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries, false);
     }
     console.error(`[${provider}] Pass2 JSON parse failed twice — using placeholders. Error: ${err.message}`);
     return scenes.map((s) => ({ id: s.id, prompt: "[generation failed]" }));
@@ -413,13 +419,25 @@ async function callPass2Batch(
 // ── Pipeline runner ───────────────────────────────────────────────────────────
 
 async function runJob(job: Job, params: JobParams): Promise<void> {
-  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel } = params;
+  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel, groqModel } = params;
   const wordsPerScene = Math.floor((WORDS_PER_MINUTE * secondsPerScene) / 60);
   const batchSize = provider === "groq" 
     ? GROQ_BATCH_SIZE 
     : provider === "claude" 
     ? 5 
     : NVIDIA_BATCH_SIZE;
+
+  const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
+  
+  // Calculate dynamic delays for Groq based on rate limits to prevent TPM 429s
+  let delayPass1 = Math.ceil(60000 / groqConfig.rpm);
+  if (groqConfig.tpm <= 15000) {
+    delayPass1 = Math.max(delayPass1, Math.ceil(90000 / groqConfig.tpm * 1000));
+  }
+  let delayPass2 = Math.ceil(60000 / groqConfig.rpm);
+  if (groqConfig.tpm <= 15000) {
+    delayPass2 = Math.max(delayPass2, Math.ceil(90000 / groqConfig.tpm * 1000));
+  }
 
   try {
     // Pass 1
@@ -433,7 +451,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
     for (let i = 0; i < chunks.length; i++) {
       if (i > 0) {
         // Space out requests to avoid hitting TPM rate limits
-        await delay(2000);
+        await delay(provider === "groq" ? delayPass1 : 2000);
       }
       const scenes = await callPass1(
         chunks[i],
@@ -442,7 +460,8 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
         secondsPerScene,
         provider,
         apiKey,
-        claudeModel
+        claudeModel,
+        groqModel
       );
       scenes.forEach((s, idx) => { s.id = nextId + idx; });
       allSplitScenes.push(...scenes);
@@ -464,11 +483,11 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
     for (let b = 0; b < totalBatches; b++) {
       if (b > 0) {
         // Space out requests to avoid hitting TPM rate limits
-        await delay(2000);
+        await delay(provider === "groq" ? delayPass2 : 2000);
       }
       const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);
       const anchor = buildContinuityAnchor(completedForAnchor);
-      const results = await callPass2Batch(title, batch, style, provider, apiKey, anchor, claudeModel);
+      const results = await callPass2Batch(title, batch, style, provider, apiKey, anchor, claudeModel, groqModel);
 
       for (const r of results) {
         const idVal = r.id ?? r.scene_number ?? r.sceneNumber ?? r.scene_id ?? r.scene_Id;
@@ -524,7 +543,7 @@ router.get("/", (_req: Request, res: Response) => {
 });
 
 router.post("/", (req: Request, res: Response) => {
-  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel } = req.body as JobParams;
+  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel, groqModel } = req.body as JobParams;
 
   if (!title || !script || !provider) {
     return res.status(400).json({ error: "title, script, and provider are required" });
@@ -557,13 +576,14 @@ router.post("/", (req: Request, res: Response) => {
       style: style ?? "impasto",
       provider,
       claudeModel,
+      groqModel,
     }
   };
   jobs.set(jobId, job);
   saveJobsToDisk();
 
   // Fire and forget — runs in background
-  runJob(job, { title, script, secondsPerScene: secondsPerScene ?? 15, style: style ?? "impasto", provider, apiKey: apiKey ?? "", claudeModel });
+  runJob(job, { title, script, secondsPerScene: secondsPerScene ?? 15, style: style ?? "impasto", provider, apiKey: apiKey ?? "", claudeModel, groqModel });
 
   res.json({ jobId });
 });

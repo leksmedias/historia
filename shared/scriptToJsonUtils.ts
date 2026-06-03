@@ -23,9 +23,40 @@ export interface ScriptToJsonParams {
   script: string;
   secondsPerScene: number;
   style: "impasto" | "ww2";
-  provider: "groq" | "nvidia";
+  provider: "groq" | "nvidia" | "claude";
   groqApiKey?: string;
   nvidiaApiKey?: string;
+  anthropicApiKey?: string;
+  groqModel?: string;
+  claudeModel?: string;
+}
+
+export interface GroqModelConfig {
+  id: string;
+  name: string;
+  rpm: number;
+  rpd: number;
+  tpm: number;
+  tpd: number | "No limit";
+}
+
+export const GROQ_MODELS: GroqModelConfig[] = [
+  { id: "allam-2-7b", name: "Allam 2 7B", rpm: 30, rpd: 7000, tpm: 6000, tpd: 500000 },
+  { id: "groq/compound", name: "Groq Compound", rpm: 30, rpd: 250, tpm: 70000, tpd: "No limit" },
+  { id: "groq/compound-mini", name: "Groq Compound Mini", rpm: 30, rpd: 250, tpm: 70000, tpd: "No limit" },
+  { id: "llama-3.1-8b-instant", name: "Llama 3.1 8B Instant", rpm: 30, rpd: 14400, tpm: 6000, tpd: 500000 },
+  { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B Versatile", rpm: 30, rpd: 1000, tpm: 12000, tpd: 100000 },
+  { id: "meta-llama/llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout 17B Instruct", rpm: 30, rpd: 1000, tpm: 30000, tpd: 500000 },
+  { id: "meta-llama/llama-prompt-guard-2-22m", name: "Llama Prompt Guard 2 22M", rpm: 30, rpd: 14400, tpm: 15000, tpd: 500000 },
+  { id: "meta-llama/llama-prompt-guard-2-86m", name: "Llama Prompt Guard 2 86M", rpm: 30, rpd: 14400, tpm: 15000, tpd: 500000 },
+  { id: "openai/gpt-oss-120b", name: "GPT OSS 120B", rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 },
+  { id: "openai/gpt-oss-20b", name: "GPT OSS 20B", rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 },
+  { id: "openai/gpt-oss-safeguard-20b", name: "GPT OSS Safeguard 20B", rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 },
+  { id: "qwen/qwen3-32b", name: "Qwen 3 32B", rpm: 60, rpd: 1000, tpm: 6000, tpd: 500000 }
+];
+
+export function getGroqModelConfig(modelId: string): GroqModelConfig {
+  return GROQ_MODELS.find(m => m.id === modelId) || GROQ_MODELS[4]; // Default to llama-3.3-70b-versatile
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -33,7 +64,7 @@ export interface ScriptToJsonParams {
 export const WORDS_PER_MINUTE = 117;
 export const PASS1_CHUNK_MAX_WORDS = 2000;
 export const GROQ_BATCH_SIZE = 8;
-export const NVIDIA_BATCH_SIZE = 20;
+export const NVIDIA_BATCH_SIZE = 15;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -43,6 +74,7 @@ export function estimateSceneCount(wordCount: number, secondsPerScene: number): 
 }
 
 export function chunkScript(text: string, maxWords: number): string[] {
+  if (!text || !text.trim()) return [];
   const matched = text.match(/[^.!?]+[.!?]+(\s|$)/g) ?? [];
   const coveredLength = matched.reduce((sum, s) => sum + s.length, 0);
   const trailing = text.slice(coveredLength).trim();
@@ -55,6 +87,18 @@ export function chunkScript(text: string, maxWords: number): string[] {
 
   for (const sentence of sentences) {
     const sentenceWords = sentence.split(/\s+/).filter(Boolean).length;
+    if (sentenceWords > maxWords) {
+      if (current.length > 0) {
+        chunks.push(current.join(" ").trim());
+        current = [];
+        currentWordCount = 0;
+      }
+      const words = sentence.split(/\s+/).filter(Boolean);
+      for (let i = 0; i < words.length; i += maxWords) {
+        chunks.push(words.slice(i, i + maxWords).join(" "));
+      }
+      continue;
+    }
     if (currentWordCount + sentenceWords > maxWords && current.length > 0) {
       chunks.push(current.join(" ").trim());
       current = [];
