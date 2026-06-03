@@ -78,6 +78,8 @@ export default function ProjectPreview() {
   const videoLastSceneRef = useRef<number>(-1);
   const videoTypeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const OVERLAY_VISIBLE_SECS = 4;
+
   // Build per-scene start/end timecodes from audio durations (for video overlay)
   const sceneTimecodes = useMemo(() => {
     const settings = loadProviderSettings();
@@ -133,8 +135,6 @@ export default function ProjectPreview() {
       }
     }, delay);
   }, [playWhoosh]);
-
-  const OVERLAY_VISIBLE_SECS = 4; // overlay stays on screen for 4s then clears
 
   const handleVideoTimeUpdate = useCallback(() => {
     const t = videoRef.current?.currentTime ?? 0;
