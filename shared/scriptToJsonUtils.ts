@@ -113,10 +113,87 @@ export function chunkScript(text: string, maxWords: number): string[] {
   return chunks;
 }
 
+export function tryParseTruncatedJson(text: string): any {
+  let inString = false;
+  let stringChar = '';
+  let escaped = false;
+  const stack: string[] = [];
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (escaped) {
+      escaped = false;
+    } else if (char === '\\') {
+      escaped = true;
+    } else if (inString) {
+      if (char === stringChar) {
+        inString = false;
+      }
+    } else {
+      if (char === '"' || char === "'") {
+        inString = true;
+        stringChar = char;
+      } else if (char === '{') {
+        stack.push('{');
+      } else if (char === '[') {
+        stack.push('[');
+      } else if (char === '}') {
+        if (stack[stack.length - 1] === '{') {
+          stack.pop();
+        }
+      } else if (char === ']') {
+        if (stack[stack.length - 1] === '[') {
+          stack.pop();
+        }
+      }
+    }
+  }
+
+  let completed = text.trim();
+  if (inString) {
+    completed += stringChar;
+  }
+  while (stack.length > 0) {
+    const top = stack.pop();
+    if (top === '{') completed += '}';
+    else if (top === '[') completed += ']';
+  }
+
+  try {
+    return JSON.parse(completed);
+  } catch {
+    const cleaned = completed.replace(/,\s*([\]}])/g, '$1');
+    return JSON.parse(cleaned);
+  }
+}
+
 export function parseJsonResponse(text: string): any {
-  // Try code fence first
-  const fenceMatch = text.match(/```json\s*([\s\S]*?)```/);
-  const rawText = fenceMatch ? fenceMatch[1].trim() : text;
+  let rawText = text;
+
+  // Handle unclosed or closed json code fences
+  const openFenceIdx = text.indexOf("```json");
+  if (openFenceIdx !== -1) {
+    const contentAfterFence = text.slice(openFenceIdx + 7);
+    const closeFenceIdx = contentAfterFence.indexOf("```");
+    if (closeFenceIdx !== -1) {
+      rawText = contentAfterFence.slice(0, closeFenceIdx).trim();
+    } else {
+      rawText = contentAfterFence.trim();
+    }
+  } else {
+    // Try generic markdown block
+    const genericFenceIdx = text.indexOf("```");
+    if (genericFenceIdx !== -1) {
+      const contentAfterGeneric = text.slice(genericFenceIdx + 3);
+      const closeGenericIdx = contentAfterGeneric.indexOf("```");
+      if (closeGenericIdx !== -1) {
+        rawText = contentAfterGeneric.slice(0, closeGenericIdx).trim();
+      } else {
+        rawText = contentAfterGeneric.trim();
+      }
+    }
+  }
 
   // Strip <thinking>...</thinking> blocks (NVIDIA reasoning output)
   const stripped = rawText.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").trim();
@@ -142,8 +219,12 @@ export function parseJsonResponse(text: string): any {
         try {
           const cleaned = sliced.replace(/,\s*([\]}])/g, '$1');
           return JSON.parse(cleaned);
-        } catch (e) {
-          throw e;
+        } catch {
+          try {
+            return tryParseTruncatedJson(sliced);
+          } catch (e) {
+            throw e;
+          }
         }
       }
     }
@@ -152,8 +233,16 @@ export function parseJsonResponse(text: string): any {
   try {
     return JSON.parse(stripped);
   } catch {
-    const cleaned = stripped.replace(/,\s*([\]}])/g, '$1');
-    return JSON.parse(cleaned);
+    try {
+      const cleaned = stripped.replace(/,\s*([\]}])/g, '$1');
+      return JSON.parse(cleaned);
+    } catch {
+      try {
+        return tryParseTruncatedJson(stripped);
+      } catch (e) {
+        throw e;
+      }
+    }
   }
 }
 
@@ -177,22 +266,28 @@ function parseLooseObject(text: string): any {
     return JSON.parse(cleaned);
   } catch { }
 
+  try {
+    return tryParseTruncatedJson(text);
+  } catch { }
+
   return null;
 }
 
-function extractLooseObjects(text: string): any[] {
-  const objects: any[] = [];
-  let braceDepth = 0;
+function tryExtractAndParseObject(text: string, startIdx: number): { parsed: any; endIdx: number } | null {
+  let depth = 0;
   let inString = false;
   let stringChar = '';
-  let startIdx = -1;
+  let escaped = false;
 
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const prevChar = i > 0 ? text[i - 1] : '';
+  for (let j = startIdx; j < text.length; j++) {
+    const char = text[j];
 
-    if (inString) {
-      if (char === stringChar && prevChar !== '\\') {
+    if (escaped) {
+      escaped = false;
+    } else if (char === '\\') {
+      escaped = true;
+    } else if (inString) {
+      if (char === stringChar) {
         inString = false;
       }
     } else {
@@ -200,41 +295,52 @@ function extractLooseObjects(text: string): any[] {
         inString = true;
         stringChar = char;
       } else if (char === '{') {
-        if (braceDepth === 0) {
-          startIdx = i;
-        }
-        braceDepth++;
+        depth++;
       } else if (char === '}') {
-        braceDepth--;
-        if (braceDepth === 0 && startIdx !== -1) {
-          const candidate = text.slice(startIdx, i + 1);
+        depth--;
+        if (depth === 0) {
+          const candidate = text.slice(startIdx, j + 1);
           const parsed = parseLooseObject(candidate);
           if (parsed !== null) {
-            objects.push(parsed);
+            return { parsed, endIdx: j };
           }
-          startIdx = -1;
-        }
-        if (braceDepth < 0) {
-          braceDepth = 0;
         }
       }
     }
   }
 
-  if (braceDepth > 0 && startIdx !== -1) {
+  // If we reached the end of the string but it wasn't closed, try autocompletion!
+  if (depth > 0) {
     let candidate = text.slice(startIdx);
     if (inString) {
       candidate += stringChar;
     }
-    for (let d = 0; d < braceDepth; d++) {
+    for (let d = 0; d < depth; d++) {
       candidate += '}';
     }
     const parsed = parseLooseObject(candidate);
     if (parsed !== null) {
-      objects.push(parsed);
+      return { parsed, endIdx: text.length - 1 };
     }
   }
 
+  return null;
+}
+
+function extractLooseObjects(text: string): any[] {
+  const objects: any[] = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === '{') {
+      const result = tryExtractAndParseObject(text, i);
+      if (result !== null) {
+        objects.push(result.parsed);
+        i = result.endIdx + 1;
+        continue;
+      }
+    }
+    i++;
+  }
   return objects;
 }
 
@@ -286,6 +392,38 @@ export function recoverScenesRegex(text: string): SplitScene[] {
 
       scenes.push({ id, script: script.trim(), overlay_text });
     }
+
+    // Resilient fallback: parse plain-text lists if no JSON objects were recovered
+    if (scenes.length === 0) {
+      // Strips <thinking> blocks first if any exist
+      const strippedText = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
+      
+      // Try Pattern A: list with standard separators: . , : , ) , -
+      const patternA = /(?:[-*•\s]*(?:Scene|id|scene)?\s*(\d+)\s*[:.)-]\s*)([^]*?)(?=(?:[-*•\s]*(?:Scene|id|scene)?\s*\d+\s*[:.)-])|$)/gi;
+      let match;
+      while ((match = patternA.exec(strippedText)) !== null) {
+        const id = parseInt(match[1], 10);
+        let script = match[2].trim();
+        script = script.replace(/overlay(?:_text)?:\s*.*$/i, "").trim();
+        script = script.replace(/[-*•\s]+$/, "").trim(); // Clean trailing hyphens/bullets/newlines
+        if (script && !isNaN(id)) {
+          scenes.push({ id, script, overlay_text: null });
+        }
+      }
+
+      // Try Pattern B (Scene/id labels followed by newline/spaces without delimiters) if still empty
+      if (scenes.length === 0) {
+        const patternB = /(?:[-*•\s]*(?:Scene|id|scene)\s*(\d+)\s*\n+)([^]*?)(?=(?:[-*•\s]*(?:Scene|id|scene)\s*\d+\s*\n+)|$)/gi;
+        while ((match = patternB.exec(strippedText)) !== null) {
+          const id = parseInt(match[1], 10);
+          let script = match[2].trim();
+          script = script.replace(/[-*•\s]+$/, "").trim();
+          if (script && !isNaN(id)) {
+            scenes.push({ id, script, overlay_text: null });
+          }
+        }
+      }
+    }
   } catch (e) {
     console.error("[recoverScenesRegex] failed:", e);
   }
@@ -312,6 +450,36 @@ export function recoverPromptsRegex(text: string): Array<{ id: number; prompt: s
       if (typeof prompt !== 'string') continue;
 
       prompts.push({ id, prompt: prompt.trim() });
+    }
+
+    // Resilient fallback: parse plain-text lists if no JSON objects were recovered
+    if (prompts.length === 0) {
+      const strippedText = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
+      
+      // Try Pattern A: list with standard separators: . , : , ) , -
+      const patternA = /(?:[-*•\s]*(?:Scene|id|scene)?\s*(\d+)\s*[:.)-]\s*)([^]*?)(?=(?:[-*•\s]*(?:Scene|id|scene)?\s*\d+\s*[:.)-])|$)/gi;
+      let match;
+      while ((match = patternA.exec(strippedText)) !== null) {
+        const id = parseInt(match[1], 10);
+        let prompt = match[2].trim();
+        prompt = prompt.replace(/[-*•\s]+$/, "").trim();
+        if (prompt && !isNaN(id)) {
+          prompts.push({ id, prompt });
+        }
+      }
+
+      // Try Pattern B (Scene/id labels followed by newline/spaces without delimiters) if still empty
+      if (prompts.length === 0) {
+        const patternB = /(?:[-*•\s]*(?:Scene|id|scene)\s*(\d+)\s*\n+)([^]*?)(?=(?:[-*•\s]*(?:Scene|id|scene)\s*\d+\s*\n+)|$)/gi;
+        while ((match = patternB.exec(strippedText)) !== null) {
+          const id = parseInt(match[1], 10);
+          let prompt = match[2].trim();
+          prompt = prompt.replace(/[-*•\s]+$/, "").trim();
+          if (prompt && !isNaN(id)) {
+            prompts.push({ id, prompt });
+          }
+        }
+      }
     }
   } catch (e) {
     console.error("[recoverPromptsRegex] failed:", e);

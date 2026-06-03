@@ -86,6 +86,13 @@ describe("parseJsonResponse", () => {
     const input = 'Some reasoning here...\n```json\n{"scenes":[]}\n```\nmore text';
     expect(parseJsonResponse(input)).toEqual({ scenes: [] });
   });
+
+  it("parses and repairs truncated JSON", () => {
+    const input = '{"scenes":[{"id":1,"script":"test"';
+    expect(parseJsonResponse(input)).toEqual({
+      scenes: [{ id: 1, script: "test" }],
+    });
+  });
 });
 
 describe("regex recovery functions", () => {
@@ -144,6 +151,42 @@ describe("regex recovery functions", () => {
     expect(recoverScenesRegex(undefined as any)).toEqual([]);
     expect(recoverPromptsRegex(null as any)).toEqual([]);
     expect(recoverPromptsRegex(undefined as any)).toEqual([]);
+  });
+
+  it("recovers scenes from truncated array or object nested inside preamble", () => {
+    const input = `We need to split the script:
+{
+  "scenes": [
+    {
+      "id": 1,
+      "script": "The German army was retreating...",
+      "overlay_text": null
+    },
+    {
+      "id": 2,
+      "script": "They crossed the Ludendorff Bridge at Remagen before it collapsed."`;
+    expect(recoverScenesRegex(input)).toEqual([
+      { id: 1, script: "The German army was retreating...", overlay_text: null },
+      { id: 2, script: "They crossed the Ludendorff Bridge at Remagen before it collapsed.", overlay_text: null }
+    ]);
+  });
+
+  it("recovers scenes from plain text list with hyphens or parentheses separators", () => {
+    const inputHyphen = `We need to split the script:
+- Scene 1 - The German army was retreating...
+- Scene 2 - They crossed the Ludendorff Bridge...`;
+    expect(recoverScenesRegex(inputHyphen)).toEqual([
+      { id: 1, script: "The German army was retreating...", overlay_text: null },
+      { id: 2, script: "They crossed the Ludendorff Bridge...", overlay_text: null }
+    ]);
+
+    const inputParen = `We need to split:
+1) The German army was retreating...
+2) They crossed the Ludendorff Bridge...`;
+    expect(recoverScenesRegex(inputParen)).toEqual([
+      { id: 1, script: "The German army was retreating...", overlay_text: null },
+      { id: 2, script: "They crossed the Ludendorff Bridge...", overlay_text: null }
+    ]);
   });
 });
 

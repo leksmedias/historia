@@ -321,9 +321,9 @@ async function callPass1(
       typeof result.data === "string"
         ? result.data
         : JSON.stringify(result.data || {}).substring(0, 500);
-    if ((result.status === 429 || result.status === 413) && rateLimitRetries > 0) {
+    if (([429, 413, 500, 502, 503, 504].includes(result.status)) && rateLimitRetries > 0) {
       const waitTime = (4 - rateLimitRetries) * 15000;
-      console.log(`[${provider}] Pass1 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
+      console.log(`[${provider}] Pass1 rate limited or transient error (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
       return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
     }
@@ -463,9 +463,9 @@ async function callPass2Batch(
       typeof result.data === "string"
         ? result.data
         : JSON.stringify(result.data || {}).substring(0, 500);
-    if ((result.status === 429 || result.status === 413) && rateLimitRetries > 0) {
+    if (([429, 413, 500, 502, 503, 504].includes(result.status)) && rateLimitRetries > 0) {
       const waitTime = (4 - rateLimitRetries) * 15000;
-      console.log(`[${provider}] Pass2 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
+      console.log(`[${provider}] Pass2 rate limited or transient error (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
       return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
     }
