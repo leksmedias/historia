@@ -150,7 +150,11 @@ async function callPass1(
         ? result.data
         : JSON.stringify(result.data || {}).substring(0, 500);
     if ((result.status === 429 || result.status === 413) && rateLimitRetries > 0) {
-      const waitTime = (4 - rateLimitRetries) * 15000;
+      if (errText.includes("tokens per day") || errText.includes("per day (TPD)")) {
+        throw new Error(`Groq free plan daily token limit reached (100K/day for this model). Switch to "Llama 4 Scout 17B" in Settings — it has 500K TPD on the free plan — or try again tomorrow.`);
+      }
+      const baseWait = provider === "claude" ? 30000 : 15000;
+      const waitTime = (4 - rateLimitRetries) * baseWait;
       console.log(`[${provider}] Pass1 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
       return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, groqModel, claudeModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
@@ -164,7 +168,9 @@ async function callPass1(
   if (isClaude) {
     content = result.data?.content?.[0]?.text ?? "";
   } else if (isGemini) {
-    content = result.data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const parts: any[] = result.data?.candidates?.[0]?.content?.parts ?? [];
+    const textPart = parts.find((p: any) => !p.thought) ?? parts[parts.length - 1];
+    content = textPart?.text ?? "";
     if (!content) {
       content = result.data?.choices?.[0]?.message?.content ?? "";
     }
@@ -297,7 +303,11 @@ async function callPass2Batch(
         ? result.data
         : JSON.stringify(result.data || {}).substring(0, 500);
     if ((result.status === 429 || result.status === 413) && rateLimitRetries > 0) {
-      const waitTime = (4 - rateLimitRetries) * 15000;
+      if (errText.includes("tokens per day") || errText.includes("per day (TPD)")) {
+        throw new Error(`Groq free plan daily token limit reached (100K/day for this model). Switch to "Llama 4 Scout 17B" in Settings — it has 500K TPD on the free plan — or try again tomorrow.`);
+      }
+      const baseWait = provider === "claude" ? 30000 : 15000;
+      const waitTime = (4 - rateLimitRetries) * baseWait;
       console.log(`[${provider}] Pass2 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
       return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, groqModel, claudeModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
@@ -311,7 +321,9 @@ async function callPass2Batch(
   if (isClaude) {
     content = result.data?.content?.[0]?.text ?? "";
   } else if (isGemini) {
-    content = result.data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const parts: any[] = result.data?.candidates?.[0]?.content?.parts ?? [];
+    const textPart = parts.find((p: any) => !p.thought) ?? parts[parts.length - 1];
+    content = textPart?.text ?? "";
     if (!content) {
       content = result.data?.choices?.[0]?.message?.content ?? "";
     }
@@ -407,7 +419,7 @@ export async function runScriptToJson(
       // Space out requests to avoid hitting TPM rate limits
       let waitMs = 2000;
       if (provider === "groq") waitMs = delayPass1;
-      else if (provider === "claude") waitMs = 12000;
+      else if (provider === "claude") waitMs = 20000;
       else if (provider === "nvidia") waitMs = 3000;
       await delay(waitMs);
     }
@@ -447,7 +459,7 @@ export async function runScriptToJson(
       // Space out requests to avoid hitting TPM rate limits
       let waitMs = 1000;
       if (provider === "groq") waitMs = delayPass2;
-      else if (provider === "claude") waitMs = 6000;
+      else if (provider === "claude") waitMs = 12000;
       else if (provider === "nvidia") waitMs = 2000;
       await delay(waitMs);
     }

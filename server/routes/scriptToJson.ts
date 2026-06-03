@@ -322,7 +322,11 @@ async function callPass1(
         ? result.data
         : JSON.stringify(result.data || {}).substring(0, 500);
     if (([429, 413, 500, 502, 503, 504].includes(result.status)) && rateLimitRetries > 0) {
-      const waitTime = (4 - rateLimitRetries) * 15000;
+      if (result.status === 429 && (errText.includes("tokens per day") || errText.includes("per day (TPD)"))) {
+        throw new Error(`Groq free plan daily token limit reached (100K/day for this model). Switch to "Llama 4 Scout 17B" in Settings — it has 500K TPD on the free plan — or try again tomorrow.`);
+      }
+      const baseWait = provider === "claude" ? 30000 : 15000;
+      const waitTime = (4 - rateLimitRetries) * baseWait;
       console.log(`[${provider}] Pass1 rate limited or transient error (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
       return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
@@ -336,7 +340,9 @@ async function callPass1(
   if (provider === "claude") {
     content = result.data?.content?.[0]?.text ?? "";
   } else if (provider === "gemini") {
-    content = result.data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const parts: any[] = result.data?.candidates?.[0]?.content?.parts ?? [];
+    const textPart = parts.find((p: any) => !p.thought) ?? parts[parts.length - 1];
+    content = textPart?.text ?? "";
     if (!content) {
       content = result.data?.choices?.[0]?.message?.content ?? "";
     }
@@ -464,7 +470,11 @@ async function callPass2Batch(
         ? result.data
         : JSON.stringify(result.data || {}).substring(0, 500);
     if (([429, 413, 500, 502, 503, 504].includes(result.status)) && rateLimitRetries > 0) {
-      const waitTime = (4 - rateLimitRetries) * 15000;
+      if (result.status === 429 && (errText.includes("tokens per day") || errText.includes("per day (TPD)"))) {
+        throw new Error(`Groq free plan daily token limit reached (100K/day for this model). Switch to "Llama 4 Scout 17B" in Settings — it has 500K TPD on the free plan — or try again tomorrow.`);
+      }
+      const baseWait = provider === "claude" ? 30000 : 15000;
+      const waitTime = (4 - rateLimitRetries) * baseWait;
       console.log(`[${provider}] Pass2 rate limited or transient error (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
       return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
@@ -478,7 +488,9 @@ async function callPass2Batch(
   if (provider === "claude") {
     content = result.data?.content?.[0]?.text ?? "";
   } else if (provider === "gemini") {
-    content = result.data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const parts: any[] = result.data?.candidates?.[0]?.content?.parts ?? [];
+    const textPart = parts.find((p: any) => !p.thought) ?? parts[parts.length - 1];
+    content = textPart?.text ?? "";
     if (!content) {
       content = result.data?.choices?.[0]?.message?.content ?? "";
     }

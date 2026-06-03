@@ -24,6 +24,7 @@ export interface ProviderSettings {
   nvidiaApiKey: string;
   geminiApiKey: string;
   geminiModel: string;
+  groqModel: string;
   textProvider: "groq" | "claude" | "nvidia" | "gemini";
   inworldApiKey: string;
   customVoices: CustomVoice[];
@@ -92,6 +93,7 @@ const DEFAULTS: ProviderSettings = {
   nvidiaApiKey: "",
   geminiApiKey: "",
   geminiModel: "gemini-3.5-flash",
+  groqModel: "llama-3.3-70b-versatile",
   textProvider: "groq",
   inworldApiKey: "",
   customVoices: [],

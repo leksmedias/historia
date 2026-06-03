@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Plus, Trash2, Key, Server, Mic } from "lucide-react";
 import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, IMAGE_MODELS, ASPECT_RATIOS, type ProviderSettings } from "@/lib/providers";
+import { GROQ_MODELS } from "../../../shared/scriptToJsonUtils";
 
 type HealthStatus = "idle" | "checking" | "ok" | "error";
 type Tab = "connections" | "providers" | "voices";
@@ -305,6 +306,28 @@ export default function Settings() {
                 </div>
                 <p className="text-xs text-muted-foreground">Scene splitting and prompt generation — get one at console.groq.com</p>
               </div>
+
+              {(settings.textProvider === "groq" || (settings.groqApiKey || "").length > 0) && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Groq Model</label>
+                  <Select
+                    value={settings.groqModel || "llama-3.3-70b-versatile"}
+                    onValueChange={(v) => setSettings(s => ({ ...s, groqModel: v }))}
+                  >
+                    <SelectTrigger className="bg-secondary">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GROQ_MODELS.map(m => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name} {m.tpd !== "No limit" ? `(${(m.tpd as number / 1000).toFixed(0)}K TPD)` : "(No limit)"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Free plan: Llama 4 Scout has 500K tokens/day vs 100K for 70B</p>
+                </div>
+              )}
 
               <div className="border-t border-border" />
 

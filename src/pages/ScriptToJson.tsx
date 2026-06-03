@@ -219,6 +219,7 @@ export default function ScriptToJson() {
           apiKey,
           claudeModel: settings.claudeModel,
           geminiModel: settings.geminiModel,
+          groqModel: settings.groqModel,
         }),
       });
       if (!res.ok) {

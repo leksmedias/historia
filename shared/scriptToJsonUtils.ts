@@ -195,8 +195,11 @@ export function parseJsonResponse(text: string): any {
     }
   }
 
-  // Strip <thinking>...</thinking> blocks (NVIDIA reasoning output)
-  const stripped = rawText.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").trim();
+  // Strip <thinking> blocks — both closed and unclosed (truncated NVIDIA output)
+  const stripped = rawText
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+    .replace(/<thinking>[\s\S]*$/gi, "")
+    .trim();
 
   // Extract first JSON object or array, ignoring preamble/postamble text
   const firstBrace = stripped.indexOf("{");
@@ -395,9 +398,11 @@ export function recoverScenesRegex(text: string): SplitScene[] {
 
     // Resilient fallback: parse plain-text lists if no JSON objects were recovered
     if (scenes.length === 0) {
-      // Strips <thinking> blocks first if any exist
-      const strippedText = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
-      
+      // Strips <thinking> blocks first — both closed and unclosed (truncated output)
+      const strippedText = text
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+        .replace(/<thinking>[\s\S]*$/gi, "");
+
       // Try Pattern A: list with standard separators: . , : , ) , -
       const patternA = /(?:[-*•\s]*(?:Scene|id|scene)?\s*(\d+)\s*[:.)-]\s*)([^]*?)(?=(?:[-*•\s]*(?:Scene|id|scene)?\s*\d+\s*[:.)-])|$)/gi;
       let match;
@@ -454,8 +459,10 @@ export function recoverPromptsRegex(text: string): Array<{ id: number; prompt: s
 
     // Resilient fallback: parse plain-text lists if no JSON objects were recovered
     if (prompts.length === 0) {
-      const strippedText = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
-      
+      const strippedText = text
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+        .replace(/<thinking>[\s\S]*$/gi, "");
+
       // Try Pattern A: list with standard separators: . , : , ) , -
       const patternA = /(?:[-*•\s]*(?:Scene|id|scene)?\s*(\d+)\s*[:.)-]\s*)([^]*?)(?=(?:[-*•\s]*(?:Scene|id|scene)?\s*\d+\s*[:.)-])|$)/gi;
       let match;
