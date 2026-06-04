@@ -724,6 +724,7 @@ router.get("/:jobId", (req: Request, res: Response) => {
     progress: job.progress,
     result: job.result,
     error: job.error,
+    params: job.params,
   });
 });
 
