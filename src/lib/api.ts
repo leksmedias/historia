@@ -101,12 +101,11 @@ async function processRemainingChunks(
   groqApiKey: string,
   splitMode: "smart" | "exact" | "duration" | "two",
   stylePrompt?: string,
-  anthropicApiKey?: string,
+  googleCloudApiKey?: string,
   claudeModel?: string,
   inworldApiKey?: string,
   textProvider?: "groq" | "claude" | "inworld" | "gemini",
   visualTheme?: "impasto" | "ww2",
-  geminiApiKey?: string,
   geminiModel?: string
 ): Promise<void> {
   let nextSceneNumber = startSceneNumber;
@@ -123,12 +122,11 @@ async function processRemainingChunks(
         groqApiKey,
         splitMode,
         stylePrompt,
-        anthropicApiKey,
+        googleCloudApiKey,
         claudeModel,
         inworldApiKey,
         textProvider,
         visualTheme,
-        geminiApiKey,
         geminiModel
       );
       await appendScenesToProject(projectId, chunkScenes);
@@ -150,7 +148,7 @@ export async function createProjectFrontend(
 ): Promise<{ projectId: string; serverPipeline: boolean; sceneCount: number }> {
   const settings = loadProviderSettings();
 
-  const useProvider = settings.textProvider || (settings.anthropicApiKey ? "claude" : (settings.geminiApiKey ? "gemini" : (settings.inworldApiKey ? "inworld" : "groq")));
+  const useProvider = settings.textProvider || (settings.googleCloudApiKey ? "claude" : (settings.inworldApiKey ? "inworld" : "groq"));
   const chunkLimit = (useProvider === "gemini") ? 40000 : 800;
   const chunks = splitScriptIntoChunks(script, chunkLimit);
   const totalChunks = chunks.length;
@@ -172,12 +170,11 @@ export async function createProjectFrontend(
       settings.groqApiKey,
       options.splitMode || "smart",
       options.stylePrompt,
-      settings.anthropicApiKey || undefined,
+      settings.googleCloudApiKey || undefined,
       settings.claudeModel || undefined,
       settings.inworldApiKey || undefined,
       settings.textProvider,
       options.visualTheme,
-      settings.geminiApiKey || undefined,
       settings.geminiModel || undefined
     );
   } catch (e: any) {
@@ -228,12 +225,11 @@ export async function createProjectFrontend(
       settings.groqApiKey,
       options.splitMode || "smart",
       options.stylePrompt,
-      settings.anthropicApiKey || undefined,
+      settings.googleCloudApiKey || undefined,
       settings.claudeModel || undefined,
       settings.inworldApiKey || undefined,
       settings.textProvider,
       options.visualTheme,
-      settings.geminiApiKey || undefined,
       settings.geminiModel || undefined
     ).catch(e => console.error("[progressive] background processing error:", e.message));
   }

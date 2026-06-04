@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 import path from "path";
 import {
@@ -105,101 +106,94 @@ async function callApi(
   payload: any
 ): Promise<{ status: number; data: any }> {
   if (provider === "gemini") {
-    const model = payload?.model || "gemini-3.5-flash";
-    const key = apiKey || process.env.GEMINI_API_KEY;
-    const { model: _, ...bodyWithoutModel } = payload;
-
-    if (key) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bodyWithoutModel),
+    try {
+      const gCloudKey = apiKey || process.env.GOOGLE_CLOUD_API_KEY;
+      const ai = new GoogleGenAI({
+        apiKey: gCloudKey,
       });
-      const text = await r.text();
-      let data;
-      try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
-      return { status: r.status, data };
-    } else {
-      try {
-        const accessToken = getAccessToken();
-        const endpoint = "aiplatform.googleapis.com";
-        const url = `https://${endpoint}/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${model}:generateContent`;
-        const r = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
+
+      const model = payload?.model || "gemini-3.1-pro-preview";
+      const systemInstruction = payload.systemInstruction?.parts?.[0]?.text || payload.systemInstruction;
+
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: payload.contents,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: payload.generationConfig?.temperature ?? 1,
+          maxOutputTokens: 65535,
+          topP: payload.generationConfig?.topP ?? 0.95,
+          responseMimeType: payload.generationConfig?.responseMimeType,
+          thinkingConfig: {
+            thinkingLevel: "HIGH"
           },
-          body: JSON.stringify(bodyWithoutModel),
-        });
-        const text = await r.text();
-        let data;
-        try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
-        return { status: r.status, data };
-      } catch (e: any) {
-        console.error("[scriptToJson] Vertex Gemini call failed:", e.message);
-        return { status: 500, data: { error: e.message } };
-      }
+          safetySettings: [
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' }
+          ]
+        }
+      });
+
+      return {
+        status: 200,
+        data: {
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: response.text || ""
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      };
+    } catch (e: any) {
+      console.error("[scriptToJson] gemini SDK error:", e.message);
+      return { status: 500, data: { error: e.message } };
     }
   }
 
   if (provider === "claude") {
-    const modelName = payload?.model || "";
-    const isVertexClaude = modelName.startsWith("publishers/") || modelName.includes("@") || modelName === "claude-haiku-4-5" || modelName === "claude-sonnet-4-6";
+    const modelName = payload?.model || "claude-sonnet-4-6";
+    try {
+      const modelPath = modelName.startsWith("publishers/") 
+        ? modelName 
+        : `publishers/anthropic/models/${modelName}`;
+      
+      const region = "global";
+      const host = "aiplatform.googleapis.com";
+      const url = `https://${host}/v1/projects/${PROJECT_ID}/locations/${region}/${modelPath}:rawPredict`;
+      const accessToken = getAccessToken();
 
-    if (isVertexClaude) {
-      try {
-        const modelPath = modelName.startsWith("publishers/") 
-          ? modelName 
-          : `publishers/anthropic/models/${modelName}`;
-        
-        const region = "global";
-        const host = "aiplatform.googleapis.com";
-        const url = `https://${host}/v1/projects/${PROJECT_ID}/locations/${region}/${modelPath}:rawPredict`;
-        const accessToken = getAccessToken();
+      const { model, ...bodyWithoutModel } = payload;
+      const vertexPayload = {
+        ...bodyWithoutModel,
+        max_tokens: bodyWithoutModel.max_tokens || 65535,
+        anthropic_version: "vertex-2023-10-16"
+      };
 
-        const { model, ...bodyWithoutModel } = payload;
-        const vertexPayload = {
-          ...bodyWithoutModel,
-          anthropic_version: "vertex-2023-10-16"
-        };
+      const r = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(vertexPayload)
+      });
 
-        const r = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`
-          },
-          body: JSON.stringify(vertexPayload)
-        });
-
-        const text = await r.text();
-        let data;
-        try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
-        return { status: r.status, data };
-      } catch (e: any) {
-        console.error("[scriptToJson] Vertex Claude call failed:", e.message);
-        return { status: 500, data: { error: e.message } };
-      }
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
+      return { status: r.status, data };
+    } catch (e: any) {
+      console.error("[scriptToJson] Vertex Claude call failed:", e.message);
+      return { status: 500, data: { error: e.message } };
     }
-
-    // Fallback to Anthropic API
-    const key = apiKey || process.env.ANTHROPIC_API_KEY;
-    if (!key) return { status: 500, data: { error: "ANTHROPIC_API_KEY not configured" } };
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(payload),
-    });
-    const text = await r.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { raw: text.substring(0, 1000) }; }
-    return { status: r.status, data };
   }
 
   if (provider === "inworld") {

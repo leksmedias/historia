@@ -197,9 +197,9 @@ export default function ScriptToJson() {
   const apiKey = provider === "groq" 
     ? settings.groqApiKey 
     : provider === "claude" 
-    ? settings.anthropicApiKey 
+    ? settings.googleCloudApiKey 
     : provider === "gemini"
-    ? settings.geminiApiKey
+    ? settings.googleCloudApiKey
     : settings.inworldApiKey;
   
   const generating = useMemo(() => selectedJob?.status === "running", [selectedJob]);
@@ -430,14 +430,8 @@ export default function ScriptToJson() {
               </label>
               <div className="grid grid-cols-4 gap-2">
                 {(["groq", "inworld", "claude", "gemini"] as const).map((p) => {
-                  const key = p === "groq" ? settings.groqApiKey : p === "claude" ? settings.anthropicApiKey : p === "gemini" ? settings.geminiApiKey : settings.inworldApiKey;
-                  const isVertex = p === "claude" && (
-                    settings.claudeModel?.startsWith("publishers/") ||
-                    settings.claudeModel?.includes("@") ||
-                    settings.claudeModel === "claude-haiku-4-5" ||
-                    settings.claudeModel === "claude-sonnet-4-6"
-                  );
-                  const isGeminiVertex = p === "gemini" && !settings.geminiApiKey;
+                  const key = p === "groq" ? settings.groqApiKey : p === "claude" || p === "gemini" ? settings.googleCloudApiKey : settings.inworldApiKey;
+                  const isVertex = p === "claude" || p === "gemini";
                   return (
                     <button
                       key={p}
@@ -457,9 +451,7 @@ export default function ScriptToJson() {
                           {p === "groq" ? "Batch 8" : p === "inworld" ? "Batch 15" : p === "claude" ? "Batch 5" : "Batch 10"}
                         </div>
                       </div>
-                      {p === "claude" && isVertex ? (
-                        <div className="text-[9px] text-emerald-500 font-semibold">Vertex AI</div>
-                      ) : p === "gemini" && isGeminiVertex ? (
+                      {isVertex ? (
                         <div className="text-[9px] text-emerald-500 font-semibold">Vertex AI</div>
                       ) : !key ? (
                         <div className="text-[9px] text-amber-500 font-semibold">No key</div>
@@ -470,20 +462,15 @@ export default function ScriptToJson() {
                   );
                 })}
               </div>
-              {provider === "claude" && (
-                settings.claudeModel?.startsWith("publishers/") ||
-                settings.claudeModel?.includes("@") ||
-                settings.claudeModel === "claude-haiku-4-5" ||
-                settings.claudeModel === "claude-sonnet-4-6"
-              ) ? (
+              {provider === "claude" || provider === "gemini" ? (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-500">
                   <CheckCircle2 className="h-3 w-3" />
-                  Using Claude ({settings.claudeModel}) via Vertex AI
+                  Using {provider === "claude" ? `Claude (${settings.claudeModel || "claude-sonnet-4-6"})` : `Gemini (${settings.geminiModel || "gemini-3.1-pro-preview"})`} via Vertex AI
                 </div>
               ) : apiKey ? (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-500">
                   <CheckCircle2 className="h-3 w-3" />
-                  Using {provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "Inworld"} key from Settings
+                  Using {provider === "groq" ? "Groq" : "Inworld"} key from Settings
                 </div>
               ) : (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-500">

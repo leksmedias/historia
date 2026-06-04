@@ -19,9 +19,8 @@ export interface ProviderSettings {
   imageConcurrency: number;
   audioConcurrency: number;
   groqApiKey: string;
-  anthropicApiKey: string;
+  googleCloudApiKey: string;
   claudeModel: string;
-  geminiApiKey: string;
   geminiModel: string;
   groqModel: string;
   textProvider: "groq" | "claude" | "inworld" | "gemini";
@@ -88,10 +87,9 @@ const DEFAULTS: ProviderSettings = {
   imageConcurrency: 2,
   audioConcurrency: 2,
   groqApiKey: "",
-  anthropicApiKey: "",
-  claudeModel: "claude-haiku-4-5-20251001",
-  geminiApiKey: "",
-  geminiModel: "gemini-3.5-flash",
+  googleCloudApiKey: "",
+  claudeModel: "claude-sonnet-4-6",
+  geminiModel: "gemini-3.1-pro-preview",
   groqModel: "llama-3.3-70b-versatile",
   textProvider: "groq",
   inworldApiKey: "",
@@ -497,10 +495,10 @@ function recoverPartialScenes(raw: string): BatchPromptResult[] {
 async function callClaudeForBatch(
   title: string,
   scenes: Array<{ scene_number: number; script_text: string }>,
-  anthropicApiKey: string,
+  googleCloudApiKey: string,
   retryOnRateLimit = true,
   stylePrompt?: string,
-  claudeModel = "claude-haiku-4-5-20251001",
+  claudeModel = "claude-sonnet-4-6",
   visualTheme?: "impasto" | "ww2"
 ): Promise<BatchPromptResult[]> {
   const basePrompt = visualTheme === "ww2" ? BATCH_WWII_IMAGE_PROMPT : BATCH_IMAGE_PROMPT;
@@ -515,7 +513,7 @@ async function callClaudeForBatch(
 
   const result = await apiProxy({
     action: "claude-chat",
-    apiKey: anthropicApiKey,
+    apiKey: googleCloudApiKey,
     payload: {
       model: claudeModel,
       max_tokens: 16000,
@@ -532,11 +530,11 @@ async function callClaudeForBatch(
       if (retryOnRateLimit) {
         console.log("[claude] Rate limited — waiting 15s before retry...");
         await delay(15000);
-        return callClaudeForBatch(title, scenes, anthropicApiKey, false, stylePrompt, claudeModel, visualTheme);
+        return callClaudeForBatch(title, scenes, googleCloudApiKey, false, stylePrompt, claudeModel, visualTheme);
       }
       throw new Error("Claude rate limited — try again in a moment.");
     }
-    if (result.status === 401) throw new Error("Anthropic API key is invalid. Update it in Settings.");
+    if (result.status === 401) throw new Error("Google Cloud credentials or project configuration is invalid.");
     throw new Error(`Claude API error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
@@ -626,7 +624,7 @@ async function callInworldForBatch(
 async function callGeminiForBatch(
   title: string,
   scenes: Array<{ scene_number: number; script_text: string }>,
-  geminiApiKey: string,
+  googleCloudApiKey: string,
   retryOnRateLimit = true,
   stylePrompt?: string,
   geminiModel?: string,
@@ -644,9 +642,9 @@ async function callGeminiForBatch(
 
   const result = await apiProxy({
     action: "gemini-chat",
-    apiKey: geminiApiKey,
+    apiKey: googleCloudApiKey,
     payload: {
-      model: geminiModel || "gemini-3.5-flash",
+      model: geminiModel || "gemini-3.1-pro-preview",
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: {
@@ -675,11 +673,11 @@ async function callGeminiForBatch(
       if (retryOnRateLimit) {
         console.log("[gemini-text] Rate limited — waiting 15s before retry...");
         await delay(15000);
-        return callGeminiForBatch(title, scenes, geminiApiKey, false, stylePrompt, geminiModel, visualTheme);
+        return callGeminiForBatch(title, scenes, googleCloudApiKey, false, stylePrompt, geminiModel, visualTheme);
       }
       throw new Error("Gemini rate limited — try again in a moment.");
     }
-    if (result.status === 401) throw new Error("Gemini API key is invalid. Update it in Settings.");
+    if (result.status === 401) throw new Error("Google Cloud API Key is invalid. Update it in Settings.");
     throw new Error(`Gemini API error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
@@ -711,12 +709,11 @@ export async function generateScenesForChunk(
   groqApiKey: string,
   splitMode: "smart" | "exact" | "duration" | "two" = "smart",
   stylePrompt?: string,
-  anthropicApiKey?: string,
+  googleCloudApiKey?: string,
   claudeModel?: string,
   inworldApiKey?: string,
   textProvider?: "groq" | "claude" | "inworld" | "gemini",
   visualTheme?: "impasto" | "ww2",
-  geminiApiKey?: string,
   geminiModel?: string
 ): Promise<SceneManifest[]> {
   const sceneChunks = (splitMode === "duration"
@@ -724,14 +721,14 @@ export async function generateScenesForChunk(
     : splitScriptIntoScenes(chunk, splitMode === "exact" ? "exact" : splitMode === "two" ? "two" : "smart")
   ).map((s, idx) => ({ ...s, scene_number: startSceneNumber + idx }));
 
-  const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : (inworldApiKey ? "inworld" : "groq")));
+  const useProvider = textProvider || (googleCloudApiKey ? "claude" : (inworldApiKey ? "inworld" : "groq"));
 
   const prompts = useProvider === "inworld"
     ? await callInworldForBatch(title, sceneChunks, inworldApiKey || "", true, stylePrompt, visualTheme)
     : useProvider === "claude"
-      ? await callClaudeForBatch(title, sceneChunks, anthropicApiKey || "", true, stylePrompt, claudeModel, visualTheme)
+      ? await callClaudeForBatch(title, sceneChunks, googleCloudApiKey || "", true, stylePrompt, claudeModel, visualTheme)
       : useProvider === "gemini"
-        ? await callGeminiForBatch(title, sceneChunks, geminiApiKey || "", true, stylePrompt, geminiModel, visualTheme)
+        ? await callGeminiForBatch(title, sceneChunks, googleCloudApiKey || "", true, stylePrompt, geminiModel, visualTheme)
         : await callGroqForBatch(title, sceneChunks, groqApiKey || "", true, stylePrompt, visualTheme);
 
   return sceneChunks.map((sc, idx) => {
@@ -759,19 +756,18 @@ export async function generateSceneManifest(
   splitMode: "smart" | "exact" | "duration" | "two" = "smart",
   onChunkProgress?: (current: number, total: number) => void,
   stylePrompt?: string,
-  anthropicApiKey?: string,
+  googleCloudApiKey?: string,
   claudeModel?: string,
   inworldApiKey?: string,
   textProvider?: "groq" | "claude" | "inworld" | "gemini",
   visualTheme?: "impasto" | "ww2",
-  geminiApiKey?: string,
   geminiModel?: string
 ): Promise<SceneManifest[]> {
   const sceneChunks = splitMode === "duration"
     ? splitScriptByDuration(script)
     : splitScriptIntoScenes(script, splitMode === "exact" ? "exact" : splitMode === "two" ? "two" : "smart");
 
-  const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : "groq"));
+  const useProvider = textProvider || (googleCloudApiKey ? "claude" : (inworldApiKey ? "inworld" : "groq"));
   const BATCH_SIZE = useProvider === "inworld" ? 15 : (useProvider === "claude" ? 5 : 10);
   const totalBatches = Math.ceil(sceneChunks.length / BATCH_SIZE);
   const allScenes: SceneManifest[] = [];
@@ -785,9 +781,9 @@ export async function generateSceneManifest(
     const prompts = useProvider === "inworld"
       ? await callInworldForBatch(title, batch, inworldApiKey || "", true, stylePrompt, visualTheme)
       : useProvider === "claude"
-        ? await callClaudeForBatch(title, batch, anthropicApiKey || "", true, stylePrompt, claudeModel, visualTheme)
+        ? await callClaudeForBatch(title, batch, googleCloudApiKey || "", true, stylePrompt, claudeModel, visualTheme)
         : useProvider === "gemini"
-          ? await callGeminiForBatch(title, batch, geminiApiKey || "", true, stylePrompt, geminiModel, visualTheme)
+          ? await callGeminiForBatch(title, batch, googleCloudApiKey || "", true, stylePrompt, geminiModel, visualTheme)
           : await callGroqForBatch(title, batch, groqApiKey || "", true, stylePrompt, visualTheme);
 
     const merged: SceneManifest[] = batch.map((sc, idx) => {
@@ -898,12 +894,11 @@ export async function regenerateImagePrompt(
   scriptText: string,
   groqApiKey: string,
   _styleSummary?: any,
-  anthropicApiKey?: string,
+  googleCloudApiKey?: string,
   claudeModel?: string,
   inworldApiKey?: string,
   textProvider?: "groq" | "claude" | "inworld" | "gemini",
   visualTheme?: "impasto" | "ww2",
-  geminiApiKey?: string,
   geminiModel?: string
 ): Promise<string> {
   const systemPrompt = visualTheme === "ww2"
@@ -941,7 +936,7 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
 
   const userPrompt = `Script text to visualize:\n${scriptText}\n\nGenerate one cinematic image prompt for this scene.`;
 
-  const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : "groq"));
+  const useProvider = textProvider || (googleCloudApiKey ? "claude" : (inworldApiKey ? "inworld" : "groq"));
 
   if (useProvider === "inworld") {
     const result = await apiProxy({
@@ -973,9 +968,9 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
   if (useProvider === "claude") {
     const result = await apiProxy({
       action: "claude-chat",
-      apiKey: anthropicApiKey || "",
+      apiKey: googleCloudApiKey || "",
       payload: {
-        model: claudeModel || "claude-haiku-4-5-20251001",
+        model: claudeModel || "claude-sonnet-4-6",
         max_tokens: 1000,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
@@ -997,9 +992,9 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
   if (useProvider === "gemini") {
     const result = await apiProxy({
       action: "gemini-chat",
-      apiKey: geminiApiKey || "",
+      apiKey: googleCloudApiKey || "",
       payload: {
-        model: geminiModel || "gemini-3.5-flash",
+        model: geminiModel || "gemini-3.1-pro-preview",
         contents: [{ role: "user", parts: [{ text: userPrompt }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {

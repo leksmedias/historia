@@ -32,16 +32,13 @@ export default function Settings() {
   const [newVoiceId, setNewVoiceId] = useState("");
   const [newVoiceName, setNewVoiceName] = useState("");
   const [showGroq, setShowGroq] = useState(false);
-  const [showAnthropic, setShowAnthropic] = useState(false);
+  const [showGoogleCloud, setShowGoogleCloud] = useState(false);
   const [showInworld, setShowInworld] = useState(false);
-  const [showGemini, setShowGemini] = useState(false);
 
   const [groqStatus, setGroqStatus] = useState<HealthStatus>("idle");
   const [groqMsg, setGroqMsg] = useState("");
-  const [anthropicStatus, setAnthropicStatus] = useState<HealthStatus>("idle");
-  const [anthropicMsg, setAnthropicMsg] = useState("");
-  const [geminiStatus, setGeminiStatus] = useState<HealthStatus>("idle");
-  const [geminiMsg, setGeminiMsg] = useState("");
+  const [googleCloudStatus, setGoogleCloudStatus] = useState<HealthStatus>("idle");
+  const [googleCloudMsg, setGoogleCloudMsg] = useState("");
   const [inworldStatus, setInworldStatus] = useState<HealthStatus>("idle");
   const [inworldMsg, setInworldMsg] = useState("");
   const [renderStatus, setRenderStatus] = useState<HealthStatus>("idle");
@@ -68,38 +65,35 @@ export default function Settings() {
     }
   };
 
-  const testAnthropic = async () => {
-    const isVertex = settings.claudeModel?.startsWith("publishers/") || 
-                     settings.claudeModel?.includes("@") || 
-                     settings.claudeModel === "claude-haiku-4-5" || 
-                     settings.claudeModel === "claude-sonnet-4-6";
-    
-    if (!settings.anthropicApiKey && !isVertex) { 
-      setAnthropicStatus("error"); 
-      setAnthropicMsg("No API key provided"); 
-      return; 
+  const testGoogleCloud = async () => {
+    if (!settings.googleCloudApiKey) {
+      setGoogleCloudStatus("error");
+      setGoogleCloudMsg("No API key provided");
+      return;
     }
-    setAnthropicStatus("checking"); setAnthropicMsg("");
+    setGoogleCloudStatus("checking"); setGoogleCloudMsg("");
     try {
       const res = await fetch("/api/gemini-proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "claude-chat",
-          apiKey: settings.anthropicApiKey,
+          action: "gemini-chat",
+          apiKey: settings.googleCloudApiKey,
           payload: {
-            model: settings.claudeModel || "claude-haiku-4-5-20251001",
-            max_tokens: 10,
-            messages: [{ role: "user", content: "Say ok" }],
+            model: "gemini-2.5-flash",
+            contents: [{ role: "user", parts: [{ text: "Say ok" }] }],
+            generationConfig: {
+              maxOutputTokens: 10,
+            }
           }
         })
       });
       const data = await res.json();
-      if (res.status === 401 || data?.status === 401) { setAnthropicStatus("error"); setAnthropicMsg("Invalid API key"); return; }
-      if (!res.ok || data?.error) { setAnthropicStatus("error"); setAnthropicMsg(data?.error || `HTTP ${res.status}`); return; }
-      setAnthropicStatus("ok");
+      if (res.status === 401 || data?.status === 401) { setGoogleCloudStatus("error"); setGoogleCloudMsg("Invalid API key"); return; }
+      if (!res.ok || data?.error) { setGoogleCloudStatus("error"); setGoogleCloudMsg(data?.error || `HTTP ${res.status}`); return; }
+      setGoogleCloudStatus("ok");
     } catch (e: any) {
-      setAnthropicStatus("error"); setAnthropicMsg(e.message?.includes("fetch") ? "Network error" : e.message);
+      setGoogleCloudStatus("error"); setGoogleCloudMsg(e.message?.includes("fetch") ? "Network error" : e.message);
     }
   };
 
@@ -140,38 +134,7 @@ export default function Settings() {
     }
   };
 
-  const testGemini = async () => {
-    if (!settings.geminiApiKey) { setGeminiStatus("error"); setGeminiMsg("No API key provided"); return; }
-    setGeminiStatus("checking"); setGeminiMsg("");
-    try {
-      const res = await fetch("/api/gemini-proxy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "gemini-chat",
-          apiKey: settings.geminiApiKey,
-          payload: {
-            model: settings.geminiModel || "gemini-3.5-flash",
-            contents: [{ role: "user", parts: [{ text: "Say ok" }] }],
-            generationConfig: {
-              maxOutputTokens: 10,
-              thinkingConfig: {
-                thinkingLevel: "MEDIUM"
-              }
-            }
-          }
-        })
-      });
-      const data = await res.json();
-      if (res.status === 401 || data?.status === 401) { setGeminiStatus("error"); setGeminiMsg("Invalid API key"); return; }
-      if (!res.ok || data?.error) { setGeminiStatus("error"); setGeminiMsg(data?.error || `HTTP ${res.status}`); return; }
-      setGeminiStatus("ok");
-    } catch (e: any) {
-      setGeminiStatus("error"); setGeminiMsg(e.message?.includes("fetch") ? "Network error" : e.message);
-    }
-  };
-
-  const testAll = () => { testGroq(); testAnthropic(); testGemini(); testInworld(); testRenderApi(); };
+  const testAll = () => { testGroq(); testGoogleCloud(); testInworld(); testRenderApi(); };
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "connections", label: "Connections", icon: <Key className="h-4 w-4" /> },
@@ -300,97 +263,64 @@ export default function Settings() {
 
               <div className="border-t border-border" />
 
-              {/* Anthropic */}
+              {/* Google Cloud */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-foreground">Anthropic API Key</label>
+                  <label className="text-sm font-medium text-foreground">Google Cloud API Key</label>
                   <div className="flex items-center gap-2">
-                    <StatusIndicator status={anthropicStatus} message={anthropicMsg} />
-                    <Button variant="ghost" size="sm" onClick={testAnthropic} className="text-xs h-7">
-                      {anthropicStatus === "checking" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
+                    <StatusIndicator status={googleCloudStatus} message={googleCloudMsg} />
+                    <Button variant="ghost" size="sm" onClick={testGoogleCloud} className="text-xs h-7">
+                      {googleCloudStatus === "checking" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
                     </Button>
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <Input
-                    type={showAnthropic ? "text" : "password"}
-                    placeholder="sk-ant-..."
-                    value={settings.anthropicApiKey || ""}
-                    onChange={(e) => { setSettings(s => ({ ...s, anthropicApiKey: e.target.value })); }}
+                    type={showGoogleCloud ? "text" : "password"}
+                    placeholder="AIzaSy..."
+                    value={settings.googleCloudApiKey || ""}
+                    onChange={(e) => { setSettings(s => ({ ...s, googleCloudApiKey: e.target.value })); setGoogleCloudStatus("idle"); }}
                     className="bg-secondary flex-1"
                   />
-                  <Button variant="ghost" size="icon" onClick={() => setShowAnthropic(!showAnthropic)}>
-                    {showAnthropic ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  <Button variant="ghost" size="icon" onClick={() => setShowGoogleCloud(!showGoogleCloud)}>
+                    {showGoogleCloud ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">Uses Claude for scene &amp; image prompt generation. If set, Groq key is not needed.</p>
+                <p className="text-xs text-muted-foreground">Google Cloud API Key — used for Vertex AI Gemini models.</p>
               </div>
 
-              {(settings.textProvider === "claude" || (settings.anthropicApiKey || "").length > 0) && (
+              {settings.textProvider === "claude" && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Claude Model</label>
                   <Select
-                    value={settings.claudeModel || "claude-haiku-4-5-20251001"}
+                    value={settings.claudeModel || "claude-sonnet-4-6"}
                     onValueChange={(v) => setSettings(s => ({ ...s, claudeModel: v }))}
                   >
                     <SelectTrigger className="bg-secondary">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="claude-sonnet-4-6@default">Sonnet 4.6 (Vertex AI)</SelectItem>
-                      <SelectItem value="claude-haiku-4-5-20251001">Haiku 4.5 (Anthropic API)</SelectItem>
-                      <SelectItem value="claude-haiku-4-5@20251001">Haiku 4.5 (Vertex AI)</SelectItem>
-                      <SelectItem value="claude-3-5-sonnet-latest">Sonnet 3.5 (Anthropic API)</SelectItem>
-                      <SelectItem value="claude-3-haiku-20240307">Haiku 3 (Anthropic API)</SelectItem>
+                      <SelectItem value="claude-sonnet-4-6">Sonnet 4.6 (Vertex AI)</SelectItem>
+                      <SelectItem value="claude-haiku-4-5">Haiku 4.5 (Vertex AI)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               )}
 
-              <div className="border-t border-border" />
-
-
-
-              {/* Gemini */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-foreground">Gemini API Key</label>
-                  <div className="flex items-center gap-2">
-                    <StatusIndicator status={geminiStatus} message={geminiMsg} />
-                    <Button variant="ghost" size="sm" onClick={testGemini} className="text-xs h-7">
-                      {geminiStatus === "checking" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    type={showGemini ? "text" : "password"}
-                    placeholder="AIzaSy..."
-                    value={settings.geminiApiKey || ""}
-                    onChange={(e) => { setSettings(s => ({ ...s, geminiApiKey: e.target.value })); setGeminiStatus("idle"); }}
-                    className="bg-secondary flex-1"
-                  />
-                  <Button variant="ghost" size="icon" onClick={() => setShowGemini(!showGemini)}>
-                    {showGemini ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">Google AI Studio API Key — get one at aistudio.google.com</p>
-              </div>
-
-              {(settings.textProvider === "gemini" || (settings.geminiApiKey || "").length > 0) && (
+              {settings.textProvider === "gemini" && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Gemini Model</label>
                   <Select
-                    value={settings.geminiModel || "gemini-3.5-flash"}
+                    value={settings.geminiModel || "gemini-3.1-pro-preview"}
                     onValueChange={(v) => setSettings(s => ({ ...s, geminiModel: v }))}
                   >
                     <SelectTrigger className="bg-secondary">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gemini-3.5-flash">Gemini 3.5 Flash</SelectItem>
-                      <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
-                      <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                      <SelectItem value="gemini-3.1-pro-preview">Gemini 3.1 Pro (Vertex AI)</SelectItem>
+                      <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro (Vertex AI)</SelectItem>
+                      <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash (Vertex AI)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
