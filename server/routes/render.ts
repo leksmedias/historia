@@ -149,6 +149,10 @@ const animateJobs: Record<string, AnimateJob> = {};
 // ── FFmpeg helpers ─────────────────────────────────────────────────────────
 
 function findFontFile(): string | null {
+  // Bundled font — always available in the project
+  const bundled = path.join(process.cwd(), "fonts", "Tox Typewriter.ttf");
+  if (fs.existsSync(bundled)) return bundled;
+
   const windowsPaths = [
     "C:/Windows/Fonts/courbd.ttf",
     "C:/Windows/Fonts/cour.ttf",
