@@ -154,8 +154,10 @@ function findFontFile(): string | null {
     "C:/Windows/Fonts/cour.ttf",
     "C:/Windows/Fonts/consolab.ttf",
     "C:/Windows/Fonts/lucon.ttf",
+    "C:/Windows/Fonts/arial.ttf",
   ];
   const linuxPaths = [
+    // truetype subdirs (Debian/Ubuntu with fonts-liberation or fonts-dejavu)
     "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
@@ -164,23 +166,42 @@ function findFontFile(): string | null {
     "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
     "/usr/share/fonts/truetype/msttcorefonts/Courier_New_Bold.ttf",
     "/usr/share/fonts/truetype/msttcorefonts/Courier_New.ttf",
+    // flat dirs (some distros / Docker images)
+    "/usr/share/fonts/liberation/LiberationMono-Bold.ttf",
+    "/usr/share/fonts/liberation/LiberationMono-Regular.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/dejavu-sans-mono/DejaVuSansMono-Bold.ttf",
+    // Alpine / musl
+    "/usr/share/fonts/ttf-dejavu/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/ttf-liberation/LiberationMono-Bold.ttf",
   ];
 
   const paths = process.platform === "win32" ? windowsPaths : linuxPaths;
   for (const p of paths) {
-    if (fs.existsSync(p)) {
-      return p;
+    if (fs.existsSync(p)) return p;
+  }
+
+  // Cross-platform fallback — check both lists
+  for (const p of [...windowsPaths, ...linuxPaths]) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  // Last resort on Linux: ask fontconfig for any monospace font
+  if (process.platform !== "win32") {
+    for (const query of [":spacing=mono", "monospace", ""]) {
+      try {
+        const result = execSync(`fc-match --format="%{file}" ${query}`, {
+          encoding: "utf-8",
+          timeout: 3000,
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim();
+        if (result && fs.existsSync(result)) return result;
+      } catch { /* fc-match not available or no fonts */ }
     }
   }
 
-  // Fallback: check other platform paths just in case
-  const allPaths = [...windowsPaths, ...linuxPaths];
-  for (const p of allPaths) {
-    if (fs.existsSync(p)) {
-      return p;
-    }
-  }
-
+  console.warn("[render] No font file found — overlay text will not be burned into the video. Install fonts-liberation or fonts-dejavu on the server.");
   return null;
 }
 
