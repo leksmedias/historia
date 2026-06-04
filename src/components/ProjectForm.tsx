@@ -48,8 +48,8 @@ export default function ProjectForm() {
     if (!canSubmit) return;
 
     const settings = loadProviderSettings();
-    if (!settings.groqApiKey && !settings.anthropicApiKey && !settings.nvidiaApiKey) {
-      toast.error("An API key (Groq, Anthropic, or Nvidia) is required. Go to Settings to configure it.");
+    if (!settings.groqApiKey && !settings.anthropicApiKey && !settings.inworldApiKey) {
+      toast.error("An API key (Groq, Anthropic, or Inworld) is required. Go to Settings to configure it.");
       return;
     }
 

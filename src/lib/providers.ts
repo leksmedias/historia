@@ -21,11 +21,10 @@ export interface ProviderSettings {
   groqApiKey: string;
   anthropicApiKey: string;
   claudeModel: string;
-  nvidiaApiKey: string;
   geminiApiKey: string;
   geminiModel: string;
   groqModel: string;
-  textProvider: "groq" | "claude" | "nvidia" | "gemini";
+  textProvider: "groq" | "claude" | "inworld" | "gemini";
   inworldApiKey: string;
   customVoices: CustomVoice[];
   skipImageGeneration: boolean;
@@ -91,7 +90,6 @@ const DEFAULTS: ProviderSettings = {
   groqApiKey: "",
   anthropicApiKey: "",
   claudeModel: "claude-haiku-4-5-20251001",
-  nvidiaApiKey: "",
   geminiApiKey: "",
   geminiModel: "gemini-3.5-flash",
   groqModel: "llama-3.3-70b-versatile",
@@ -558,10 +556,10 @@ async function callClaudeForBatch(
   }
 }
 
-async function callNvidiaForBatch(
+async function callInworldForBatch(
   title: string,
   scenes: Array<{ scene_number: number; script_text: string }>,
-  nvidiaApiKey: string,
+  inworldApiKey: string,
   retryOnRateLimit = true,
   stylePrompt?: string,
   visualTheme?: "impasto" | "ww2"
@@ -577,21 +575,19 @@ async function callNvidiaForBatch(
   const userPrompt = `Video Title: ${title}\n\nGenerate image prompts for these ${scenes.length} scenes:\n\n${scenesText}\n\nReturn ONLY the JSON object.`;
 
   const result = await apiProxy({
-    action: "nvidia-chat",
-    apiKey: nvidiaApiKey,
+    action: "inworld-chat",
+    apiKey: inworldApiKey,
     payload: {
-      model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      model: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      temperature: 0.6,
-      top_p: 0.95,
-      max_tokens: 65536,
-      extra_body: {
-        chat_template_kwargs: { enable_thinking: true },
-        reasoning_budget: 16384
-      },
+      temperature: 0.4,
+      max_tokens: 4096,
+      response_format: {
+        type: "json_object"
+      }
     },
   });
 
@@ -601,24 +597,19 @@ async function callNvidiaForBatch(
       : JSON.stringify(result.data || {}).substring(0, 500);
     if (result.status === 429) {
       if (retryOnRateLimit) {
-        console.log("[nvidia] Rate limited — waiting 15s before retry...");
+        console.log("[inworld] Rate limited — waiting 15s before retry...");
         await delay(15000);
-        return callNvidiaForBatch(title, scenes, nvidiaApiKey, false, stylePrompt, visualTheme);
+        return callInworldForBatch(title, scenes, inworldApiKey, false, stylePrompt, visualTheme);
       }
-      throw new Error("NVIDIA rate limited — try again in a moment.");
+      throw new Error("Inworld rate limited — try again in a moment.");
     }
-    if (result.status === 401) throw new Error("NVIDIA API key is invalid. Update it in Settings.");
-    throw new Error(`NVIDIA API error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
+    if (result.status === 401) throw new Error("Inworld API key is invalid. Update it in Settings.");
+    throw new Error(`Inworld API error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
   const data = result.data;
   let content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("No content from NVIDIA");
-
-  const reasoning = data?.choices?.[0]?.message?.reasoning_content;
-  if (reasoning) {
-    console.log("[NVIDIA Reasoning]:", reasoning);
-  }
+  if (!content) throw new Error("No content from Inworld");
 
   content = content.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
 
@@ -628,7 +619,7 @@ async function callNvidiaForBatch(
   } catch (err: any) {
     const recovered = recoverPartialScenes(content);
     if (recovered.length > 0) return recovered;
-    throw new Error(`NVIDIA returned malformed JSON (${content.length} chars): ${err.message}.`);
+    throw new Error(`Inworld returned malformed JSON (${content.length} chars): ${err.message}.`);
   }
 }
 
@@ -722,8 +713,8 @@ export async function generateScenesForChunk(
   stylePrompt?: string,
   anthropicApiKey?: string,
   claudeModel?: string,
-  nvidiaApiKey?: string,
-  textProvider?: "groq" | "claude" | "nvidia" | "gemini",
+  inworldApiKey?: string,
+  textProvider?: "groq" | "claude" | "inworld" | "gemini",
   visualTheme?: "impasto" | "ww2",
   geminiApiKey?: string,
   geminiModel?: string
@@ -733,10 +724,10 @@ export async function generateScenesForChunk(
     : splitScriptIntoScenes(chunk, splitMode === "exact" ? "exact" : splitMode === "two" ? "two" : "smart")
   ).map((s, idx) => ({ ...s, scene_number: startSceneNumber + idx }));
 
-  const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : "groq"));
+  const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : (inworldApiKey ? "inworld" : "groq")));
 
-  const prompts = useProvider === "nvidia"
-    ? await callNvidiaForBatch(title, sceneChunks, nvidiaApiKey || "", true, stylePrompt, visualTheme)
+  const prompts = useProvider === "inworld"
+    ? await callInworldForBatch(title, sceneChunks, inworldApiKey || "", true, stylePrompt, visualTheme)
     : useProvider === "claude"
       ? await callClaudeForBatch(title, sceneChunks, anthropicApiKey || "", true, stylePrompt, claudeModel, visualTheme)
       : useProvider === "gemini"
@@ -770,8 +761,8 @@ export async function generateSceneManifest(
   stylePrompt?: string,
   anthropicApiKey?: string,
   claudeModel?: string,
-  nvidiaApiKey?: string,
-  textProvider?: "groq" | "claude" | "nvidia" | "gemini",
+  inworldApiKey?: string,
+  textProvider?: "groq" | "claude" | "inworld" | "gemini",
   visualTheme?: "impasto" | "ww2",
   geminiApiKey?: string,
   geminiModel?: string
@@ -781,7 +772,7 @@ export async function generateSceneManifest(
     : splitScriptIntoScenes(script, splitMode === "exact" ? "exact" : splitMode === "two" ? "two" : "smart");
 
   const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : "groq"));
-  const BATCH_SIZE = useProvider === "nvidia" ? 40 : (useProvider === "claude" ? 5 : 10);
+  const BATCH_SIZE = useProvider === "inworld" ? 15 : (useProvider === "claude" ? 5 : 10);
   const totalBatches = Math.ceil(sceneChunks.length / BATCH_SIZE);
   const allScenes: SceneManifest[] = [];
 
@@ -791,8 +782,8 @@ export async function generateSceneManifest(
     const batch = sceneChunks.slice(i, i + BATCH_SIZE);
     const batchIdx = Math.floor(i / BATCH_SIZE);
 
-    const prompts = useProvider === "nvidia"
-      ? await callNvidiaForBatch(title, batch, nvidiaApiKey || "", true, stylePrompt, visualTheme)
+    const prompts = useProvider === "inworld"
+      ? await callInworldForBatch(title, batch, inworldApiKey || "", true, stylePrompt, visualTheme)
       : useProvider === "claude"
         ? await callClaudeForBatch(title, batch, anthropicApiKey || "", true, stylePrompt, claudeModel, visualTheme)
         : useProvider === "gemini"
@@ -909,8 +900,8 @@ export async function regenerateImagePrompt(
   _styleSummary?: any,
   anthropicApiKey?: string,
   claudeModel?: string,
-  nvidiaApiKey?: string,
-  textProvider?: "groq" | "claude" | "nvidia" | "gemini",
+  inworldApiKey?: string,
+  textProvider?: "groq" | "claude" | "inworld" | "gemini",
   visualTheme?: "impasto" | "ww2",
   geminiApiKey?: string,
   geminiModel?: string
@@ -952,23 +943,18 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
 
   const useProvider = textProvider || (anthropicApiKey ? "claude" : (geminiApiKey ? "gemini" : "groq"));
 
-  if (useProvider === "nvidia") {
+  if (useProvider === "inworld") {
     const result = await apiProxy({
-      action: "nvidia-chat",
-      apiKey: nvidiaApiKey || "",
+      action: "inworld-chat",
+      apiKey: inworldApiKey || "",
       payload: {
-        model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        model: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.6,
-        top_p: 0.95,
-        max_tokens: 5024,
-        extra_body: {
-          chat_template_kwargs: { enable_thinking: true },
-          reasoning_budget: 256
-        },
+        temperature: 0.4,
+        max_tokens: 1000,
       },
     });
 
@@ -976,11 +962,11 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
       const errText = typeof result.data === "string"
         ? result.data
         : JSON.stringify(result.data || {}).substring(0, 500);
-      throw new Error(`NVIDIA error: ${result.status} - ${errText}`);
+      throw new Error(`Inworld error: ${result.status} - ${errText}`);
     }
 
     const content = result.data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error("No content from NVIDIA");
+    if (!content) throw new Error("No content from Inworld");
     return content.trim();
   }
 

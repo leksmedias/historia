@@ -8,7 +8,7 @@ import {
   WORDS_PER_MINUTE,
   PASS1_CHUNK_MAX_WORDS,
   GROQ_BATCH_SIZE,
-  NVIDIA_BATCH_SIZE,
+  INWORLD_BATCH_SIZE,
   chunkScript,
   parseJsonResponse,
   recoverScenesRegex,
@@ -44,7 +44,7 @@ interface JobParams {
   script: string;
   secondsPerScene: number;
   style: "impasto" | "ww2";
-  provider: "groq" | "nvidia" | "claude" | "gemini";
+  provider: "groq" | "inworld" | "claude" | "gemini";
   apiKey: string;
   claudeModel?: string;
   groqModel?: string;
@@ -95,16 +95,12 @@ function loadJobsFromDisk() {
 
 // Load jobs on startup
 loadJobsFromDisk();
-
-const FALLBACK_NVIDIA_KEY =
-  "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";
-
 // ── Direct API call ───────────────────────────────────────────────────────────
 
 import { PROJECT_ID, getAccessToken } from "../lib/gemini.js";
 
 async function callApi(
-  provider: "groq" | "nvidia" | "claude" | "gemini",
+  provider: "groq" | "inworld" | "claude" | "gemini",
   apiKey: string,
   payload: any
 ): Promise<{ status: number; data: any }> {
@@ -206,16 +202,29 @@ async function callApi(
     return { status: r.status, data };
   }
 
-  const key =
-    apiKey ||
-    (provider === "groq"
-      ? process.env.GROQ_API_KEY
-      : process.env.NVIDIA_API_KEY || FALLBACK_NVIDIA_KEY) ||
-    "";
-  const url =
-    provider === "groq"
-      ? "https://api.groq.com/openai/v1/chat/completions"
-      : "https://integrate.api.nvidia.com/v1/chat/completions";
+  if (provider === "inworld") {
+    const key = apiKey || process.env.INWORLD_API_KEY || "";
+    const url = "https://api.inworld.ai/v1/chat/completions";
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json", 
+        "Authorization": `Basic ${key}` 
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await r.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text.substring(0, 1000) };
+    }
+    return { status: r.status, data };
+  }
+
+  const key = apiKey || (provider === "groq" ? process.env.GROQ_API_KEY : "") || "";
+  const url = "https://api.groq.com/openai/v1/chat/completions";
   const r = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
@@ -242,7 +251,7 @@ async function callPass1(
   startId: number,
   wordsPerScene: number,
   secondsPerScene: number,
-  provider: "groq" | "nvidia" | "claude" | "gemini",
+  provider: "groq" | "inworld" | "claude" | "gemini",
   apiKey: string,
   claudeModel?: string,
   groqModel?: string,
@@ -300,18 +309,16 @@ async function callPass1(
           ]
         }
       : {
-          model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+          model: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
           temperature: 0.3,
-          top_p: 0.95,
-          max_tokens: 32768,
-          extra_body: {
-            chat_template_kwargs: { enable_thinking: true },
-            reasoning_budget: 8192,
-          },
+          max_tokens: 4096,
+          response_format: {
+            type: "json_object"
+          }
         };
 
   const result = await callApi(provider, apiKey, payload);
@@ -332,7 +339,7 @@ async function callPass1(
       return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
     }
     if (result.status === 401)
-      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "NVIDIA"} API key is invalid.`);
+      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "Inworld"} API key is invalid.`);
     throw new Error(`${provider} Pass 1 error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
@@ -384,7 +391,7 @@ async function callPass2Batch(
   title: string,
   scenes: SplitScene[],
   style: "impasto" | "ww2",
-  provider: "groq" | "nvidia" | "claude" | "gemini",
+  provider: "groq" | "inworld" | "claude" | "gemini",
   apiKey: string,
   continuityAnchor: string,
   claudeModel?: string,
@@ -448,18 +455,16 @@ async function callPass2Batch(
           ]
         }
       : {
-          model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+          model: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          temperature: 0.6,
-          top_p: 0.95,
-          max_tokens: 65536,
-          extra_body: {
-            chat_template_kwargs: { enable_thinking: true },
-            reasoning_budget: 16384,
-          },
+          temperature: 0.4,
+          max_tokens: 4096,
+          response_format: {
+            type: "json_object"
+          }
         };
 
   const result = await callApi(provider, apiKey, payload);
@@ -480,7 +485,7 @@ async function callPass2Batch(
       return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
     }
     if (result.status === 401)
-      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "NVIDIA"} API key is invalid.`);
+      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "Inworld"} API key is invalid.`);
     throw new Error(`${provider} Pass 2 error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
@@ -538,7 +543,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
     ? 5 
     : provider === "gemini"
     ? 10
-    : NVIDIA_BATCH_SIZE;
+    : INWORLD_BATCH_SIZE;
 
   const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
   
@@ -568,7 +573,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
         if (provider === "groq") waitMs = delayPass1;
         else if (provider === "claude") waitMs = 12000;
         else if (provider === "gemini") waitMs = 6000;
-        else if (provider === "nvidia") waitMs = 3000;
+        else if (provider === "inworld") waitMs = 3000;
         await delay(waitMs);
       }
       const scenes = await callPass1(
@@ -608,7 +613,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
         if (provider === "groq") waitMs = delayPass2;
         else if (provider === "claude") waitMs = 12000;
         else if (provider === "gemini") waitMs = 6000;
-        else if (provider === "nvidia") waitMs = 3000;
+        else if (provider === "inworld") waitMs = 3000;
         await delay(waitMs);
       }
       const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);
@@ -674,11 +679,14 @@ router.post("/", (req: Request, res: Response) => {
   if (!title || !script || !provider) {
     return res.status(400).json({ error: "title, script, and provider are required" });
   }
-  if (!["groq", "nvidia", "claude", "gemini"].includes(provider)) {
-    return res.status(400).json({ error: "provider must be groq, nvidia, claude, or gemini" });
+  if (!["groq", "inworld", "claude", "gemini"].includes(provider)) {
+    return res.status(400).json({ error: "provider must be groq, inworld, claude, or gemini" });
   }
   if (!apiKey && !process.env.GROQ_API_KEY && provider === "groq") {
     return res.status(400).json({ error: "No Groq API key. Set one in Settings." });
+  }
+  if (!apiKey && !process.env.INWORLD_API_KEY && provider === "inworld") {
+    return res.status(400).json({ error: "No Inworld API key. Set one in Settings." });
   }
   if (provider === "claude") {
     const isVertex = claudeModel?.startsWith("publishers/") || claudeModel?.includes("@") || claudeModel === "claude-haiku-4-5";

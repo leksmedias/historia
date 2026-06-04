@@ -361,7 +361,7 @@ export default function ProjectPreview() {
   const handleRegenPrompt = async () => {
     if (!scene) return;
     const settings = loadProviderSettings();
-    if (!settings.groqApiKey && !settings.anthropicApiKey && !settings.nvidiaApiKey) {
+    if (!settings.groqApiKey && !settings.anthropicApiKey && !settings.inworldApiKey) {
       toast.error("No API key configured for prompt generation. Update it in Settings.");
       return;
     }
@@ -373,7 +373,7 @@ export default function ProjectPreview() {
         null, 
         settings.anthropicApiKey,
         settings.claudeModel,
-        settings.nvidiaApiKey,
+        settings.inworldApiKey,
         settings.textProvider,
         visualTheme
       );

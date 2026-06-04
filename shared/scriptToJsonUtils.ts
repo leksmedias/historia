@@ -23,9 +23,9 @@ export interface ScriptToJsonParams {
   script: string;
   secondsPerScene: number;
   style: "impasto" | "ww2";
-  provider: "groq" | "nvidia" | "claude" | "gemini";
+  provider: "groq" | "inworld" | "claude" | "gemini";
   groqApiKey?: string;
-  nvidiaApiKey?: string;
+  inworldApiKey?: string;
   anthropicApiKey?: string;
   geminiApiKey?: string;
   groqModel?: string;
@@ -66,7 +66,7 @@ export function getGroqModelConfig(modelId: string): GroqModelConfig {
 export const WORDS_PER_MINUTE = 117;
 export const PASS1_CHUNK_MAX_WORDS = 2000;
 export const GROQ_BATCH_SIZE = 8;
-export const NVIDIA_BATCH_SIZE = 15;
+export const INWORLD_BATCH_SIZE = 15;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 

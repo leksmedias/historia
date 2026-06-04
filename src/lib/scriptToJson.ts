@@ -19,7 +19,7 @@ import {
   WORDS_PER_MINUTE,
   PASS1_CHUNK_MAX_WORDS,
   GROQ_BATCH_SIZE,
-  NVIDIA_BATCH_SIZE,
+  INWORLD_BATCH_SIZE,
   chunkScript,
   parseJsonResponse,
   recoverScenesRegex,
@@ -65,7 +65,7 @@ async function callPass1(
   startId: number,
   wordsPerScene: number,
   secondsPerScene: number,
-  provider: "groq" | "nvidia" | "claude" | "gemini",
+  provider: "groq" | "inworld" | "claude" | "gemini",
   apiKey: string,
   groqModel?: string,
   claudeModel?: string,
@@ -84,7 +84,7 @@ async function callPass1(
   const maxTokens = Math.max(1024, Math.min(4096, groqConfig.tpm - promptTokens - 200));
 
   const result = await apiProxy({
-    action: isGroq ? "groq-chat" : isClaude ? "claude-chat" : isGemini ? "gemini-chat" : "nvidia-chat",
+    action: isGroq ? "groq-chat" : isClaude ? "claude-chat" : isGemini ? "gemini-chat" : "inworld-chat",
     apiKey,
     payload: isGroq
       ? {
@@ -129,18 +129,14 @@ async function callPass1(
         ]
       }
       : {
-        model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        model: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
         temperature: 0.3,
-        top_p: 0.95,
-        max_tokens: 60768,
-        extra_body: {
-          chat_template_kwargs: { enable_thinking: true },
-          reasoning_budget: 8192,
-        },
+        max_tokens: 4096,
+        response_format: { type: "json_object" }
       },
   });
 
@@ -160,7 +156,7 @@ async function callPass1(
       return callPass1(chunk, startId, wordsPerScene, secondsPerScene, provider, apiKey, groqModel, claudeModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
     }
     if (result.status === 401)
-      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "NVIDIA"} API key is invalid. Update it in Settings.`);
+      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "Inworld"} API key is invalid. Update it in Settings.`);
     throw new Error(`${provider} Pass 1 error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
@@ -212,7 +208,7 @@ async function callPass2Batch(
   title: string,
   scenes: SplitScene[],
   style: "impasto" | "ww2",
-  provider: "groq" | "nvidia" | "claude" | "gemini",
+  provider: "groq" | "inworld" | "claude" | "gemini",
   apiKey: string,
   continuityAnchor: string,
   groqModel?: string,
@@ -237,7 +233,7 @@ async function callPass2Batch(
   const maxTokens = Math.max(1024, Math.min(4096, groqConfig.tpm - promptTokens - 200));
 
   const result = await apiProxy({
-    action: isGroq ? "groq-chat" : isClaude ? "claude-chat" : isGemini ? "gemini-chat" : "nvidia-chat",
+    action: isGroq ? "groq-chat" : isClaude ? "claude-chat" : isGemini ? "gemini-chat" : "inworld-chat",
     apiKey,
     payload: isGroq
       ? {
@@ -282,18 +278,14 @@ async function callPass2Batch(
         ]
       }
       : {
-        model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        model: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.6,
-        top_p: 0.95,
-        max_tokens: 50536,
-        extra_body: {
-          chat_template_kwargs: { enable_thinking: true },
-          reasoning_budget: 10384,
-        },
+        temperature: 0.4,
+        max_tokens: 4096,
+        response_format: { type: "json_object" }
       },
   });
 
@@ -313,7 +305,7 @@ async function callPass2Batch(
       return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, groqModel, claudeModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
     }
     if (result.status === 401)
-      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : "gemini" ? "Gemini" : "NVIDIA"} API key is invalid.`);
+      throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : "gemini" ? "Gemini" : "Inworld"} API key is invalid.`);
     throw new Error(`${provider} Pass 2 error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
@@ -374,7 +366,7 @@ export async function runScriptToJson(
       ? params.anthropicApiKey
       : provider === "gemini"
       ? params.geminiApiKey
-      : params.nvidiaApiKey
+      : params.inworldApiKey
   ) ?? "";
 
   // Vertex AI Claude predictions or Vertex AI Gemini predictions do not require a client-side API key
@@ -394,7 +386,7 @@ export async function runScriptToJson(
     ? 5 
     : provider === "gemini"
     ? 10
-    : NVIDIA_BATCH_SIZE;
+    : INWORLD_BATCH_SIZE;
 
   // ── Pass 1: scene splitting ─────────────────────────────────────────────────
   const chunks = chunkScript(script, PASS1_CHUNK_MAX_WORDS);
@@ -420,7 +412,7 @@ export async function runScriptToJson(
       let waitMs = 2000;
       if (provider === "groq") waitMs = delayPass1;
       else if (provider === "claude") waitMs = 20000;
-      else if (provider === "nvidia") waitMs = 3000;
+      else if (provider === "inworld") waitMs = 3000;
       await delay(waitMs);
     }
     const scenes = await callPass1(
@@ -460,7 +452,7 @@ export async function runScriptToJson(
       let waitMs = 1000;
       if (provider === "groq") waitMs = delayPass2;
       else if (provider === "claude") waitMs = 12000;
-      else if (provider === "nvidia") waitMs = 2000;
+      else if (provider === "inworld") waitMs = 2000;
       await delay(waitMs);
     }
     const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);

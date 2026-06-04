@@ -37,11 +37,15 @@ router.post("/", async (req: Request, res: Response) => {
       return res.json({ status: r.status, data });
     }
 
-    if (action === "nvidia-chat") {
-      const key = apiKey || process.env.NVIDIA_API_KEY || "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";
-      const r = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+    if (action === "inworld-chat") {
+      const key = apiKey || process.env.INWORLD_API_KEY;
+      if (!key) return res.json({ status: 500, data: { error: "INWORLD_API_KEY not configured" } });
+      const r = await fetch("https://api.inworld.ai/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        headers: { 
+          "Content-Type": "application/json", 
+          "Authorization": `Basic ${key}` 
+        },
         body: JSON.stringify(payload),
       });
       const text = await r.text();

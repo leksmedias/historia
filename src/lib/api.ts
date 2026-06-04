@@ -103,8 +103,8 @@ async function processRemainingChunks(
   stylePrompt?: string,
   anthropicApiKey?: string,
   claudeModel?: string,
-  nvidiaApiKey?: string,
-  textProvider?: "groq" | "claude" | "nvidia" | "gemini",
+  inworldApiKey?: string,
+  textProvider?: "groq" | "claude" | "inworld" | "gemini",
   visualTheme?: "impasto" | "ww2",
   geminiApiKey?: string,
   geminiModel?: string
@@ -125,7 +125,7 @@ async function processRemainingChunks(
         stylePrompt,
         anthropicApiKey,
         claudeModel,
-        nvidiaApiKey,
+        inworldApiKey,
         textProvider,
         visualTheme,
         geminiApiKey,
@@ -150,12 +150,12 @@ export async function createProjectFrontend(
 ): Promise<{ projectId: string; serverPipeline: boolean; sceneCount: number }> {
   const settings = loadProviderSettings();
 
-  const useProvider = settings.textProvider || (settings.anthropicApiKey ? "claude" : (settings.geminiApiKey ? "gemini" : "groq"));
-  const chunkLimit = (useProvider === "nvidia" || useProvider === "gemini") ? 40000 : 800;
+  const useProvider = settings.textProvider || (settings.anthropicApiKey ? "claude" : (settings.geminiApiKey ? "gemini" : (settings.inworldApiKey ? "inworld" : "groq")));
+  const chunkLimit = (useProvider === "gemini") ? 40000 : 800;
   const chunks = splitScriptIntoChunks(script, chunkLimit);
   const totalChunks = chunks.length;
 
-  const aiProvider = useProvider === "nvidia" ? "Nvidia" : (useProvider === "claude" ? "Claude" : (useProvider === "gemini" ? "Gemini" : "Groq"));
+  const aiProvider = useProvider === "inworld" ? "Inworld" : (useProvider === "claude" ? "Claude" : (useProvider === "gemini" ? "Gemini" : "Groq"));
   callbacks.onPhase(totalChunks > 1
     ? `Generating scenes via ${aiProvider} (chunk 1 of ${totalChunks})...`
     : `Generating scene manifest via ${aiProvider}...`
@@ -174,7 +174,7 @@ export async function createProjectFrontend(
       options.stylePrompt,
       settings.anthropicApiKey || undefined,
       settings.claudeModel || undefined,
-      settings.nvidiaApiKey || undefined,
+      settings.inworldApiKey || undefined,
       settings.textProvider,
       options.visualTheme,
       settings.geminiApiKey || undefined,
@@ -230,7 +230,7 @@ export async function createProjectFrontend(
       options.stylePrompt,
       settings.anthropicApiKey || undefined,
       settings.claudeModel || undefined,
-      settings.nvidiaApiKey || undefined,
+      settings.inworldApiKey || undefined,
       settings.textProvider,
       options.visualTheme,
       settings.geminiApiKey || undefined,

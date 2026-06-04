@@ -15,7 +15,7 @@ const DURATION_OPTIONS = [
 ] as const;
 
 type Style = "impasto" | "ww2";
-type Provider = "groq" | "nvidia" | "claude" | "gemini";
+type Provider = "groq" | "inworld" | "claude" | "gemini";
 
 interface JobProgress {
   phase: "pass1" | "pass2";
@@ -29,7 +29,7 @@ interface JobParams {
   script: string;
   secondsPerScene: number;
   style: "impasto" | "ww2";
-  provider: "groq" | "nvidia" | "claude" | "gemini";
+  provider: "groq" | "inworld" | "claude" | "gemini";
   apiKey?: string;
   claudeModel?: string;
   geminiModel?: string;
@@ -200,7 +200,7 @@ export default function ScriptToJson() {
     ? settings.anthropicApiKey 
     : provider === "gemini"
     ? settings.geminiApiKey
-    : settings.nvidiaApiKey;
+    : settings.inworldApiKey;
   
   const generating = useMemo(() => selectedJob?.status === "running", [selectedJob]);
   const canGenerate = title.trim().length > 0 && wordCount > 0 && !generating;
@@ -429,8 +429,8 @@ export default function ScriptToJson() {
                 AI Provider
               </label>
               <div className="grid grid-cols-4 gap-2">
-                {(["groq", "nvidia", "claude", "gemini"] as const).map((p) => {
-                  const key = p === "groq" ? settings.groqApiKey : p === "claude" ? settings.anthropicApiKey : p === "gemini" ? settings.geminiApiKey : settings.nvidiaApiKey;
+                {(["groq", "inworld", "claude", "gemini"] as const).map((p) => {
+                  const key = p === "groq" ? settings.groqApiKey : p === "claude" ? settings.anthropicApiKey : p === "gemini" ? settings.geminiApiKey : settings.inworldApiKey;
                   const isVertex = p === "claude" && (
                     settings.claudeModel?.startsWith("publishers/") ||
                     settings.claudeModel?.includes("@") ||
@@ -451,10 +451,10 @@ export default function ScriptToJson() {
                     >
                       <div>
                         <div className="text-xs font-semibold">
-                          {p === "groq" ? "Groq" : p === "nvidia" ? "NVIDIA" : p === "claude" ? "Claude" : "Gemini"}
+                          {p === "groq" ? "Groq" : p === "inworld" ? "Inworld" : p === "claude" ? "Claude" : "Gemini"}
                         </div>
                         <div className="text-[9px] text-muted-foreground mt-0.5 leading-tight">
-                          {p === "groq" ? "Batch 8" : p === "nvidia" ? "Batch 20" : p === "claude" ? "Batch 5" : "Batch 10"}
+                          {p === "groq" ? "Batch 8" : p === "inworld" ? "Batch 15" : p === "claude" ? "Batch 5" : "Batch 10"}
                         </div>
                       </div>
                       {p === "claude" && isVertex ? (
@@ -483,7 +483,7 @@ export default function ScriptToJson() {
               ) : apiKey ? (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-500">
                   <CheckCircle2 className="h-3 w-3" />
-                  Using {provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "NVIDIA"} key from Settings
+                  Using {provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "Inworld"} key from Settings
                 </div>
               ) : (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-500">
