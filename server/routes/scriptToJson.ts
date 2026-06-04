@@ -110,6 +110,7 @@ async function callApi(
       const gCloudKey = apiKey || process.env.GOOGLE_CLOUD_API_KEY;
       const ai = new GoogleGenAI({
         apiKey: gCloudKey,
+        vertexai: true,
       });
 
       const model = payload?.model || "gemini-3.1-pro-preview";
@@ -273,7 +274,7 @@ async function callPass1(
         }
       : provider === "claude"
       ? {
-          model: claudeModel || "claude-haiku-4-5-20251001",
+          model: claudeModel || "claude-haiku-4-5",
           system: systemPrompt,
           messages: [
             { role: "user", content: userPrompt },
@@ -283,7 +284,7 @@ async function callPass1(
         }
       : provider === "gemini"
       ? {
-          model: geminiModel || "gemini-3.5-flash",
+          model: geminiModel || "gemini-2.5-flash",
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],
           systemInstruction: { parts: [{ text: systemPrompt }] },
           generationConfig: {
@@ -419,7 +420,7 @@ async function callPass2Batch(
         }
       : provider === "claude"
       ? {
-          model: claudeModel || "claude-haiku-4-5-20251001",
+          model: claudeModel || "claude-haiku-4-5",
           system: systemPrompt,
           messages: [
             { role: "user", content: userPrompt },
@@ -429,7 +430,7 @@ async function callPass2Batch(
         }
       : provider === "gemini"
       ? {
-          model: geminiModel || "gemini-3.5-flash",
+          model: geminiModel || "gemini-2.5-flash",
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],
           systemInstruction: { parts: [{ text: systemPrompt }] },
           generationConfig: {

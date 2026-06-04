@@ -98,6 +98,7 @@ router.post("/", async (req: Request, res: Response) => {
         const gCloudKey = apiKey || process.env.GOOGLE_CLOUD_API_KEY;
         const ai = new GoogleGenAI({
           apiKey: gCloudKey,
+          vertexai: true,
         });
 
         const model = payload?.model || "gemini-3.1-pro-preview";
