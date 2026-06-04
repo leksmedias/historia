@@ -934,7 +934,14 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
 
     if (fs.existsSync(clip)) {
       if (isValidVideoClip(clip)) {
-        isValid = true;
+        // Re-burn clips that have overlay text so the drawtext is always current.
+        // Clips without overlay text are safe to reuse from cache.
+        if (s.overlay_text) {
+          console.log(`[merge] scene ${num}: has overlay_text, forcing clip regeneration`);
+          try { fs.unlinkSync(clip); } catch {}
+        } else {
+          isValid = true;
+        }
       } else {
         console.warn(`[merge] clip ${clip} is corrupted (e.g. missing moov atom). Deleting and regenerating.`);
         try { fs.unlinkSync(clip); } catch {}
