@@ -315,7 +315,7 @@ async function callPass1(
             { role: "user", content: userPrompt },
           ],
           temperature: 0.3,
-          max_tokens: 4096,
+          max_tokens: 1000,
           response_format: {
             type: "json_object"
           }
@@ -461,7 +461,7 @@ async function callPass2Batch(
             { role: "user", content: userPrompt },
           ],
           temperature: 0.4,
-          max_tokens: 4096,
+          max_tokens: 1000,
           response_format: {
             type: "json_object"
           }

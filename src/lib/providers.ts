@@ -584,7 +584,7 @@ async function callInworldForBatch(
         { role: "user", content: userPrompt },
       ],
       temperature: 0.4,
-      max_tokens: 4096,
+      max_tokens: 1000,
       response_format: {
         type: "json_object"
       }
