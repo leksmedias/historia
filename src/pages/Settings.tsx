@@ -658,7 +658,7 @@ export default function Settings() {
                 <Slider
                   value={[settings.subtitleDelay ?? 0.8]}
                   onValueChange={([v]) => setSettings(s => ({ ...s, subtitleDelay: v }))}
-                  min={0.0} max={2.0} step={0.1}
+                  min={0.0} max={5.0} step={0.1}
                 />
                 <p className="text-xs text-muted-foreground">
                   Delay before subtitle typing animation starts on each scene (offsetting TTS audio silence/breathing room).
