@@ -247,13 +247,12 @@ INWORLD_API_KEY=your_inworld_key
 # ── Optional: LLM keys (can also be passed per-request from the browser) ────────
 ANTHROPIC_API_KEY=your_anthropic_key
 GROQ_API_KEY=your_groq_key
-NVIDIA_API_KEY=your_nvidia_key   # falls back to a hardcoded key if absent
 
 # ── Performance ────────────────────────────────────────────────────────────────
 CLIP_CONCURRENCY=3   # parallel FFmpeg workers for clip generation (default: 3)
 ```
 
-> **Note on API keys:** Groq, Inworld, Anthropic, and NVIDIA keys can alternatively be entered directly in the app's **Settings** page and are stored in the browser's `localStorage`. The `.env` values serve as server-side fallbacks for the proxy routes.
+> **Note on API keys:** Groq, Inworld, and Anthropic keys can alternatively be entered directly in the app's **Settings** page and are stored in the browser's `localStorage`. The `.env` values serve as server-side fallbacks for the proxy routes.
 
 ---
 
@@ -382,8 +381,7 @@ After logging in, go to **Settings** to configure:
 | Groq API Key | LLM for scene splitting and image prompt generation (default provider) |
 | Inworld API Key | Server-side TTS audio generation |
 | Anthropic API Key | Use Claude as the text provider |
-| NVIDIA API Key | Use NVIDIA Nemotron as the text provider |
-| Text Provider | `groq` (default, batch 10), `claude` (batch 5), or `nvidia` (batch 40) |
+| Text Provider | `groq` (default, batch 10), `claude` (batch 5), or `inworld` (batch 15) |
 | Image Model | `imagen-4.0-fast-generate-001` (default), `-generate-001`, `-ultra`, `gemini-2.5-flash-image`, or `gemini-3.1-flash-image-preview` |
 | Visual Theme | `impasto` (digital oil painting) or `ww2` (B&W archival photorealism) |
 | Skip Image Generation | Bypass Imagen calls entirely — useful for testing script/audio flows |

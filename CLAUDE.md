@@ -39,7 +39,7 @@ Historia is a cinematic historical documentary generator: script → AI scene sp
 - `/api/gemini-proxy` is a multi-service server-side proxy handling five actions:
   - `generate` — Vertex AI Imagen image generation via `gcloud` access tokens (`server/lib/gemini.ts`)
   - `groq-chat` — Groq API proxy (uses `apiKey` from request or `GROQ_API_KEY` env)
-  - `nvidia-chat` — NVIDIA API proxy using `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (uses `apiKey` or `NVIDIA_API_KEY` env, falls back to a hardcoded key)
+  - `inworld-chat` — Inworld API proxy using `meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8` (uses `apiKey` or `INWORLD_API_KEY` env)
   - `claude-chat` — Anthropic API proxy (uses `apiKey` from request or `ANTHROPIC_API_KEY` env)
   - `gemini-chat` — Gemini/Vertex AI proxy (uses `apiKey` from request or `GEMINI_API_KEY` env, falls back to Vertex AI access token)
 - `server/lib/veo.ts` — Veo video animation via Vertex AI (`us-central1` only)
@@ -89,7 +89,7 @@ The script-to-JSON process runs as a two-pass AI pipeline. It can run **client-s
 - Jobs stored in-memory + persisted to `uploads/script_to_json_jobs.json` (survives restarts; running jobs are marked failed on reload)
 - `GET /api/script-to-json` — list all jobs; `GET /api/script-to-json/:jobId` — poll progress; `DELETE /api/script-to-json/:jobId` — remove from history
 - Pass 1: chunk script → split into scenes with timing. Pass 2: batch scenes → generate image prompts with continuity anchoring.
-- Supported providers: `groq`, `nvidia`, `claude`, `gemini`
+- Supported providers: `groq`, `inworld`, `claude`, `gemini`
 
 **Shared logic** in `shared/scriptToJsonUtils.ts`: `chunkScript`, `buildPass1SystemPrompt`, `PASS2_IMPASTO_SYSTEM`, `PASS2_WWII_SYSTEM`, `parseJsonResponse`, `recoverScenesRegex`, `recoverPromptsRegex`, `buildContinuityAnchor`, `getGroqModelConfig`.
 
@@ -125,8 +125,8 @@ The `stats.serverPipeline` boolean in the `projects` table is the flag the front
 
 ## Key Conventions
 
-- **AI providers** (Groq key, Inworld key, Anthropic key, NVIDIA key, Gemini key) are stored in `localStorage` and set via the Settings page. The Groq key is **never** in `.env`; it can be passed as `apiKey` in the `groq-chat` proxy request.
-- **Text provider** (`textProvider` in `ProviderSettings`): `"groq"` (default, batch 10), `"claude"` (batch 5), `"nvidia"` (batch 40), or `"gemini"` (batch 10). Determines which LLM generates scene image prompts.
+- **AI providers** (Groq key, Inworld key, Anthropic key, Gemini key) are stored in `localStorage` and set via the Settings page. The Groq key is **never** in `.env`; it can be passed as `apiKey` in the `groq-chat` proxy request.
+- **Text provider** (`textProvider` in `ProviderSettings`): `"groq"` (default, batch 10), `"claude"` (batch 5), `"inworld"` (batch 15), or `"gemini"` (batch 10). Determines which LLM generates scene image prompts.
 - **Visual theme** (`visualTheme` in `ProviderSettings`): `"impasto"` (default — digital oil painting, heavy impasto style) or `"ww2"` (WWII archival photorealism, B&W film grain). Switches both the system prompt and image style suffix (`COMPACT_STYLE_SUFFIX` / `COMPACT_WWII_STYLE_SUFFIX` in `providers.ts`).
 - **Image models** selectable in Settings: `imagen-4.0-fast-generate-001` (default), `imagen-4.0-generate-001`, `imagen-4.0-ultra-generate-001`, `gemini-2.5-flash-image`, `gemini-3.1-flash-image-preview`.
 - `skipImageGeneration` setting (in `ProviderSettings`) bypasses Imagen calls entirely — useful for testing audio/script flows without consuming quota.
@@ -159,7 +159,6 @@ VEO_MODEL_ID=veo-3.1-lite-generate-001
 # Optional server-side LLM keys (can also be passed per-request)
 ANTHROPIC_API_KEY=<key>
 GROQ_API_KEY=<key>
-NVIDIA_API_KEY=<key>                       # Falls back to hardcoded key if absent
 GEMINI_API_KEY=<key>                       # Falls back to Vertex AI if absent
 CLIP_CONCURRENCY=3                         # Parallel clip generation workers (default: 3)
 ```
