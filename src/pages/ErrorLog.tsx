@@ -8,7 +8,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { AlertTriangle, ImageIcon, Volume2, RefreshCw, Video } from "lucide-react";
+import { AlertTriangle, ImageIcon, Volume2, RefreshCw, Video, Film } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -16,8 +16,10 @@ interface ErrorEntry {
   id: string;
   project_id: string;
   project_title: string;
-  scene_number: number;
-  type: "image" | "audio" | "video";
+  scene_number: number | null;
+  type: "image" | "audio" | "video" | "render";
+  render_job_type?: "clip" | "merge" | "animate" | "auto";
+  resolution?: string;
   error: string;
   attempts: number;
   updated_at: string;
@@ -30,6 +32,22 @@ interface ProjectGroup {
 }
 
 async function retryError(entry: ErrorEntry): Promise<void> {
+  if (entry.type === "render") {
+    const urls: Record<string, string> = {
+      clip: `/api/render/${entry.project_id}/clips`,
+      merge: `/api/render/${entry.project_id}`,
+      auto: `/api/render/${entry.project_id}/auto`,
+      animate: `/api/render/${entry.project_id}/animate`,
+    };
+    const url = urls[entry.render_job_type ?? "merge"];
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resolution: entry.resolution || "720p" }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+    return;
+  }
   if (entry.type === "video") {
     const res = await fetch(`/api/render/${entry.project_id}/animate`, {
       method: "POST",
@@ -54,13 +72,16 @@ async function retryError(entry: ErrorEntry): Promise<void> {
 export default function ErrorLog() {
   const [errors, setErrors] = useState<ErrorEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "image" | "audio" | "video">("all");
+  const [filter, setFilter] = useState<"all" | "image" | "audio" | "video" | "render">("all");
   const [retrying, setRetrying] = useState<Set<string>>(new Set());
 
   const fetchErrors = async () => {
     setLoading(true);
     try {
-      const allProjects: any[] = await fetch("/api/projects").then(r => r.json());
+      const [allProjects, renderFails]: [any[], any[]] = await Promise.all([
+        fetch("/api/projects").then(r => r.json()),
+        fetch("/api/render/failures").then(r => r.json()).catch(() => []),
+      ]);
       const entries: ErrorEntry[] = [];
 
       for (const proj of allProjects) {
@@ -105,6 +126,23 @@ export default function ErrorLog() {
         }
       }
 
+      for (const r of (Array.isArray(renderFails) ? renderFails : [])) {
+        if (r.error) {
+          entries.push({
+            id: r.id,
+            project_id: r.project_id,
+            project_title: r.project_title,
+            scene_number: null,
+            type: "render",
+            render_job_type: r.type,
+            resolution: r.resolution,
+            error: r.error,
+            attempts: 1,
+            updated_at: r.updated_at,
+          });
+        }
+      }
+
       entries.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
       setErrors(entries);
     } catch (e) {
@@ -132,13 +170,18 @@ export default function ErrorLog() {
   const imageFails = errors.filter(e => e.type === "image").length;
   const audioFails = errors.filter(e => e.type === "audio").length;
   const videoFails = errors.filter(e => e.type === "video").length;
+  const renderFails = errors.filter(e => e.type === "render").length;
 
   const handleRetry = async (entry: ErrorEntry) => {
     setRetrying(prev => new Set(prev).add(entry.id));
     try {
       await retryError(entry);
       setErrors(prev => prev.filter(e => e.id !== entry.id));
-      toast.success(`Queued retry for scene ${entry.scene_number}`);
+      toast.success(
+        entry.type === "render"
+          ? `Queued retry for ${RENDER_JOB_LABELS[entry.render_job_type ?? ""] ?? entry.render_job_type}`
+          : `Queued retry for scene ${entry.scene_number}`
+      );
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -146,9 +189,17 @@ export default function ErrorLog() {
     }
   };
 
+  const RENDER_JOB_LABELS: Record<string, string> = {
+    clip: "Clip Generation",
+    merge: "Merge / Export",
+    auto: "Auto Pipeline",
+    animate: "Animation",
+  };
+
   const typeIcon = (type: ErrorEntry["type"]) => {
     if (type === "image") return <ImageIcon className="h-3 w-3 mr-1" />;
     if (type === "audio") return <Volume2 className="h-3 w-3 mr-1" />;
+    if (type === "render") return <Film className="h-3 w-3 mr-1" />;
     return <Video className="h-3 w-3 mr-1" />;
   };
 
@@ -170,7 +221,7 @@ export default function ErrorLog() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4 flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-destructive" />
@@ -207,6 +258,15 @@ export default function ErrorLog() {
             </div>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <Film className="h-5 w-5 text-red-500" />
+            <div>
+              <p className="text-2xl font-bold text-foreground">{renderFails}</p>
+              <p className="text-xs text-muted-foreground">Render Failures</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filter */}
@@ -221,6 +281,7 @@ export default function ErrorLog() {
             <SelectItem value="image">Images only</SelectItem>
             <SelectItem value="audio">Audio only</SelectItem>
             <SelectItem value="video">Video only</SelectItem>
+            <SelectItem value="render">Render only</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -251,7 +312,10 @@ export default function ErrorLog() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mb-0.5">
-                          <span>Scene #{e.scene_number}</span>
+                          {e.type === "render"
+                            ? <span>{RENDER_JOB_LABELS[e.render_job_type ?? ""] ?? e.render_job_type}</span>
+                            : <span>Scene #{e.scene_number}</span>
+                          }
                           <span>·</span>
                           <span>{e.attempts} attempt{e.attempts !== 1 ? "s" : ""}</span>
                           <span>·</span>

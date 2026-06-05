@@ -1,7 +1,7 @@
 import express, { Request, Response } from "express";
 import { db } from "../db.js";
 import { projects, scenes, renderJobs } from "../../shared/schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
 import { execSync, spawn } from "child_process";
@@ -289,6 +289,29 @@ function isValidVideoClip(file: string): boolean {
 }
 
 // ── Routes ─────────────────────────────────────────────────────────────────
+
+/** GET /api/render/failures — all failed render jobs, for the ErrorLog page */
+router.get("/failures", async (req: Request, res: Response) => {
+  try {
+    const failed = await db
+      .select({
+        id: renderJobs.id,
+        project_id: renderJobs.project_id,
+        project_title: projects.title,
+        type: renderJobs.type,
+        error: renderJobs.error,
+        updated_at: renderJobs.updated_at,
+        resolution: renderJobs.resolution,
+      })
+      .from(renderJobs)
+      .innerJoin(projects, eq(renderJobs.project_id, projects.id))
+      .where(eq(renderJobs.status, "failed"))
+      .orderBy(desc(renderJobs.updated_at));
+    res.json(failed);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 /**
  * POST /api/render/:id/clips
