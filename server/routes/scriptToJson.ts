@@ -47,6 +47,7 @@ interface JobParams {
   style: "impasto" | "ww2";
   provider: "groq" | "inworld" | "claude" | "gemini";
   apiKey: string;
+  groqApiKeys?: string[];
   claudeModel?: string;
   groqModel?: string;
   geminiModel?: string;
@@ -530,7 +531,28 @@ async function callPass2Batch(
 // ── Pipeline runner ───────────────────────────────────────────────────────────
 
 async function runJob(job: Job, params: JobParams): Promise<void> {
-  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel, groqModel, geminiModel } = params;
+  const { title, script, secondsPerScene, style, provider, apiKey, groqApiKeys: rawGroqKeys, claudeModel, groqModel, geminiModel } = params;
+
+  const groqKeyPool = provider === "groq"
+    ? (rawGroqKeys?.filter(k => k?.trim()) ?? (apiKey ? [apiKey] : []))
+    : [];
+  let groqKeyIndex = 0;
+  const activeKey = () => provider === "groq" ? (groqKeyPool[groqKeyIndex] ?? apiKey) : apiKey;
+
+  async function withGroqRotation<T>(fn: (key: string) => Promise<T>): Promise<T> {
+    for (;;) {
+      try {
+        return await fn(activeKey());
+      } catch (e: any) {
+        if (provider === "groq" && e.message?.includes("daily token limit") && groqKeyIndex + 1 < groqKeyPool.length) {
+          groqKeyIndex++;
+          console.log(`[groq] Key ${groqKeyIndex} exhausted (TPD), rotating to key ${groqKeyIndex + 1}/${groqKeyPool.length}`);
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
   const wordsPerScene = Math.floor((WORDS_PER_MINUTE * secondsPerScene) / 60);
   const batchSize = provider === "groq" 
     ? GROQ_BATCH_SIZE 
@@ -571,19 +593,19 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
         else if (provider === "inworld") waitMs = 3000;
         await delay(waitMs);
       }
-      const scenes = await callPass1(
+      const scenes = await withGroqRotation(key => callPass1(
         chunks[i],
         nextId,
         wordsPerScene,
         secondsPerScene,
         provider,
-        apiKey,
+        key,
         claudeModel,
         groqModel,
         3,
         true,
         geminiModel
-      );
+      ));
       scenes.forEach((s, idx) => { s.id = nextId + idx; });
       allSplitScenes.push(...scenes);
       nextId += scenes.length;
@@ -613,7 +635,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
       }
       const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);
       const anchor = buildContinuityAnchor(completedForAnchor);
-      const results = await callPass2Batch(title, batch, style, provider, apiKey, anchor, claudeModel, groqModel, 3, true, geminiModel);
+      const results = await withGroqRotation(key => callPass2Batch(title, batch, style, provider, key, anchor, claudeModel, groqModel, 3, true, geminiModel));
 
       for (const r of results) {
         const idVal = r.id ?? r.scene_number ?? r.sceneNumber ?? r.scene_id ?? r.scene_Id;
@@ -669,7 +691,7 @@ router.get("/", (_req: Request, res: Response) => {
 });
 
 router.post("/", (req: Request, res: Response) => {
-  const { title, script, secondsPerScene, style, provider, apiKey, claudeModel, groqModel, geminiModel } = req.body as JobParams;
+  const { title, script, secondsPerScene, style, provider, apiKey, groqApiKeys, claudeModel, groqModel, geminiModel } = req.body as JobParams;
 
   if (!title || !script || !provider) {
     return res.status(400).json({ error: "title, script, and provider are required" });
@@ -713,7 +735,7 @@ router.post("/", (req: Request, res: Response) => {
   saveJobsToDisk();
 
   // Fire and forget — runs in background
-  runJob(job, { title, script, secondsPerScene: secondsPerScene ?? 15, style: style ?? "impasto", provider, apiKey: apiKey ?? "", claudeModel, groqModel, geminiModel });
+  runJob(job, { title, script, secondsPerScene: secondsPerScene ?? 15, style: style ?? "impasto", provider, apiKey: apiKey ?? "", groqApiKeys, claudeModel, groqModel, geminiModel });
 
   res.json({ jobId });
 });

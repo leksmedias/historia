@@ -369,6 +369,26 @@ export async function runScriptToJson(
       : params.inworldApiKey
   ) ?? "";
 
+  const groqKeyPool = provider === "groq"
+    ? (params.groqApiKeys?.filter(k => k?.trim()) ?? (apiKey ? [apiKey] : []))
+    : [];
+  let groqKeyIndex = 0;
+  const activeKey = () => provider === "groq" ? (groqKeyPool[groqKeyIndex] ?? apiKey) : apiKey;
+
+  async function withGroqRotation<T>(fn: (key: string) => Promise<T>): Promise<T> {
+    for (;;) {
+      try {
+        return await fn(activeKey());
+      } catch (e: any) {
+        if (provider === "groq" && e.message?.includes("daily token limit") && groqKeyIndex + 1 < groqKeyPool.length) {
+          groqKeyIndex++;
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
   // Vertex AI Claude predictions or Vertex AI Gemini predictions do not require a client-side API key
   const isVertex = (provider === "claude" && (
     claudeModel?.startsWith("publishers/") ||
@@ -415,19 +435,19 @@ export async function runScriptToJson(
       else if (provider === "inworld") waitMs = 3000;
       await delay(waitMs);
     }
-    const scenes = await callPass1(
+    const scenes = await withGroqRotation(key => callPass1(
       chunks[i],
       nextId,
       wordsPerScene,
       secondsPerScene,
       provider,
-      apiKey,
+      key,
       params.groqModel,
       params.claudeModel,
       3,
       true,
       params.geminiModel
-    );
+    ));
     scenes.forEach((s, idx) => { s.id = nextId + idx; });
     if (scenes.length === 0) {
       console.warn(`[${provider}] Pass1 chunk ${i + 1}/${chunks.length} returned 0 scenes`);
@@ -458,7 +478,7 @@ export async function runScriptToJson(
     const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);
     const anchor = buildContinuityAnchor(completedForAnchor);
 
-    const results = await callPass2Batch(title, batch, style, provider, apiKey, anchor, params.groqModel, params.claudeModel, 3, true, params.geminiModel);
+    const results = await withGroqRotation(key => callPass2Batch(title, batch, style, provider, key, anchor, params.groqModel, params.claudeModel, 3, true, params.geminiModel));
 
     for (const r of results) {
       const idVal = r.id ?? r.scene_number ?? r.sceneNumber ?? r.scene_id ?? r.scene_Id;

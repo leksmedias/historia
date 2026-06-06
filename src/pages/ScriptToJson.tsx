@@ -217,6 +217,7 @@ export default function ScriptToJson() {
           style,
           provider,
           apiKey,
+          groqApiKeys: provider === "groq" ? settings.groqApiKeys?.filter(k => k?.trim()) : undefined,
           claudeModel: settings.claudeModel,
           geminiModel: settings.geminiModel,
           groqModel: settings.groqModel,

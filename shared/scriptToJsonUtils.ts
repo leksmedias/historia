@@ -25,6 +25,7 @@ export interface ScriptToJsonParams {
   style: "impasto" | "ww2";
   provider: "groq" | "inworld" | "claude" | "gemini";
   groqApiKey?: string;
+  groqApiKeys?: string[];
   inworldApiKey?: string;
   anthropicApiKey?: string;
   geminiApiKey?: string;
