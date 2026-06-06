@@ -1047,21 +1047,35 @@ function buildXfadeFilter(durations: number[], xd: number): string {
   const n = durations.length;
   const vParts: string[] = [];
   const aParts: string[] = [];
-  let offset = 0;
 
+  // Video: xfade chain — offset-based, correct as-is
+  let vOffset = 0;
   for (let i = 1; i < n; i++) {
     const inV  = i === 1     ? "[0:v]"  : `[xv${i}]`;
-    const inA  = i === 1     ? "[0:a]"  : `[xa${i}]`;
     const outV = i === n - 1 ? "[vout]" : `[xv${i + 1}]`;
-    const outA = i === n - 1 ? "[aout]" : `[xa${i + 1}]`;
-
-    offset += durations[i - 1] - xd;
-
+    vOffset += durations[i - 1] - xd;
     vParts.push(
-      `${inV}[${i}:v]xfade=transition=fade:duration=${xd.toFixed(3)}:offset=${Math.max(0, offset).toFixed(3)}${outV}`
+      `${inV}[${i}:v]xfade=transition=fade:duration=${xd.toFixed(3)}:offset=${Math.max(0, vOffset).toFixed(3)}${outV}`
     );
-    aParts.push(`${inA}[${i}:a]acrossfade=d=${xd.toFixed(3)}${outA}`);
   }
+
+  // Audio: adelay each clip to its absolute start position, then amix.
+  // acrossfade is a sequential splicer — it does NOT support absolute offsets
+  // and causes audio from clip N+1 to bleed into clip N during transitions.
+  // adelay positions each stream at the correct timeline offset so audio
+  // matches video exactly throughout the merge.
+  let audioOffset = 0;
+  for (let i = 0; i < n; i++) {
+    if (i === 0) {
+      aParts.push(`[0:a]asetpts=PTS-STARTPTS[ad0]`);
+    } else {
+      const delayMs = Math.round(audioOffset * 1000);
+      aParts.push(`[${i}:a]adelay=${delayMs}|${delayMs}[ad${i}]`);
+    }
+    if (i < n - 1) audioOffset += durations[i] - xd;
+  }
+  const adInputs = Array.from({ length: n }, (_, i) => `[ad${i}]`).join("");
+  aParts.push(`${adInputs}amix=inputs=${n}:duration=longest:normalize=0[aout]`);
 
   return [...vParts, ...aParts].join(";");
 }
@@ -1133,7 +1147,12 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
 
     if (isValid) {
       clips.push(clip);
-      durations.push(getAudioDuration(clip));
+      // Use source audio duration for offset math — avoids container-rounding
+      // drift that accumulates when reading duration from encoded MP4 clips.
+      const audioSrcPath = path.join("uploads", projectId, "audio", s.audio_file ?? `${s.scene_number}.mp3`);
+      durations.push(fs.existsSync(audioSrcPath)
+        ? parseFloat(getAudioDuration(audioSrcPath).toFixed(3))
+        : getAudioDuration(clip));
     }
     mergeJobs[projectId].progress = Math.round(((i + 1) / sceneList.length) * 78);
   }
