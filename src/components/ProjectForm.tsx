@@ -48,7 +48,7 @@ export default function ProjectForm() {
     if (!canSubmit) return;
 
     const settings = loadProviderSettings();
-    if (!settings.groqApiKey && !settings.googleCloudApiKey && !settings.inworldApiKey) {
+    if (!settings.groqApiKeys?.some(k => k?.trim()) && !settings.googleCloudApiKey && !settings.inworldApiKey) {
       toast.error("An API key (Groq, Google Cloud, or Inworld) is required. Go to Settings to configure it.");
       return;
     }

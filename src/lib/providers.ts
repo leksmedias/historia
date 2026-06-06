@@ -18,7 +18,7 @@ export interface ProviderSettings {
   modelId: string;
   imageConcurrency: number;
   audioConcurrency: number;
-  groqApiKey: string;
+  groqApiKeys: string[];
   googleCloudApiKey: string;
   claudeModel: string;
   geminiModel: string;
@@ -86,7 +86,7 @@ const DEFAULTS: ProviderSettings = {
   modelId: "inworld-tts-1.5-max",
   imageConcurrency: 2,
   audioConcurrency: 2,
-  groqApiKey: "",
+  groqApiKeys: [""],
   googleCloudApiKey: "",
   claudeModel: "claude-sonnet-4-6",
   geminiModel: "gemini-3.1-pro-preview",
@@ -101,7 +101,14 @@ const DEFAULTS: ProviderSettings = {
 export function loadProviderSettings(): ProviderSettings {
   try {
     const raw = localStorage.getItem("historia-settings");
-    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
+    if (!raw) return DEFAULTS;
+    const parsed = JSON.parse(raw);
+    // Migrate old single groqApiKey to array
+    if (typeof parsed.groqApiKey === "string" && !parsed.groqApiKeys) {
+      parsed.groqApiKeys = parsed.groqApiKey ? [parsed.groqApiKey] : [""];
+      delete parsed.groqApiKey;
+    }
+    return { ...DEFAULTS, ...parsed };
   } catch {
     return DEFAULTS;
   }
@@ -420,11 +427,14 @@ interface BatchPromptResult {
 async function callGroqForBatch(
   title: string,
   scenes: Array<{ scene_number: number; script_text: string }>,
-  groqApiKey: string,
-  retryOnRateLimit = true,
+  groqApiKeys: string[],
   stylePrompt?: string,
-  visualTheme?: "impasto" | "ww2"
+  visualTheme?: "impasto" | "ww2",
+  keyIndex = 0
 ): Promise<BatchPromptResult[]> {
+  const activeKeys = groqApiKeys.filter(k => k?.trim());
+  const apiKey = activeKeys[keyIndex] || activeKeys[0] || "";
+
   const basePrompt = visualTheme === "ww2" ? BATCH_WWII_IMAGE_PROMPT : BATCH_IMAGE_PROMPT;
   const systemPrompt = stylePrompt
     ? `${basePrompt}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
@@ -437,7 +447,7 @@ async function callGroqForBatch(
 
   const result = await apiProxy({
     action: "groq-chat",
-    apiKey: groqApiKey,
+    apiKey,
     payload: {
       model: "llama-3.3-70b-versatile",
       messages: [
@@ -454,15 +464,15 @@ async function callGroqForBatch(
     const errText = typeof result.data === "string"
       ? result.data
       : JSON.stringify(result.data || {}).substring(0, 500);
-    if (result.status === 429) {
-      if (retryOnRateLimit) {
-        console.log("[groq] Rate limited — waiting 15s before retry...");
-        await delay(15000);
-        return callGroqForBatch(title, scenes, groqApiKey, false, stylePrompt, visualTheme);
+    if (result.status === 429 || result.status === 401) {
+      const nextIndex = keyIndex + 1;
+      if (nextIndex < activeKeys.length) {
+        console.log(`[groq] Key ${keyIndex + 1} failed (${result.status}) — trying key ${nextIndex + 1} of ${activeKeys.length}...`);
+        return callGroqForBatch(title, scenes, groqApiKeys, stylePrompt, visualTheme, nextIndex);
       }
-      throw new Error("Groq rate limited — try again in a moment.");
+      if (result.status === 429) throw new Error("All Groq API keys are rate limited — try again in a moment.");
+      throw new Error("Groq API key is invalid. Update it in Settings.");
     }
-    if (result.status === 401) throw new Error("Groq API key is invalid. Update it in Settings.");
     throw new Error(`Groq API error (HTTP ${result.status}): ${errText.substring(0, 200)}`);
   }
 
@@ -706,7 +716,7 @@ export async function generateScenesForChunk(
   _chunkIdx: number,
   _totalChunks: number,
   startSceneNumber: number,
-  groqApiKey: string,
+  groqApiKeys: string[],
   splitMode: "smart" | "exact" | "duration" | "two" = "smart",
   stylePrompt?: string,
   googleCloudApiKey?: string,
@@ -729,7 +739,7 @@ export async function generateScenesForChunk(
       ? await callClaudeForBatch(title, sceneChunks, googleCloudApiKey || "", true, stylePrompt, claudeModel, visualTheme)
       : useProvider === "gemini"
         ? await callGeminiForBatch(title, sceneChunks, googleCloudApiKey || "", true, stylePrompt, geminiModel, visualTheme)
-        : await callGroqForBatch(title, sceneChunks, groqApiKey || "", true, stylePrompt, visualTheme);
+        : await callGroqForBatch(title, sceneChunks, groqApiKeys, stylePrompt, visualTheme);
 
   return sceneChunks.map((sc, idx) => {
     const p = prompts[idx] || {} as BatchPromptResult;
@@ -752,7 +762,7 @@ export async function generateSceneManifest(
   title: string,
   script: string,
   _styleSummary: any,
-  groqApiKey: string,
+  groqApiKeys: string[],
   splitMode: "smart" | "exact" | "duration" | "two" = "smart",
   onChunkProgress?: (current: number, total: number) => void,
   stylePrompt?: string,
@@ -784,7 +794,7 @@ export async function generateSceneManifest(
         ? await callClaudeForBatch(title, batch, googleCloudApiKey || "", true, stylePrompt, claudeModel, visualTheme)
         : useProvider === "gemini"
           ? await callGeminiForBatch(title, batch, googleCloudApiKey || "", true, stylePrompt, geminiModel, visualTheme)
-          : await callGroqForBatch(title, batch, groqApiKey || "", true, stylePrompt, visualTheme);
+          : await callGroqForBatch(title, batch, groqApiKeys, stylePrompt, visualTheme);
 
     const merged: SceneManifest[] = batch.map((sc, idx) => {
       const p = prompts[idx] || {} as BatchPromptResult;
@@ -892,7 +902,7 @@ export async function generateInworldAudio(
 
 export async function regenerateImagePrompt(
   scriptText: string,
-  groqApiKey: string,
+  groqApiKeys: string[],
   _styleSummary?: any,
   googleCloudApiKey?: string,
   claudeModel?: string,
@@ -1023,29 +1033,39 @@ Return ONLY the prompt text — one sentence ending with a period. No JSON, no m
     return content.trim();
   }
 
-  const result = await apiProxy({
-    action: "groq-chat",
-    apiKey: groqApiKey,
-    payload: {
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.5,
-    },
-  });
+  const activeKeys = groqApiKeys.filter(k => k?.trim());
+  let lastError: Error = new Error("No Groq API keys configured.");
+  for (let i = 0; i < activeKeys.length; i++) {
+    const result = await apiProxy({
+      action: "groq-chat",
+      apiKey: activeKeys[i],
+      payload: {
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.5,
+      },
+    });
 
-  if (result.status && result.status >= 400) {
-    const errText = typeof result.data === "string"
-      ? result.data
-      : JSON.stringify(result.data || {}).substring(0, 500);
-    throw new Error(`Groq error: ${result.status} - ${errText}`);
+    if (result.status === 429 || result.status === 401) {
+      console.log(`[groq] Key ${i + 1} failed (${result.status})${i + 1 < activeKeys.length ? " — trying next key..." : ""}`);
+      lastError = new Error(result.status === 429 ? "Groq rate limited" : "Groq API key invalid");
+      continue;
+    }
+
+    if (result.status && result.status >= 400) {
+      const errText = typeof result.data === "string"
+        ? result.data
+        : JSON.stringify(result.data || {}).substring(0, 500);
+      throw new Error(`Groq error: ${result.status} - ${errText}`);
+    }
+
+    const content = result.data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error("No content from Groq");
+    return content.trim();
   }
-
-  const data = result.data;
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("No content from Groq");
-  return content.trim();
+  throw lastError;
 }
 

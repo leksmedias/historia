@@ -194,9 +194,9 @@ export default function ScriptToJson() {
 
   const wordCount = script.trim() ? script.trim().split(/\s+/).length : 0;
   const estimatedScenes = wordCount > 0 ? estimateSceneCount(wordCount, secondsPerScene) : 0;
-  const apiKey = provider === "groq" 
-    ? settings.groqApiKey 
-    : provider === "claude" 
+  const apiKey = provider === "groq"
+    ? (settings.groqApiKeys?.find(k => k?.trim()) || "")
+    : provider === "claude"
     ? settings.googleCloudApiKey 
     : provider === "gemini"
     ? settings.googleCloudApiKey
@@ -430,7 +430,7 @@ export default function ScriptToJson() {
               </label>
               <div className="grid grid-cols-4 gap-2">
                 {(["groq", "inworld", "claude", "gemini"] as const).map((p) => {
-                  const key = p === "groq" ? settings.groqApiKey : p === "claude" || p === "gemini" ? settings.googleCloudApiKey : settings.inworldApiKey;
+                  const key = p === "groq" ? (settings.groqApiKeys?.find(k => k?.trim()) || "") : p === "claude" || p === "gemini" ? settings.googleCloudApiKey : settings.inworldApiKey;
                   const isVertex = p === "claude" || p === "gemini";
                   return (
                     <button

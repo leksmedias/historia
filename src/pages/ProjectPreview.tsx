@@ -361,15 +361,15 @@ export default function ProjectPreview() {
   const handleRegenPrompt = async () => {
     if (!scene) return;
     const settings = loadProviderSettings();
-    if (!settings.groqApiKey && !settings.googleCloudApiKey && !settings.inworldApiKey) {
+    if (!settings.groqApiKeys?.some(k => k?.trim()) && !settings.googleCloudApiKey && !settings.inworldApiKey) {
       toast.error("No API key configured for prompt generation. Update it in Settings.");
       return;
     }
     setRegenPrompt(true);
     try {
       const newPrompt = await regenerateImagePrompt(
-        scene.script_text, 
-        settings.groqApiKey, 
+        scene.script_text,
+        settings.groqApiKeys,
         null, 
         settings.googleCloudApiKey,
         settings.claudeModel,

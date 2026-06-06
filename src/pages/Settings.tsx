@@ -50,11 +50,12 @@ export default function Settings() {
   };
 
   const testGroq = async () => {
-    if (!settings.groqApiKey) { setGroqStatus("error"); setGroqMsg("No API key provided"); return; }
+    const firstKey = (settings.groqApiKeys || []).find(k => k?.trim());
+    if (!firstKey) { setGroqStatus("error"); setGroqMsg("No API key provided"); return; }
     setGroqStatus("checking"); setGroqMsg("");
     try {
       const res = await fetch("https://api.groq.com/openai/v1/models", {
-        headers: { Authorization: `Bearer ${settings.groqApiKey}` },
+        headers: { Authorization: `Bearer ${firstKey}` },
       });
       if (res.status === 401) { setGroqStatus("error"); setGroqMsg("Invalid API key"); return; }
       if (res.status === 429) { setGroqStatus("error"); setGroqMsg("Rate limited — try again later"); return; }
@@ -216,30 +217,59 @@ export default function Settings() {
               {/* Groq */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-foreground">Groq API Key</label>
+                  <label className="text-sm font-medium text-foreground">Groq API Keys</label>
                   <div className="flex items-center gap-2">
                     <StatusIndicator status={groqStatus} message={groqMsg} />
+                    <Button variant="ghost" size="icon" onClick={() => setShowGroq(!showGroq)} title={showGroq ? "Hide keys" : "Show keys"}>
+                      {showGroq ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={testGroq} className="text-xs h-7">
                       {groqStatus === "checking" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Test"}
                     </Button>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Input
-                    type={showGroq ? "text" : "password"}
-                    placeholder="gsk_..."
-                    value={settings.groqApiKey}
-                    onChange={(e) => { setSettings(s => ({ ...s, groqApiKey: e.target.value })); setGroqStatus("idle"); }}
-                    className="bg-secondary flex-1"
-                  />
-                  <Button variant="ghost" size="icon" onClick={() => setShowGroq(!showGroq)}>
-                    {showGroq ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {(settings.groqApiKeys || [""]).map((key, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Input
+                      type={showGroq ? "text" : "password"}
+                      placeholder="gsk_..."
+                      value={key}
+                      onChange={(e) => {
+                        const keys = [...(settings.groqApiKeys || [""])];
+                        keys[i] = e.target.value;
+                        setSettings(s => ({ ...s, groqApiKeys: keys }));
+                        setGroqStatus("idle");
+                      }}
+                      className="bg-secondary flex-1"
+                    />
+                    {(settings.groqApiKeys || [""]).length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const keys = (settings.groqApiKeys || [""]).filter((_, idx) => idx !== i);
+                          setSettings(s => ({ ...s, groqApiKeys: keys }));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {(settings.groqApiKeys || [""]).length < 5 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7"
+                    onClick={() => setSettings(s => ({ ...s, groqApiKeys: [...(s.groqApiKeys || [""]), ""] }))}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />Add backup key
                   </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">Scene splitting and prompt generation — get one at console.groq.com</p>
+                )}
+                <p className="text-xs text-muted-foreground">Scene splitting and prompt generation — add up to 5 keys for automatic failover on rate limits. Get keys at console.groq.com</p>
               </div>
 
-              {(settings.textProvider === "groq" || (settings.groqApiKey || "").length > 0) && (
+              {(settings.textProvider === "groq" || (settings.groqApiKeys || []).some(k => k?.trim())) && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Groq Model</label>
                   <Select
