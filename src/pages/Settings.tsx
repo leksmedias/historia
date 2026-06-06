@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Plus, Trash2, Key, Server, Mic } from "lucide-react";
-import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, IMAGE_MODELS, ASPECT_RATIOS, type ProviderSettings } from "@/lib/providers";
+import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, IMAGE_MODELS, ASPECT_RATIOS, OVERLAY_POSITIONS, OVERLAY_FONTS, type ProviderSettings, type OverlayPosition } from "@/lib/providers";
 import { GROQ_MODELS } from "../../shared/scriptToJsonUtils";
 
 type HealthStatus = "idle" | "checking" | "ok" | "error";
@@ -553,7 +553,7 @@ export default function Settings() {
             <CardHeader>
               <CardTitle className="text-base font-display">Video Subtitles / Overlay</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-5">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
                   Start Delay: {settings.subtitleDelay ?? 0.8} seconds
@@ -566,6 +566,53 @@ export default function Settings() {
                 <p className="text-xs text-muted-foreground">
                   Delay before subtitle typing animation starts on each scene (offsetting TTS audio silence/breathing room).
                 </p>
+              </div>
+
+              <div className="border-t border-border" />
+
+              {/* Font */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Overlay Font</label>
+                <Select
+                  value={settings.overlayFont ?? "Tox Typewriter"}
+                  onValueChange={(v) => setSettings(s => ({ ...s, overlayFont: v }))}
+                >
+                  <SelectTrigger className="bg-secondary">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {OVERLAY_FONTS.map(f => (
+                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Font used for burned-in overlay text in the exported video.</p>
+              </div>
+
+              <div className="border-t border-border" />
+
+              {/* Position grid */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Overlay Position</label>
+                <div className="grid grid-cols-3 gap-1.5 w-fit">
+                  {OVERLAY_POSITIONS.map(p => {
+                    const active = (settings.overlayPosition ?? "bottom-left") === p.value;
+                    return (
+                      <button
+                        key={p.value}
+                        onClick={() => setSettings(s => ({ ...s, overlayPosition: p.value as OverlayPosition }))}
+                        className={`px-3 py-2 rounded text-xs font-medium transition-colors ${
+                          active
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-muted-foreground hover:bg-primary/20 hover:text-foreground"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">Where the overlay text appears in the frame.</p>
               </div>
             </CardContent>
           </Card>

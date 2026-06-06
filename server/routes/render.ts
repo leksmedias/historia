@@ -148,8 +148,23 @@ const animateJobs: Record<string, AnimateJob> = {};
 
 // ── FFmpeg helpers ─────────────────────────────────────────────────────────
 
-function findFontFile(): string | null {
-  // Bundled font — always available in the project
+function findFontFile(preferredFont?: string): string | null {
+  const fontsDir = path.join(process.cwd(), "fonts");
+
+  // Scan bundled fonts/ directory first
+  if (fs.existsSync(fontsDir)) {
+    const files = fs.readdirSync(fontsDir).filter(f => /\.(ttf|otf|woff)$/i.test(f));
+    if (preferredFont) {
+      const match = files.find(f =>
+        f.replace(/\.(ttf|otf|woff)$/i, "").toLowerCase() === preferredFont.toLowerCase()
+      );
+      if (match) return path.join(fontsDir, match);
+    }
+    // Default: first bundled font (Tox Typewriter)
+    if (files.length > 0) return path.join(fontsDir, files[0]);
+  }
+
+  // Legacy path for Tox Typewriter specifically
   const bundled = path.join(process.cwd(), "fonts", "Tox Typewriter.ttf");
   if (fs.existsSync(bundled)) return bundled;
 
@@ -191,9 +206,12 @@ function findFontFile(): string | null {
     if (fs.existsSync(p)) return p;
   }
 
-  // Last resort on Linux: ask fontconfig for any monospace font
+  // Last resort on Linux: ask fontconfig — try preferred font first, then monospace fallbacks
   if (process.platform !== "win32") {
-    for (const query of [":spacing=mono", "monospace", ""]) {
+    const fcQueries = preferredFont
+      ? [preferredFont, ":spacing=mono", "monospace", ""]
+      : [":spacing=mono", "monospace", ""];
+    for (const query of fcQueries) {
       try {
         const result = execSync(`fc-match --format="%{file}" ${query}`, {
           encoding: "utf-8",
@@ -224,17 +242,33 @@ function escapeDrawtextText(s: string): string {
     .replace(/\n/g, "\\n");
 }
 
+function overlayXY(position: string): string {
+  switch (position) {
+    case "top-left":      return "x=w*0.04:y=h*0.08";
+    case "top-center":    return "x=(w-tw)/2:y=h*0.08";
+    case "top-right":     return "x=w-tw-w*0.04:y=h*0.08";
+    case "center-left":   return "x=w*0.04:y=(h-th)/2";
+    case "center":        return "x=(w-tw)/2:y=(h-th)/2";
+    case "center-right":  return "x=w-tw-w*0.04:y=(h-th)/2";
+    case "bottom-center": return "x=(w-tw)/2:y=h-th-h*0.12";
+    case "bottom-right":  return "x=w-tw-w*0.04:y=h-th-h*0.12";
+    default:              return "x=w*0.04:y=h-th-h*0.12"; // bottom-left
+  }
+}
+
 function buildTypewriterFilter(
   overlayText: string,
   fontFile: string | null,
   fontSize: number,
-  dVal: number
+  dVal: number,
+  position = "bottom-left"
 ): string {
   const text = wordWrap(overlayText.trim().toUpperCase());
   const N = text.length;
   const charDelaySec = Math.max(0.030, Math.min(0.080, 1.4 / N));
   const totalVisible = 4.0;
   const fontOpt = fontFile ? `fontfile='${escapeFFmpegPath(fontFile)}':` : "";
+  const xy = overlayXY(position);
 
   let chain = "";
   for (let i = 0; i < N; i++) {
@@ -243,7 +277,7 @@ function buildTypewriterFilter(
       ? (dVal + (i + 1) * charDelaySec).toFixed(3)
       : (dVal + totalVisible).toFixed(3);
     const partial = escapeDrawtextText(text.slice(0, i + 1));
-    chain += `,drawtext=${fontOpt}text='${partial}':fontcolor=white:fontsize=${fontSize}:shadowcolor=black@0.9:shadowx=3:shadowy=3:x=w*0.04:y=h-th-h*0.12:enable='between(t,${charStart},${charEnd})'`;
+    chain += `,drawtext=${fontOpt}text='${partial}':fontcolor=white:fontsize=${fontSize}:shadowcolor=black@0.9:shadowx=3:shadowy=3:${xy}:enable='between(t,${charStart},${charEnd})'`;
   }
   return chain;
 }
@@ -370,12 +404,14 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
     const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
     const [W, H] = RESOLUTIONS[resKey];
     const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
+    const overlayPosition = req.body?.overlayPosition || "bottom-left";
+    const overlayFont = req.body?.overlayFont || "Tox Typewriter";
 
     clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
     await upsertJobStatus(projectId, "clip", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
-    generateClips(projectId, ready, W, H, subtitleDelay).catch(e => {
+    generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont).catch(e => {
       console.error(`[clips] ${projectId} failed:`, e.message);
       clipJobs[projectId] = { ...clipJobs[projectId], status: "failed", error: e.message };
       upsertJobStatus(projectId, "clip", "failed", { error: e.message });
@@ -589,9 +625,11 @@ router.post("/:id/auto", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);
   const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
   const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
+  const overlayPosition = req.body?.overlayPosition || "bottom-left";
+  const overlayFont = req.body?.overlayFont || "Tox Typewriter";
   await upsertJobStatus(projectId, "auto", "running", { resolution: resKey });
   res.json({ success: true, message: "Auto pipeline started in background" });
-  runAutoPipeline(projectId, resKey, subtitleDelay).catch(e => {
+  runAutoPipeline(projectId, resKey, subtitleDelay, overlayPosition, overlayFont).catch(e => {
     console.error(`[auto] ${projectId} failed:`, e.message);
     if (autoJobs[projectId]) autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: e.message };
     upsertJobStatus(projectId, "auto", "failed", { error: e.message });
@@ -648,12 +686,14 @@ router.post("/:id", async (req: Request, res: Response) => {
     const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
     const [W, H] = RESOLUTIONS[resKey];
     const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
+    const overlayPosition = req.body?.overlayPosition || "bottom-left";
+    const overlayFont = req.body?.overlayFont || "Tox Typewriter";
 
     mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
     await upsertJobStatus(projectId, "merge", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
-    mergeVideo(projectId, ready, W, H, subtitleDelay).catch(e => {
+    mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont).catch(e => {
       console.error(`[merge] ${projectId} failed:`, e.message);
       mergeJobs[projectId] = { ...mergeJobs[projectId], status: "failed", error: e.message };
       upsertJobStatus(projectId, "merge", "failed", { error: e.message });
@@ -715,7 +755,8 @@ const AUDIO_FILTER = `loudnorm=I=-16:LRA=11:TP=-1.5`;
 async function buildVeoClip(
   veoPath: string, audioPath: string, dur: number,
   width: number, height: number, outPath: string,
-  overlayText?: string | null, delay?: number
+  overlayText?: string | null, delay?: number,
+  overlayPosition?: string, overlayFont?: string
 ): Promise<void> {
   const veoDur = getAudioDuration(veoPath);
   const speed  = veoDur / dur; // < 1.0 → Veo shorter than audio
@@ -741,7 +782,7 @@ async function buildVeoClip(
 
   const dVal = delay ?? 0.8;
   const drawtextFilter = overlayText?.trim()
-    ? buildTypewriterFilter(overlayText, findFontFile(), Math.round(height * 0.045), dVal)
+    ? buildTypewriterFilter(overlayText, findFontFile(overlayFont), Math.round(height * 0.045), dVal, overlayPosition)
     : "";
 
   const vFilter = `${vBase},fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5${drawtextFilter}`;
@@ -807,7 +848,8 @@ async function buildVeoClip(
 async function buildImageClip(
   imagePath: string, audioPath: string, dur: number,
   width: number, height: number, outPath: string, effect: KBEffect,
-  overlayText?: string | null, delay?: number
+  overlayText?: string | null, delay?: number,
+  overlayPosition?: string, overlayFont?: string
 ): Promise<void> {
   const FPS = 25;
   const kbFilter = buildKB(effect, dur, width, height, 1.3);
@@ -819,7 +861,7 @@ async function buildImageClip(
 
   const dVal = delay ?? 0.8;
   const drawtextFilter = overlayText?.trim()
-    ? buildTypewriterFilter(overlayText, findFontFile(), Math.round(height * 0.045), dVal)
+    ? buildTypewriterFilter(overlayText, findFontFile(overlayFont), Math.round(height * 0.045), dVal, overlayPosition)
     : "";
 
   const fadeOutStart = Math.max(0, dur - 0.5).toFixed(3);
@@ -855,7 +897,7 @@ async function buildImageClip(
  * Phase 1: generate one MP4 per scene, named by scene number (1.mp4, 2.mp4, …).
  * Duration = audio duration. Ken Burns effect applied at random (no repeat).
  */
-async function generateClips(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8) {
+async function generateClips(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter") {
   const clipsDir = path.join("uploads", projectId, "clips");
   fs.mkdirSync(clipsDir, { recursive: true });
 
@@ -883,11 +925,11 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
         try {
           if (fs.existsSync(veoPath)) {
             console.log(`[clips] scene ${num}: using Veo video`);
-            await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath, s.overlay_text, subtitleDelay);
+            await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath, s.overlay_text, subtitleDelay, overlayPosition, overlayFont);
           } else {
             const effect = KB_EFFECTS[idx % KB_EFFECTS.length];
             console.log(`[clips] scene ${num}: generating locally (${effect}, ${dur}s)`);
-            await buildImageClip(img, audioPath, dur, width, height, clipPath, effect, s.overlay_text, subtitleDelay);
+            await buildImageClip(img, audioPath, dur, width, height, clipPath, effect, s.overlay_text, subtitleDelay, overlayPosition, overlayFont);
           }
 
           if (!isValidVideoClip(clipPath)) {
@@ -1009,7 +1051,7 @@ function buildXfadeFilter(durations: number[], xd: number): string {
  * Phase 2: merge clips into output.mp4 with xfade transitions.
  * Reads from clips/ dir if pre-generated; otherwise generates clips inline.
  */
-async function mergeVideo(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8) {
+async function mergeVideo(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter") {
   const clipsDir = path.join("uploads", projectId, "clips");
   const renderDir = path.join("uploads", projectId, "render");
   fs.mkdirSync(renderDir, { recursive: true });
@@ -1055,12 +1097,12 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
       try {
         if (fs.existsSync(veoPath)) {
           console.log(`[merge] scene ${num}: regenerating Veo video clip inline`);
-          await buildVeoClip(veoPath, audioPath, dur, width, height, clip, s.overlay_text, subtitleDelay);
+          await buildVeoClip(veoPath, audioPath, dur, width, height, clip, s.overlay_text, subtitleDelay, overlayPosition, overlayFont);
         } else {
           const effect = pickEffect(prevEffect);
           prevEffect = effect;
           console.log(`[merge] scene ${num}: regenerating Ken Burns clip inline (${effect}, ${dur}s)`);
-          await buildImageClip(img, audioPath, dur, width, height, clip, effect, s.overlay_text, subtitleDelay);
+          await buildImageClip(img, audioPath, dur, width, height, clip, effect, s.overlay_text, subtitleDelay, overlayPosition, overlayFont);
         }
         isValid = true;
       } catch (e: any) {
@@ -1139,7 +1181,7 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
  * Full auto-pipeline: poll until all assets ready → generate clips → merge.
  * Runs entirely in-process; browser can be closed.
  */
-async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay = 0.8) {
+async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter") {
   const [W, H] = RESOLUTIONS[resKey];
   autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
   console.log(`[auto] ${projectId}: waiting for assets (${resKey})`);
@@ -1173,12 +1215,12 @@ async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay 
   console.log(`[auto] ${projectId}: ${ready.length} scenes ready → generating clips`);
   autoJobs[projectId].status = "generating_clips";
   clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
-  await generateClips(projectId, ready, W, H, subtitleDelay);
+  await generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont);
 
   console.log(`[auto] ${projectId}: clips done → merging`);
   autoJobs[projectId].status = "merging";
   mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
-  await mergeVideo(projectId, ready, W, H, subtitleDelay);
+  await mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont);
 
   autoJobs[projectId].status = "done";
   await upsertJobStatus(projectId, "auto", "done");

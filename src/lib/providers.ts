@@ -9,6 +9,32 @@ export interface CustomVoice {
   name: string;
 }
 
+export type OverlayPosition =
+  | "top-left" | "top-center" | "top-right"
+  | "center-left" | "center" | "center-right"
+  | "bottom-left" | "bottom-center" | "bottom-right";
+
+export const OVERLAY_POSITIONS: { value: OverlayPosition; label: string; row: number; col: number }[] = [
+  { value: "top-left",      label: "Top Left",      row: 0, col: 0 },
+  { value: "top-center",    label: "Top Center",    row: 0, col: 1 },
+  { value: "top-right",     label: "Top Right",     row: 0, col: 2 },
+  { value: "center-left",   label: "Mid Left",      row: 1, col: 0 },
+  { value: "center",        label: "Center",        row: 1, col: 1 },
+  { value: "center-right",  label: "Mid Right",     row: 1, col: 2 },
+  { value: "bottom-left",   label: "Bot Left",      row: 2, col: 0 },
+  { value: "bottom-center", label: "Bot Center",    row: 2, col: 1 },
+  { value: "bottom-right",  label: "Bot Right",     row: 2, col: 2 },
+];
+
+export const OVERLAY_FONTS = [
+  { value: "Tox Typewriter", label: "Tox Typewriter (default)" },
+  { value: "DejaVu Sans Mono", label: "DejaVu Sans Mono" },
+  { value: "Liberation Mono", label: "Liberation Mono" },
+  { value: "Courier New", label: "Courier New" },
+  { value: "Ubuntu Mono", label: "Ubuntu Mono" },
+  { value: "FreeMono", label: "FreeMono" },
+];
+
 export interface ProviderSettings {
   imageProvider: string;
   imageModel: string;
@@ -28,6 +54,8 @@ export interface ProviderSettings {
   customVoices: CustomVoice[];
   skipImageGeneration: boolean;
   subtitleDelay?: number;
+  overlayPosition?: OverlayPosition;
+  overlayFont?: string;
 }
 
 export const IMAGE_MODELS = [
@@ -96,6 +124,8 @@ const DEFAULTS: ProviderSettings = {
   customVoices: [],
   skipImageGeneration: false,
   subtitleDelay: 0.8,
+  overlayPosition: "bottom-left",
+  overlayFont: "Tox Typewriter",
 };
 
 export function loadProviderSettings(): ProviderSettings {
