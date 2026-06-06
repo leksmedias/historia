@@ -106,6 +106,19 @@ const RESOLUTIONS: Record<string, [number, number]> = {
   "1440p": [2560, 1440],
 };
 
+function resolveOutputSize(resKey: string, aspectRatio: string): [number, number] {
+  const [baseW, baseH] = RESOLUTIONS[resKey] ?? [1280, 720];
+  if (aspectRatio === "1:1") {
+    const side = Math.round(baseH / 2) * 2;
+    return [side, side];
+  }
+  if (aspectRatio === "9:16") {
+    const w = Math.round(baseH * 9 / 16 / 2) * 2;
+    return [w, baseH];
+  }
+  return [baseW, baseH];
+}
+
 const CONCURRENCY = Math.max(1, parseInt(process.env.CLIP_CONCURRENCY ?? "3", 10));
 
 // ── In-memory job stores ───────────────────────────────────────────────────
@@ -402,7 +415,8 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "No scenes ready — need completed image AND audio for each scene." });
 
     const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
-    const [W, H] = RESOLUTIONS[resKey];
+    const projectAR: string = (project.settings as any)?.aspectRatio || "16:9";
+    const [W, H] = resolveOutputSize(resKey, projectAR);
     const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
     const overlayPosition = req.body?.overlayPosition || "bottom-left";
     const overlayFont = req.body?.overlayFont || "Tox Typewriter";
@@ -527,7 +541,9 @@ router.post("/:id/animate", async (req: Request, res: Response) => {
     await upsertJobStatus(projectId, "animate", "running", { total: toAnimate.length });
     res.json({ success: true, total: toAnimate.length });
 
-    runVeoAnimation(projectId, toAnimate).catch(e => {
+    const [veoProject] = await db.select().from(projects).where(eq(projects.id, projectId));
+    const veoAR: string = (veoProject?.settings as any)?.aspectRatio || "16:9";
+    runVeoAnimation(projectId, toAnimate, veoAR).catch(e => {
       console.error(`[veo] ${projectId} failed:`, e.message);
       if (animateJobs[projectId]) {
         animateJobs[projectId] = { ...animateJobs[projectId], status: "failed", error: e.message };
@@ -627,9 +643,11 @@ router.post("/:id/auto", async (req: Request, res: Response) => {
   const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
   const overlayPosition = req.body?.overlayPosition || "bottom-left";
   const overlayFont = req.body?.overlayFont || "Tox Typewriter";
+  const [autoProject] = await db.select().from(projects).where(eq(projects.id, projectId));
+  const autoProjectAR: string = (autoProject?.settings as any)?.aspectRatio || "16:9";
   await upsertJobStatus(projectId, "auto", "running", { resolution: resKey });
   res.json({ success: true, message: "Auto pipeline started in background" });
-  runAutoPipeline(projectId, resKey, subtitleDelay, overlayPosition, overlayFont).catch(e => {
+  runAutoPipeline(projectId, resKey, subtitleDelay, overlayPosition, overlayFont, autoProjectAR).catch(e => {
     console.error(`[auto] ${projectId} failed:`, e.message);
     if (autoJobs[projectId]) autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: e.message };
     upsertJobStatus(projectId, "auto", "failed", { error: e.message });
@@ -684,7 +702,8 @@ router.post("/:id", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "No scenes are fully ready." });
 
     const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
-    const [W, H] = RESOLUTIONS[resKey];
+    const projectAR: string = (project.settings as any)?.aspectRatio || "16:9";
+    const [W, H] = resolveOutputSize(resKey, projectAR);
     const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
     const overlayPosition = req.body?.overlayPosition || "bottom-left";
     const overlayFont = req.body?.overlayFont || "Tox Typewriter";
@@ -955,7 +974,7 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
   console.log(`[clips] ${projectId}: all clips done → ${clipsDir}`);
 }
 
-async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<void> {
+async function runVeoAnimation(projectId: string, sceneList: any[], veoAspectRatio?: string): Promise<void> {
   const total = sceneList.length;
   let done = 0;
   let head = 0;
@@ -986,7 +1005,7 @@ async function runVeoAnimation(projectId: string, sceneList: any[]): Promise<voi
           .set({ video_status: "animating", video_error: null })
           .where(eq(scenes.id, s.id));
         console.log(`[veo] ${projectId}: scene ${num} animating`);
-        await generateVeoClip(imgPath, s.motion_prompt || s.image_prompt || "", outPath);
+        await generateVeoClip(imgPath, s.motion_prompt || s.image_prompt || "", outPath, veoAspectRatio);
 
         await db.update(scenes)
           .set({ video_status: "completed", video_error: null })
@@ -1181,8 +1200,8 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
  * Full auto-pipeline: poll until all assets ready → generate clips → merge.
  * Runs entirely in-process; browser can be closed.
  */
-async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter") {
-  const [W, H] = RESOLUTIONS[resKey];
+async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter", aspectRatio = "16:9") {
+  const [W, H] = resolveOutputSize(resKey, aspectRatio);
   autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
   console.log(`[auto] ${projectId}: waiting for assets (${resKey})`);
 

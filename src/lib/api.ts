@@ -143,7 +143,7 @@ export async function createProjectFrontend(
   script: string,
   style1: File | null,
   style2: File | null,
-  options: { voiceId?: string; splitMode?: "smart" | "exact" | "duration" | "two"; stylePrompt?: string; visualTheme?: "impasto" | "ww2" },
+  options: { voiceId?: string; splitMode?: "smart" | "exact" | "duration" | "two"; stylePrompt?: string; visualTheme?: "impasto" | "ww2"; aspectRatio?: "16:9" | "1:1" | "9:16" },
   callbacks: PipelineCallbacks
 ): Promise<{ projectId: string; serverPipeline: boolean; sceneCount: number }> {
   const settings = loadProviderSettings();
@@ -193,6 +193,7 @@ export async function createProjectFrontend(
   formData.append("splitMode", options.splitMode || "smart");
   if (options.stylePrompt) formData.append("stylePrompt", options.stylePrompt);
   if (options.visualTheme) formData.append("visualTheme", options.visualTheme);
+  if (options.aspectRatio) formData.append("aspectRatio", options.aspectRatio);
   if (style1) formData.append("style1", style1);
   if (style2) formData.append("style2", style2);
 
@@ -253,6 +254,7 @@ export async function runClientSidePipeline(
 
   const { project: projectData } = await fetch(`${API_BASE}/projects/${serverProjectId}`).then(r => r.json());
   const projectStylePrompt: string | undefined = (projectData?.settings as any)?.stylePrompt;
+  const projectAspectRatio: string = (projectData?.settings as any)?.aspectRatio || settings.aspectRatio || "16:9";
 
   const styleUrls = projectStylePrompt ? [] : [
     getAssetUrl(serverProjectId, "style", "style1.png"),
@@ -284,7 +286,7 @@ export async function runClientSidePipeline(
           let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateGeminiImage(prompt, settings.imageModel, settings.aspectRatio);
+              imageBlob = await generateGeminiImage(prompt, settings.imageModel, projectAspectRatio);
               success = true;
               break;
             } catch (e: any) {
@@ -406,6 +408,7 @@ export async function regenerateAssetFrontend(
   const scene = scenes.find(s => s.scene_number === sceneNumber);
   if (!scene) throw new Error("Scene not found");
   const regenStylePrompt: string | undefined = (regenProject?.settings as any)?.stylePrompt;
+  const regenAspectRatio: string = (regenProject?.settings as any)?.aspectRatio || settings.aspectRatio || "16:9";
 
   if (type === "image") {
     const styleUrls = regenStylePrompt ? [] : [
@@ -424,7 +427,7 @@ export async function regenerateAssetFrontend(
         let lastError = "";
         for (const prompt of allPrompts) {
           try {
-            imageBlob = await generateGeminiImage(prompt);
+            imageBlob = await generateGeminiImage(prompt, settings.imageModel, regenAspectRatio);
             success = true;
             break;
           } catch (e: any) {
@@ -760,6 +763,7 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
 
   callbacks.onPhase(`Resuming ${pendingScenes.length} scenes...`);
   const resumeStylePrompt: string | undefined = (resumeProjectData?.settings as any)?.stylePrompt;
+  const resumeAspectRatio: string = (resumeProjectData?.settings as any)?.aspectRatio || settings.aspectRatio || "16:9";
   const styleUrls = resumeStylePrompt ? [] : [
     getAssetUrl(projectId, "style", "style1.png"),
     getAssetUrl(projectId, "style", "style2.png"),
@@ -787,7 +791,7 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
           let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
             try {
-              imageBlob = await generateGeminiImage(prompt, settings.imageModel, settings.aspectRatio);
+              imageBlob = await generateGeminiImage(prompt, settings.imageModel, resumeAspectRatio);
               success = true;
               break;
             } catch (e: any) {

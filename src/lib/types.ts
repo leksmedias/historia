@@ -60,6 +60,7 @@ export interface ProjectSettings {
   historyMode: boolean;
   splitMode?: "smart" | "exact" | "duration";
   visualTheme?: "impasto" | "ww2";
+  aspectRatio?: "16:9" | "1:1" | "9:16";
 }
 
 export interface Project {

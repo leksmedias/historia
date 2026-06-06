@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createProjectFrontend } from "@/lib/api";
-import { loadProviderSettings, saveProviderSettings, getAvailableVoices, COMPACT_STYLE_SUFFIX, COMPACT_WWII_STYLE_SUFFIX, IMAGE_MODELS } from "@/lib/providers";
+import { loadProviderSettings, saveProviderSettings, getAvailableVoices, COMPACT_STYLE_SUFFIX, COMPACT_WWII_STYLE_SUFFIX, IMAGE_MODELS, ASPECT_RATIOS } from "@/lib/providers";
 import { Upload, Scroll, Loader2, Sparkles, Type, Image, Cpu } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,6 +33,7 @@ export default function ProjectForm() {
     }
   };
   const [imageModel, setImageModel] = useState(settings.imageModel || "imagen-4.0-fast-generate-001");
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "1:1" | "9:16">(settings.aspectRatio || "16:9");
   const [voiceId, setVoiceId] = useState(settings.voiceId || "Dennis");
   const [splitMode, setSplitMode] = useState<"smart" | "exact" | "duration" | "two">("smart");
   const [loading, setLoading] = useState(false);
@@ -53,8 +54,8 @@ export default function ProjectForm() {
       return;
     }
 
-    // Persist the selected model so the pipeline reads it via loadProviderSettings()
-    saveProviderSettings({ ...settings, imageModel });
+    // Persist the selected model and aspect ratio so the pipeline reads it via loadProviderSettings()
+    saveProviderSettings({ ...settings, imageModel, aspectRatio });
 
     setLoading(true);
     setPhase("Generating scene manifest...");
@@ -66,7 +67,7 @@ export default function ProjectForm() {
         script.trim(),
         imageMode === "refs" ? style1 : null,
         imageMode === "refs" ? style2 : null,
-        { voiceId, splitMode, stylePrompt: imageMode === "style-prompt" ? stylePrompt.trim() : undefined, visualTheme },
+        { voiceId, splitMode, stylePrompt: imageMode === "style-prompt" ? stylePrompt.trim() : undefined, visualTheme, aspectRatio },
         {
           onPhase: (p) => setPhase(p),
           onSceneProgress: () => {},
@@ -272,21 +273,37 @@ export default function ProjectForm() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                <Cpu className="h-4 w-4 text-muted-foreground" />
-                Image Model
-              </label>
-              <Select value={imageModel} onValueChange={setImageModel}>
-                <SelectTrigger className="bg-secondary border-border">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {IMAGE_MODELS.map(m => (
-                    <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                  <Cpu className="h-4 w-4 text-muted-foreground" />
+                  Image Model
+                </label>
+                <Select value={imageModel} onValueChange={setImageModel}>
+                  <SelectTrigger className="bg-secondary border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {IMAGE_MODELS.map(m => (
+                      <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Aspect Ratio</label>
+                <Select value={aspectRatio} onValueChange={(v) => setAspectRatio(v as "16:9" | "1:1" | "9:16")}>
+                  <SelectTrigger className="bg-secondary border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ASPECT_RATIOS.map(r => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {loading && (

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { loadProviderSettings, saveProviderSettings, getAvailableVoices, COMPACT_STYLE_SUFFIX, IMAGE_MODELS } from "@/lib/providers";
+import { loadProviderSettings, saveProviderSettings, getAvailableVoices, COMPACT_STYLE_SUFFIX, IMAGE_MODELS, ASPECT_RATIOS } from "@/lib/providers";
 import { FileJson, Upload, Loader2, Play, AlertTriangle, CheckCircle2, Type, Image, Cpu } from "lucide-react";
 import { toast } from "sonner";
 
@@ -84,6 +84,7 @@ export default function JsonToVideo() {
   const [jsonInput, setJsonInput] = useState("");
   const [title, setTitle] = useState("");
   const [imageModel, setImageModel] = useState(settings.imageModel || "imagen-4.0-fast-generate-001");
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "1:1" | "9:16">(settings.aspectRatio || "16:9");
   const [voiceId, setVoiceId] = useState(settings.voiceId || "Dennis");
   const [imageMode, setImageMode] = useState<"style-prompt" | "refs">("style-prompt");
   const [style1, setStyle1] = useState<File | null>(null);
@@ -116,8 +117,8 @@ export default function JsonToVideo() {
 
     try {
       const currentSettings = loadProviderSettings();
-      // Persist selected model so the asset pipeline reads it via loadProviderSettings()
-      saveProviderSettings({ ...currentSettings, imageModel });
+      // Persist selected model and aspect ratio so the asset pipeline reads it via loadProviderSettings()
+      saveProviderSettings({ ...currentSettings, imageModel, aspectRatio });
 
       // Step 1: Create the project record on the server
       const fd = new FormData();
@@ -129,6 +130,7 @@ export default function JsonToVideo() {
       fd.append("modelId", currentSettings.modelId || "inworld-tts-1.5-max");
       fd.append("splitMode", "smart");
       if (imageMode === "style-prompt" && stylePrompt.trim()) fd.append("stylePrompt", stylePrompt.trim());
+      fd.append("aspectRatio", aspectRatio);
       if (imageMode === "refs" && style1) fd.append("style1", style1);
       if (imageMode === "refs" && style2) fd.append("style2", style2);
 
@@ -441,6 +443,21 @@ export default function JsonToVideo() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* Aspect Ratio */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Aspect Ratio</label>
+              <Select value={aspectRatio} onValueChange={(v) => setAspectRatio(v as "16:9" | "1:1" | "9:16")}>
+                <SelectTrigger className="bg-secondary border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ASPECT_RATIOS.map(r => (
+                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Progress */}

@@ -99,7 +99,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 
 router.post("/", upload.fields([{ name: "style1", maxCount: 1 }, { name: "style2", maxCount: 1 }]), async (req: Request, res: Response) => {
   try {
-    const { title, script, imageProvider, ttsProvider, voiceId, modelId, splitMode, stylePrompt, visualTheme } = req.body;
+    const { title, script, imageProvider, ttsProvider, voiceId, modelId, splitMode, stylePrompt, visualTheme, aspectRatio } = req.body;
     if (!title || !script) return res.status(400).json({ error: "Title and script are required" });
 
     const projectId = generateProjectId();
@@ -135,6 +135,7 @@ router.post("/", upload.fields([{ name: "style1", maxCount: 1 }, { name: "style2
         historyMode: true,
         splitMode: splitMode || "smart",
         visualTheme: theme,
+        aspectRatio: aspectRatio || "16:9",
         ...(stylePrompt ? { stylePrompt } : {}),
       },
       style_summary: styleSummary,

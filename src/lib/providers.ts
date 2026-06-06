@@ -38,7 +38,7 @@ export const OVERLAY_FONTS = [
 export interface ProviderSettings {
   imageProvider: string;
   imageModel: string;
-  aspectRatio: "16:9" | "9:16";
+  aspectRatio: "16:9" | "1:1" | "9:16";
   ttsProvider: string;
   voiceId: string;
   modelId: string;
@@ -68,6 +68,7 @@ export const IMAGE_MODELS = [
 
 export const ASPECT_RATIOS = [
   { value: "16:9", label: "16:9 Landscape" },
+  { value: "1:1",  label: "1:1 Square" },
   { value: "9:16", label: "9:16 Portrait" },
 ] as const;
 
