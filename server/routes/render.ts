@@ -1045,39 +1045,42 @@ async function runVeoAnimation(projectId: string, sceneList: any[], veoAspectRat
  */
 function buildXfadeFilter(durations: number[], xd: number): string {
   const n = durations.length;
+  const padParts: string[] = [];
   const vParts: string[] = [];
   const aParts: string[] = [];
 
-  // Video: xfade chain — offset-based, correct as-is
+  // Pad each input stream at the end so they can overlap in transition without overlapping active narration
+  for (let i = 0; i < n; i++) {
+    padParts.push(`[${i}:v]tpad=stop_mode=clone:stop_duration=${xd.toFixed(3)}[pv${i}]`);
+    padParts.push(`[${i}:a]apad=pad_dur=${xd.toFixed(3)}[pa${i}]`);
+  }
+
+  // Video: xfade chain — offset-based, using padded video inputs
   let vOffset = 0;
   for (let i = 1; i < n; i++) {
-    const inV  = i === 1     ? "[0:v]"  : `[xv${i}]`;
+    const inV  = i === 1     ? "[pv0]"  : `[xv${i}]`;
     const outV = i === n - 1 ? "[vout]" : `[xv${i + 1}]`;
-    vOffset += durations[i - 1] - xd;
+    vOffset += durations[i - 1];
     vParts.push(
-      `${inV}[${i}:v]xfade=transition=fade:duration=${xd.toFixed(3)}:offset=${Math.max(0, vOffset).toFixed(3)}${outV}`
+      `${inV}[pv${i}]xfade=transition=fade:duration=${xd.toFixed(3)}:offset=${Math.max(0, vOffset).toFixed(3)}${outV}`
     );
   }
 
-  // Audio: adelay each clip to its absolute start position, then amix.
-  // acrossfade is a sequential splicer — it does NOT support absolute offsets
-  // and causes audio from clip N+1 to bleed into clip N during transitions.
-  // adelay positions each stream at the correct timeline offset so audio
-  // matches video exactly throughout the merge.
+  // Audio: adelay each padded clip to its absolute start position (sequentially), then amix.
   let audioOffset = 0;
   for (let i = 0; i < n; i++) {
     if (i === 0) {
-      aParts.push(`[0:a]asetpts=PTS-STARTPTS[ad0]`);
+      aParts.push(`[pa0]asetpts=PTS-STARTPTS[ad0]`);
     } else {
       const delayMs = Math.round(audioOffset * 1000);
-      aParts.push(`[${i}:a]adelay=${delayMs}|${delayMs}[ad${i}]`);
+      aParts.push(`[pa${i}]adelay=${delayMs}|${delayMs}[ad${i}]`);
     }
-    if (i < n - 1) audioOffset += durations[i] - xd;
+    if (i < n - 1) audioOffset += durations[i];
   }
   const adInputs = Array.from({ length: n }, (_, i) => `[ad${i}]`).join("");
   aParts.push(`${adInputs}amix=inputs=${n}:duration=longest:normalize=0[aout]`);
 
-  return [...vParts, ...aParts].join(";");
+  return [...padParts, ...vParts, ...aParts].join(";");
 }
 
 /**
