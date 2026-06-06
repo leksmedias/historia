@@ -216,6 +216,38 @@ function escapeFFmpegPath(filePath: string): string {
   return p;
 }
 
+function escapeDrawtextText(s: string): string {
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/%/g, "%%")
+    .replace(/\n/g, "\\n");
+}
+
+function buildTypewriterFilter(
+  overlayText: string,
+  fontFile: string | null,
+  fontSize: number,
+  dVal: number
+): string {
+  const text = wordWrap(overlayText.trim().toUpperCase());
+  const N = text.length;
+  const charDelaySec = Math.max(0.030, Math.min(0.080, 1.4 / N));
+  const totalVisible = 4.0;
+  const fontOpt = fontFile ? `fontfile='${escapeFFmpegPath(fontFile)}':` : "";
+
+  let chain = "";
+  for (let i = 0; i < N; i++) {
+    const charStart = (dVal + i * charDelaySec).toFixed(3);
+    const charEnd = i < N - 1
+      ? (dVal + (i + 1) * charDelaySec).toFixed(3)
+      : (dVal + totalVisible).toFixed(3);
+    const partial = escapeDrawtextText(text.slice(0, i + 1));
+    chain += `,drawtext=${fontOpt}text='${partial}':fontcolor=white:fontsize=${fontSize}:shadowcolor=black@0.9:shadowx=3:shadowy=3:x=w*0.04:y=h-th-h*0.12:enable='between(t,${charStart},${charEnd})'`;
+  }
+  return chain;
+}
+
 function wordWrap(text: string, maxLen = 50): string {
   return text.split("\n").map(paragraph => {
     const words = paragraph.split(" ");
@@ -707,21 +739,10 @@ async function buildVeoClip(
     ? `setpts=PTS/${speed.toFixed(6)},fps=${FPS},${scaleFilter}`
     : `fps=${FPS},${scaleFilter}`;
 
-  let drawtextFilter = "";
-  let tempTextFile = "";
-  if (overlayText && overlayText.trim()) {
-    const uppercaseText = wordWrap(overlayText.trim().toUpperCase());
-    tempTextFile = outPath.replace(/\.mp4$/, "_subtitle.txt");
-    fs.writeFileSync(tempTextFile, uppercaseText, "utf8");
-    const fontFile = findFontFile();
-    const escapedFont = fontFile ? escapeFFmpegPath(fontFile) : null;
-    const escapedTextFile = escapeFFmpegPath(tempTextFile);
-    const fontSize = Math.round(height * 0.045);
-    const dVal = delay ?? 0.8;
-    
-    const fontOpt = escapedFont ? `fontfile='${escapedFont}':` : "";
-    drawtextFilter = `,drawtext=${fontOpt}textfile='${escapedTextFile}':fontcolor=white:fontsize=${fontSize}:shadowcolor=black@0.9:shadowx=3:shadowy=3:x=w*0.04:y=h-th-h*0.12:enable='between(t,${dVal},${(dVal + 4.0).toFixed(3)})'`;
-  }
+  const dVal = delay ?? 0.8;
+  const drawtextFilter = overlayText?.trim()
+    ? buildTypewriterFilter(overlayText, findFontFile(), Math.round(height * 0.045), dVal)
+    : "";
 
   const vFilter = `${vBase},fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5${drawtextFilter}`;
 
@@ -730,18 +751,45 @@ async function buildVeoClip(
     "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
   ];
 
-  try {
-    if (veoAudio) {
-      // Slow ambient audio only when slowing video; looped audio plays at natural speed
-      const atempoSpeed = shouldSlowDown ? Math.max(speed, 0.5).toFixed(4) : "1.0";
-      const veoAudioFilter = shouldSlowDown
-        ? `atempo=${atempoSpeed},volume=0.1`
-        : `volume=0.1`;
+  const sfxPath = path.join(process.cwd(), "sfx", "whoosh.MP3");
+  const hasSfx = !!(overlayText?.trim()) && fs.existsSync(sfxPath);
+  const dValMs = Math.round(dVal * 1000);
+
+  if (veoAudio) {
+    const atempoSpeed = shouldSlowDown ? Math.max(speed, 0.5).toFixed(4) : "1.0";
+    const veoAudioFilter = shouldSlowDown
+      ? `atempo=${atempoSpeed},volume=0.1`
+      : `volume=0.1`;
+    if (hasSfx) {
+      await ffmpeg([
+        "-y", ...veoInputArgs, "-i", audioPath, "-i", sfxPath,
+        "-filter_complex",
+          `[0:v]${vFilter}[v];` +
+          `[0:a]${veoAudioFilter}[va];[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[na];` +
+          `[2:a]adelay=${dValMs}|${dValMs},volume=0.4[sfx];` +
+          `[va][na][sfx]amix=inputs=3:duration=first,afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
+        "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
+        ...encArgs, outPath,
+      ]);
+    } else {
       await ffmpeg([
         "-y", ...veoInputArgs, "-i", audioPath,
         "-filter_complex",
           `[0:v]${vFilter}[v];` +
           `[0:a]${veoAudioFilter}[va];[1:a]${AUDIO_FILTER}[na];[va][na]amix=inputs=2:duration=first,afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
+        "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
+        ...encArgs, outPath,
+      ]);
+    }
+  } else {
+    if (hasSfx) {
+      await ffmpeg([
+        "-y", ...veoInputArgs, "-i", audioPath, "-i", sfxPath,
+        "-filter_complex",
+          `[0:v]${vFilter}[v];` +
+          `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[na];` +
+          `[2:a]adelay=${dValMs}|${dValMs},volume=0.4[sfx];` +
+          `[na][sfx]amix=inputs=2:duration=first[a]`,
         "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
         ...encArgs, outPath,
       ]);
@@ -752,10 +800,6 @@ async function buildVeoClip(
         "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
         ...encArgs, outPath,
       ]);
-    }
-  } finally {
-    if (tempTextFile && fs.existsSync(tempTextFile)) {
-      try { fs.unlinkSync(tempTextFile); } catch {}
     }
   }
 }
@@ -773,37 +817,37 @@ async function buildImageClip(
     "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
   ];
 
-  let drawtextFilter = "";
-  let tempTextFile = "";
-  if (overlayText && overlayText.trim()) {
-    const uppercaseText = wordWrap(overlayText.trim().toUpperCase());
-    tempTextFile = outPath.replace(/\.mp4$/, "_subtitle.txt");
-    fs.writeFileSync(tempTextFile, uppercaseText, "utf8");
-    const fontFile = findFontFile();
-    const escapedFont = fontFile ? escapeFFmpegPath(fontFile) : null;
-    const escapedTextFile = escapeFFmpegPath(tempTextFile);
-    const fontSize = Math.round(height * 0.045);
-    const dVal = delay ?? 0.8;
-    
-    const fontOpt = escapedFont ? `fontfile='${escapedFont}':` : "";
-    drawtextFilter = `,drawtext=${fontOpt}textfile='${escapedTextFile}':fontcolor=white:fontsize=${fontSize}:shadowcolor=black@0.9:shadowx=3:shadowy=3:x=w*0.04:y=h-th-h*0.12:enable='between(t,${dVal},${(dVal + 4.0).toFixed(3)})'`;
-  }
+  const dVal = delay ?? 0.8;
+  const drawtextFilter = overlayText?.trim()
+    ? buildTypewriterFilter(overlayText, findFontFile(), Math.round(height * 0.045), dVal)
+    : "";
 
   const fadeOutStart = Math.max(0, dur - 0.5).toFixed(3);
   const vFilter = `[0:v]${kbFilter},fps=${FPS},setsar=1,format=yuv420p,fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5${drawtextFilter}[v]`;
-  const aFilter = `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`;
 
-  try {
+  const sfxPath = path.join(process.cwd(), "sfx", "whoosh.MP3");
+  const hasSfx = !!(overlayText?.trim()) && fs.existsSync(sfxPath);
+  const dValMs = Math.round(dVal * 1000);
+
+  if (hasSfx) {
+    const aFilter =
+      `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[na];` +
+      `[2:a]adelay=${dValMs}|${dValMs},volume=0.4[sfx];` +
+      `[na][sfx]amix=inputs=2:duration=first[a]`;
+    await ffmpeg([
+      "-y", "-loop", "1", "-framerate", `${FPS}`, "-i", imagePath, "-i", audioPath, "-i", sfxPath,
+      "-filter_complex", `${vFilter};${aFilter}`,
+      "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
+      ...encArgs, outPath,
+    ]);
+  } else {
+    const aFilter = `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`;
     await ffmpeg([
       "-y", "-loop", "1", "-framerate", `${FPS}`, "-i", imagePath, "-i", audioPath,
       "-filter_complex", `${vFilter};${aFilter}`,
       "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
       ...encArgs, outPath,
     ]);
-  } finally {
-    if (tempTextFile && fs.existsSync(tempTextFile)) {
-      try { fs.unlinkSync(tempTextFile); } catch {}
-    }
   }
 }
 
