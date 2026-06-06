@@ -129,9 +129,6 @@ async function _generateWithGemini(prompt: string, model: string, aspectRatio = 
             },
             personGeneration: "ALLOW_ALL",
           },
-          thinkingConfig: {
-            thinkingLevel: "MINIMAL",
-          },
         }
       : {
           responseModalities: ["TEXT", "IMAGE"],

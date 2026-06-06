@@ -113,9 +113,6 @@ router.post("/", async (req: Request, res: Response) => {
             maxOutputTokens: 65535,
             topP: payload.generationConfig?.topP ?? 0.95,
             responseMimeType: payload.generationConfig?.responseMimeType,
-            thinkingConfig: {
-              thinkingLevel: "HIGH"
-            },
             safetySettings: [
               { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
               { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },

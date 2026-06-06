@@ -117,9 +117,6 @@ async function callPass1(
           maxOutputTokens: 8192,
           topP: 0.95,
           responseMimeType: "application/json",
-          thinkingConfig: {
-            thinkingLevel: "MEDIUM"
-          }
         },
         safetySettings: [
           { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
@@ -266,9 +263,6 @@ async function callPass2Batch(
           maxOutputTokens: 8192,
           topP: 0.95,
           responseMimeType: "application/json",
-          thinkingConfig: {
-            thinkingLevel: "MEDIUM"
-          }
         },
         safetySettings: [
           { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
