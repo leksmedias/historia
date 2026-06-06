@@ -18,7 +18,6 @@ dist-ssr
 .claude/
 docs/superpowers/
 .github/workflows/
-fonts/
 
 # Editor directories and files
 .vscode/*
