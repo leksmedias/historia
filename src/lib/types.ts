@@ -16,6 +16,11 @@ export const DEFAULT_STYLE_SUMMARY: StyleSummary = {
   historicalLook: "realistic period atmosphere, grounded environments, era-appropriate architecture, clothing, and objects",
 };
 
+export interface OverlayItem {
+  text: string;    // max 3 words, shown on screen
+  trigger: string; // single word from narration that fires this overlay
+}
+
 export interface Scene {
   id?: string;
   scene_number: number;
@@ -34,7 +39,7 @@ export interface Scene {
   audio_attempts: number;
   image_error: string | null;
   audio_error: string | null;
-  overlay_text?: string | null;
+  overlay_text?: string | OverlayItem[] | null;
   video_status: "none" | "animating" | "completed" | "failed";
   video_error: string | null;
   needs_review: boolean;

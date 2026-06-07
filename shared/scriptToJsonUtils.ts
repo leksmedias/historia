@@ -1,10 +1,15 @@
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface OverlayItem {
+  text: string;    // max 3 words shown on screen
+  trigger: string; // single word from narration that fires this overlay
+}
+
 export interface OutputScene {
   image: string;
   script: string;
   prompt: string;
-  overlay_text: string | null;
+  overlay_text: string | OverlayItem[] | null;
 }
 
 export interface ScriptToJsonResult {
@@ -15,7 +20,7 @@ export interface ScriptToJsonResult {
 export interface SplitScene {
   id: number;
   script: string;
-  overlay_text: string | null;
+  overlay_text: string | OverlayItem[] | null;
 }
 
 export interface ScriptToJsonParams {
@@ -167,6 +172,33 @@ export function tryParseTruncatedJson(text: string): any {
     const cleaned = completed.replace(/,\s*([\]}])/g, '$1');
     return JSON.parse(cleaned);
   }
+}
+
+function _cleanOverlay(raw: any): string | OverlayItem[] | null {
+  if (raw === null || raw === undefined) return null;
+
+  if (Array.isArray(raw)) {
+    const cleaned = raw
+      .filter((item: any) => item && typeof item.text === 'string' && typeof item.trigger === 'string')
+      .map((item: any) => ({
+        text: item.text.replace(/[*_~`#>]+/g, '').replace(/\s+/g, ' ').trim(),
+        trigger: item.trigger.replace(/[*_~`#>]+/g, '').trim().split(/\s+/)[0].toLowerCase(),
+      }))
+      .filter((item: any) => item.text && item.trigger);
+    return cleaned.length > 0 ? cleaned : null;
+  }
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'null') return null;
+    if (trimmed.startsWith('[')) {
+      try { return _cleanOverlay(JSON.parse(trimmed)); } catch {}
+    }
+    const cleaned = trimmed.replace(/[*_~`#>]+/g, '').replace(/["""'']+/g, '').replace(/\s+/g, ' ').trim();
+    return cleaned || null;
+  }
+
+  return null;
 }
 
 export function parseJsonResponse(text: string): any {
@@ -387,16 +419,7 @@ export function recoverScenesRegex(text: string): SplitScene[] {
       const script = obj.script ?? obj.text ?? obj.narration ?? obj.narration_text;
       if (typeof script !== 'string') continue;
 
-      let overlay_text = obj.overlay_text ?? obj.overlayText ?? obj.overlay ?? null;
-      if (typeof overlay_text === 'string') {
-        overlay_text = overlay_text
-          .replace(/[*_~`#>]+/g, '')   // strip markdown symbols
-          .replace(/\s+/g, ' ')
-          .trim();
-        if (!overlay_text) overlay_text = null;
-      } else {
-        overlay_text = null;
-      }
+      const overlay_text = _cleanOverlay(obj.overlay_text ?? obj.overlayText ?? obj.overlay ?? null);
 
       scenes.push({ id, script: script.trim(), overlay_text });
     }
@@ -527,25 +550,31 @@ SPLITTING RULES:
 - Continue scene numbering from id ${startId}
 
 OVERLAY TEXT RULES:
-Overlays increase understanding and emotion — they must NOT repeat the narration.
-STRICT MAX 3 WORDS. Plain text only — no markdown, no asterisks, no hashtags, no symbols, no colons, no commas. Hyphens allowed only inside numbers or ranges.
+Overlays increase understanding and emotion — must NOT repeat narration.
+STRICT MAX 3 WORDS per label. Plain text only — no markdown, no asterisks, no hashtags, no symbols.
 
-Choose the most impactful overlay type for each scene:
-- DATE: "476 AD", "1941–1945", "June 1944"
-- LOCATION: "Normandy", "Stalingrad", "Kokoda Trail"
-- FORCE SIZE: "39 Australians", "150000 Soldiers", "3:1 Advantage"
-- CASUALTIES: "8000 Killed", "75% Lost", "12 Survived"
-- COMMANDER: "Bernard Montgomery", "Erwin Rommel"
-- STRATEGIC FACT: "Outnumbered 50:1", "Last Stand", "Surrounded"
-- STATUS: "Day 1", "Enemy Advances", "Final Assault"
-- OUTCOME: "Allied Victory", "Strategic Defeat", "Empire Falls"
-- null: If no meaningful overlay exists for this scene
+TWO FORMATS — choose based on the scene:
 
-Preferred sequence across the video: DATE → LOCATION → FORCE SIZE → KEY EVENT → CASUALTIES → RESULT
-Use plain digits only — no commas inside numbers: 25000 not 25,000.
+1. SIMPLE (one key fact) → plain string:
+   "June 1944"
+
+2. COMPLEX (scene narrates a list of units/forces/names/numbers) → array of objects:
+   Each object: {"text": "label max 3 words", "trigger": "oneword"}
+   - "trigger" = the EXACT single word spoken in the narration that fires this overlay
+   - trigger must appear verbatim in the script field
+   - Max 6 items per array
+
+Example for "the Seventeenth, Eighteenth, and Nineteenth Legions, six auxiliary cohorts, three squadrons of cavalry":
+[{"text":"XVII Legion","trigger":"Seventeenth"},{"text":"XVIII Legion","trigger":"Eighteenth"},{"text":"XIX Legion","trigger":"Nineteenth"},{"text":"6 Cohorts","trigger":"six"},{"text":"3 Cavalry","trigger":"three"}]
+
+Overlay types (pick most impactful):
+DATE "476 AD" | LOCATION "Normandy" | FORCE SIZE "39 Australians" | CASUALTIES "8000 Killed"
+COMMANDER "Erwin Rommel" | STRATEGIC FACT "Outnumbered 50:1" | STATUS "Final Assault" | OUTCOME "Allied Victory"
+
+Use plain digits — no commas: 25000 not 25,000. Set null if nothing meaningful.
 
 Output ONLY valid JSON, no markdown, no explanation:
-{"scenes":[{"id":${startId},"script":"narration text","overlay_text":"June 1944"},{"id":${startId + 1},"script":"narration text","overlay_text":null}]}`;
+{"scenes":[{"id":${startId},"script":"narration text","overlay_text":"June 1944"},{"id":${startId + 1},"script":"the Seventeenth, Eighteenth, Nineteenth Legions","overlay_text":[{"text":"XVII Legion","trigger":"Seventeenth"},{"text":"XVIII Legion","trigger":"Eighteenth"},{"text":"XIX Legion","trigger":"Nineteenth"}]},{"id":${startId + 2},"script":"narration text","overlay_text":null}]}`;
 }
 
 export const PASS2_IMPASTO_SYSTEM = `You are the Lead Creative Director for a high-end historical documentary series.
