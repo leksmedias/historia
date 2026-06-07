@@ -258,6 +258,24 @@ export default function ProjectStatus() {
     }
   };
 
+  const [purging, setPurging] = useState<string | null>(null);
+  const handlePurge = async (type: string) => {
+    if (!projectId) return;
+    setPurging(type);
+    try {
+      const res = await fetch(`/api/render/${projectId}/purge?type=${type}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Purge failed");
+      const deleted = (data.deleted as string[]).join(", ");
+      toast.success(deleted ? `Purged: ${deleted}` : "Nothing to purge");
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setPurging(null);
+    }
+  };
+
   const handleStop = async () => {
     if (!projectId) return;
     setIsStopping(true);
@@ -470,6 +488,60 @@ export default function ProjectStatus() {
             <p className="text-xs text-muted-foreground mt-3">
               All source files are at <code className="font-mono text-foreground/70">/uploads/{project.id}/</code> on the server — served statically at <code className="font-mono text-foreground/70">{window.location.origin}/uploads/{project.id}/</code>
             </p>
+          </CardContent>
+        </Card>
+
+        {/* Purge */}
+        <Card>
+          <CardHeader><CardTitle className="text-lg font-display flex items-center gap-2"><Trash2 className="h-5 w-5 text-destructive" />Purge Server Files</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">Delete generated files from the VPS to free disk space. Images and audio will be reset to pending so they can be regenerated.</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              {([
+                { type: "clips",  label: "Scene Clips",   desc: "clips/" },
+                { type: "videos", label: "Veo Videos",    desc: "videos/" },
+                { type: "images", label: "Images",        desc: "images/" },
+                { type: "audio",  label: "Audio",         desc: "audio/" },
+                { type: "render", label: "Final Render",  desc: "render/" },
+              ] as const).map(({ type, label, desc }) => (
+                <AlertDialog key={type}>
+                  <AlertDialogTrigger asChild>
+                    <button disabled={purging !== null} className="border border-border rounded-lg p-3 text-left hover:border-destructive/50 hover:bg-destructive/5 transition-colors disabled:opacity-50 space-y-1">
+                      <div className="text-sm font-medium text-foreground">{label}</div>
+                      <div className="text-xs text-muted-foreground font-mono">{desc}</div>
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete {label}?</AlertDialogTitle>
+                      <AlertDialogDescription>This will permanently delete all files in <code className="font-mono">/uploads/{projectId}/{desc}</code> on the server. {["images", "audio"].includes(type) ? "Scene status will be reset to pending." : "This cannot be undone."}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => handlePurge(type)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ))}
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm" disabled={purging !== null} className="w-full">
+                  {purging === "all" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                  Purge Everything (clips + videos + images + audio + render)
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Purge all files for this project?</AlertDialogTitle>
+                  <AlertDialogDescription>This will delete every generated file on the server for this project — images, audio, clips, Veo videos, and the final render. Scene status will be reset to pending. The project record itself is kept.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handlePurge("all")} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Purge Everything</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardContent>
         </Card>
 

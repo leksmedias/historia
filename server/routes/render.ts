@@ -319,9 +319,14 @@ function ffmpeg(args: string[]): Promise<void> {
     const proc = spawn("ffmpeg", args);
     let stderr = "";
     proc.stderr.on("data", d => (stderr += d.toString()));
-    proc.on("close", code =>
-      code === 0 ? resolve() : reject(new Error(`FFmpeg exited ${code}: ${stderr.slice(-800)}`))
-    );
+    proc.on("close", (code, signal) => {
+      if (code === 0) return resolve();
+      if (code === null) {
+        // Killed by OS signal — most likely OOM on the render server
+        return reject(new Error(`FFmpeg killed by signal ${signal ?? "SIGKILL"} (out of memory or timeout): ${stderr.slice(-400)}`));
+      }
+      reject(new Error(`FFmpeg exited ${code}: ${stderr.slice(-800)}`));
+    });
   });
 }
 
@@ -766,6 +771,53 @@ router.get("/:id/download", async (req: Request, res: Response) => {
   res.download(outPath, filename);
 });
 
+/** DELETE /api/render/:id/purge?type=clips|videos|images|audio|render|all */
+router.delete("/:id/purge", async (req: Request, res: Response) => {
+  const projectId = req.params.id as string;
+  const type = (req.query.type as string) || "all";
+
+  const base = path.join("uploads", projectId);
+  const dirs: Record<string, string> = {
+    clips:  path.join(base, "clips"),
+    videos: path.join(base, "videos"),
+    images: path.join(base, "images"),
+    audio:  path.join(base, "audio"),
+    render: path.join(base, "render"),
+  };
+
+  const targets = type === "all" ? Object.keys(dirs) : [type];
+  if (!targets.every(t => t in dirs)) {
+    return res.status(400).json({ error: `Invalid type '${type}'. Use: clips, videos, images, audio, render, all` });
+  }
+
+  const deleted: string[] = [];
+  for (const t of targets) {
+    const dir = dirs[t];
+    if (fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      deleted.push(t);
+    }
+  }
+
+  // Reset DB status for images/audio so they can be regenerated
+  try {
+    if (targets.includes("images")) {
+      await db.update(scenes)
+        .set({ image_status: "pending", image_file: null, image_error: null })
+        .where(eq(scenes.project_id, projectId));
+    }
+    if (targets.includes("audio")) {
+      await db.update(scenes)
+        .set({ audio_status: "pending", audio_file: null, audio_error: null })
+        .where(eq(scenes.project_id, projectId));
+    }
+  } catch (e: any) {
+    console.error("[purge] DB reset error:", e.message);
+  }
+
+  res.json({ deleted });
+});
+
 // ── Core functions ─────────────────────────────────────────────────────────
 
 // silenceremove removed — stop_periods=1 terminates the stream on any inter-word pause
@@ -1178,14 +1230,34 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
         console.log(`[merge] ${projectId}: xfade dissolve (${clips.length} clips, ${XD}s crossfade)`);
         const filterComplex = buildXfadeFilter(durations, XD);
         const inputs = clips.flatMap(c => ["-i", c]);
-        await ffmpeg([
-          "-y", ...inputs,
-          "-filter_complex", filterComplex,
-          "-map", "[vout]", "-map", "[aout]",
-          "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-          "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
-          outPath,
-        ]);
+        try {
+          await ffmpeg([
+            "-y", ...inputs,
+            "-filter_complex", filterComplex,
+            "-map", "[vout]", "-map", "[aout]",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-max_muxing_queue_size", "9999",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+            outPath,
+          ]);
+        } catch (xfadeErr: any) {
+          // xfade killed by OOM — fall back to simple concat
+          if (xfadeErr.message?.includes("SIGKILL") || xfadeErr.message?.includes("signal")) {
+            console.warn(`[merge] ${projectId}: xfade OOM-killed, retrying with concat fallback`);
+            try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch {}
+            // fall through to concat below
+          } else {
+            throw xfadeErr;
+          }
+          const listPath = path.join(renderDir, "concat_list.txt");
+          const listContent = clips.map(c => `file '${path.resolve(c).replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n");
+          fs.writeFileSync(listPath, listContent);
+          try {
+            await ffmpeg(["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outPath]);
+          } finally {
+            try { fs.unlinkSync(listPath); } catch {}
+          }
+        }
       } else {
         console.log(`[merge] ${projectId}: simple concat (${clips.length} clips)`);
         const listPath = path.join(renderDir, "concat_list.txt");
