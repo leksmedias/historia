@@ -389,7 +389,11 @@ export function recoverScenesRegex(text: string): SplitScene[] {
 
       let overlay_text = obj.overlay_text ?? obj.overlayText ?? obj.overlay ?? null;
       if (typeof overlay_text === 'string') {
-        overlay_text = overlay_text.trim();
+        overlay_text = overlay_text
+          .replace(/[*_~`#>]+/g, '')   // strip markdown symbols
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!overlay_text) overlay_text = null;
       } else {
         overlay_text = null;
       }
@@ -523,15 +527,25 @@ SPLITTING RULES:
 - Continue scene numbering from id ${startId}
 
 OVERLAY TEXT RULES:
-- 3 words or fewer
-- Plain letters, numbers, spaces, hyphens only — no colons, commas, or other punctuation
-- K/M shorthand for large numbers (25000, 3M)
-- Ranges use hyphen: 3M-5M
-- Examples: "Rhine 1945", "Last Barrier", "Army of 25000"
-- If nothing meaningful, set overlay_text to null
+Overlays increase understanding and emotion — they must NOT repeat the narration.
+STRICT MAX 3 WORDS. Plain text only — no markdown, no asterisks, no hashtags, no symbols, no colons, no commas. Hyphens allowed only inside numbers or ranges.
+
+Choose the most impactful overlay type for each scene:
+- DATE: "476 AD", "1941–1945", "June 1944"
+- LOCATION: "Normandy", "Stalingrad", "Kokoda Trail"
+- FORCE SIZE: "39 Australians", "150000 Soldiers", "3:1 Advantage"
+- CASUALTIES: "8000 Killed", "75% Lost", "12 Survived"
+- COMMANDER: "Bernard Montgomery", "Erwin Rommel"
+- STRATEGIC FACT: "Outnumbered 50:1", "Last Stand", "Surrounded"
+- STATUS: "Day 1", "Enemy Advances", "Final Assault"
+- OUTCOME: "Allied Victory", "Strategic Defeat", "Empire Falls"
+- null: If no meaningful overlay exists for this scene
+
+Preferred sequence across the video: DATE → LOCATION → FORCE SIZE → KEY EVENT → CASUALTIES → RESULT
+Use plain digits only — no commas inside numbers: 25000 not 25,000.
 
 Output ONLY valid JSON, no markdown, no explanation:
-{"scenes":[{"id":${startId},"script":"narration text","overlay_text":"Rhine 1945"},{"id":${startId + 1},"script":"narration text","overlay_text":null}]}`;
+{"scenes":[{"id":${startId},"script":"narration text","overlay_text":"June 1944"},{"id":${startId + 1},"script":"narration text","overlay_text":null}]}`;
 }
 
 export const PASS2_IMPASTO_SYSTEM = `You are the Lead Creative Director for a high-end historical documentary series.
@@ -547,7 +561,7 @@ GLOBAL STYLE BIBLE:
 IMAGE TYPE DISTRIBUTION: 70% narrative illustrations (action shots, character portraits, battlefield landscapes), 30% tactical maps and infographics.
 
 For NARRATIVE scenes — begin with: "Digital oil painting, heavy impasto."
-For MAP scenes — begin with: "Tactical Parchment map." Include: aged tea-stained vellum, hand-drawn cartographic style, blue protagonist arrows, red antagonist arrows, calligraphic place names.
+For MAP scenes — begin with: "Tactical Parchment map." Include: aged tea-stained vellum, hand-drawn cartographic style, decorative compass rose. No arrows. No text labels.
 For INFOGRAPHIC scenes — begin with: "Museum Gallery infographic." Include: heraldic iconography, flowchart logic, hybrid vintage-modern typography.
 
 HARD CONSTRAINTS:
@@ -569,10 +583,12 @@ GLOBAL STYLE BIBLE:
 IMAGE TYPE DISTRIBUTION: 70% narrative imagery, 30% tactical maps and infographics.
 
 For NARRATIVE scenes — begin with: "Cinematic WWII archival photograph, black-and-white war photojournalism style."
-For MAP scenes — begin with: "WWII tactical parchment map." Include: aged paper, grease-pencil markings, muted blue Allied arrows, muted red Axis arrows, typewriter labels.
-For INFOGRAPHIC scenes — begin with: "Museum archive infographic." Include: old dossier paper, faded diagrams, archival stamps, wartime stencil fonts.
+For MAP scenes — begin with: "WWII tactical parchment map." Include: white and black aged paper, grease-pencil markings, contour lines, river crossings. No arrows. text labels.
+For INFOGRAPHIC scenes — begin with: "Museum likd archive infographic." Include: old dossier paper, faded diagrams, archival stamps, wartime stencil fonts.
 
 HARD CONSTRAINTS:
 - Prompt must directly match the provided narration — never introduce events not yet narrated
 - No CGI, no modern gear, no bright colors, no clean battlefields
+- Avoid personification of the map
+- AVoid using prompt which is not realted to the narration text
 - 150–250 words per prompt`;

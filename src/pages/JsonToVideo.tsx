@@ -90,8 +90,6 @@ export default function JsonToVideo() {
   const [style1, setStyle1] = useState<File | null>(null);
   const [style2, setStyle2] = useState<File | null>(null);
   const [stylePrompt, setStylePrompt] = useState("");
-  const [promptPrefix, setPromptPrefix] = useState("");
-  const [promptSuffix, setPromptSuffix] = useState("");
   const [loading, setLoading] = useState(false);
   const [phase, setPhase] = useState("");
   const file1Ref = useRef<HTMLInputElement>(null);
@@ -143,8 +141,6 @@ export default function JsonToVideo() {
 
       // Step 2: Submit scenes directly — bypasses script splitting entirely
       setPhase(`Submitting ${parsedScenes.length} scenes...`);
-      const prefix = promptPrefix.trim();
-      const suffix = promptSuffix.trim();
       const mappedScenes = parsedScenes.map((s, i) => ({
         scene_number: i + 1,
         scene_type: "location",
@@ -152,7 +148,7 @@ export default function JsonToVideo() {
         visual_priority: "environment",
         script_text: s.narration_text,
         tts_text: s.narration_text,
-        image_prompt: [prefix, s.visual_prompt, suffix].filter(Boolean).join(", "),
+        image_prompt: s.visual_prompt,
         overlay_text: s.overlay_text ?? null,
         motion_prompt: s.motion_prompt || null,
         fallback_prompts: [],
@@ -371,44 +367,6 @@ export default function JsonToVideo() {
                 ))}
               </div>
             )}
-
-            {/* Prompt prefix / suffix */}
-            <div className="space-y-3">
-              <label className="text-sm font-medium text-foreground">
-                Prompt Modifiers{" "}
-                <span className="text-xs font-normal text-muted-foreground">(optional)</span>
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground">Prefix</label>
-                  <Textarea
-                    value={promptPrefix}
-                    onChange={(e) => setPromptPrefix(e.target.value)}
-                    className="bg-secondary border-border min-h-[72px] font-mono text-xs"
-                    rows={3}
-                    placeholder="Text prepended to every visual_prompt…"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground">Suffix</label>
-                  <Textarea
-                    value={promptSuffix}
-                    onChange={(e) => setPromptSuffix(e.target.value)}
-                    className="bg-secondary border-border min-h-[72px] font-mono text-xs"
-                    rows={3}
-                    placeholder="Text appended to every visual_prompt…"
-                  />
-                </div>
-              </div>
-              {(promptPrefix.trim() || promptSuffix.trim()) && (
-                <p className="text-xs text-muted-foreground">
-                  Format:{" "}
-                  <span className="font-mono text-foreground/70">
-                    {[promptPrefix.trim() || null, "<visual_prompt>", promptSuffix.trim() || null].filter(Boolean).join(", ")}
-                  </span>
-                </p>
-              )}
-            </div>
 
             {/* Voice + Image Model */}
             <div className="grid grid-cols-2 gap-4">

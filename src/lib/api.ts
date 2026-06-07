@@ -253,13 +253,7 @@ export async function runClientSidePipeline(
   let imagesFailed = 0, audioFailed = 0;
 
   const { project: projectData } = await fetch(`${API_BASE}/projects/${serverProjectId}`).then(r => r.json());
-  const projectStylePrompt: string | undefined = (projectData?.settings as any)?.stylePrompt;
   const projectAspectRatio: string = (projectData?.settings as any)?.aspectRatio || settings.aspectRatio || "16:9";
-
-  const styleUrls = projectStylePrompt ? [] : [
-    getAssetUrl(serverProjectId, "style", "style1.png"),
-    getAssetUrl(serverProjectId, "style", "style2.png"),
-  ];
 
   for (const scene of scenes) {
     const statusRes = await fetch(`${API_BASE}/projects/${serverProjectId}`).then(r => r.json()).catch(() => null);
@@ -278,10 +272,7 @@ export async function runClientSidePipeline(
       try {
         let imageBlob: Blob;
         if (settings.imageProvider === "gemini" || settings.imageProvider === "whisk") {
-          const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts || [])];
-          const allPrompts = projectStylePrompt
-            ? rawPrompts.map(p => `${p}, ${projectStylePrompt}`)
-            : rawPrompts;
+          const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts || [])];
           let success = false;
           let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
@@ -407,22 +398,14 @@ export async function regenerateAssetFrontend(
   const { project: regenProject, scenes } = await getProject(projectId);
   const scene = scenes.find(s => s.scene_number === sceneNumber);
   if (!scene) throw new Error("Scene not found");
-  const regenStylePrompt: string | undefined = (regenProject?.settings as any)?.stylePrompt;
   const regenAspectRatio: string = (regenProject?.settings as any)?.aspectRatio || settings.aspectRatio || "16:9";
 
   if (type === "image") {
-    const styleUrls = regenStylePrompt ? [] : [
-      getAssetUrl(projectId, "style", "style1.png"),
-      getAssetUrl(projectId, "style", "style2.png"),
-    ];
 
     try {
       let imageBlob: Blob;
       if (settings.imageProvider === "gemini" || settings.imageProvider === "whisk") {
-        const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
-        const allPrompts = regenStylePrompt
-          ? rawPrompts.map(p => `${p}, ${regenStylePrompt}`)
-          : rawPrompts;
+        const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
         let success = false;
         let lastError = "";
         for (const prompt of allPrompts) {
@@ -762,12 +745,7 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
   }
 
   callbacks.onPhase(`Resuming ${pendingScenes.length} scenes...`);
-  const resumeStylePrompt: string | undefined = (resumeProjectData?.settings as any)?.stylePrompt;
   const resumeAspectRatio: string = (resumeProjectData?.settings as any)?.aspectRatio || settings.aspectRatio || "16:9";
-  const styleUrls = resumeStylePrompt ? [] : [
-    getAssetUrl(projectId, "style", "style1.png"),
-    getAssetUrl(projectId, "style", "style2.png"),
-  ];
 
   for (const scene of pendingScenes) {
     const statusRes = await getProject(projectId).catch(() => null);
@@ -783,10 +761,7 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
       try {
         let imageBlob: Blob;
         if (settings.imageProvider === "gemini" || settings.imageProvider === "whisk") {
-          const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
-          const allPrompts = resumeStylePrompt
-            ? rawPrompts.map(p => `${p}, ${resumeStylePrompt}`)
-            : rawPrompts;
+          const allPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
           let success = false;
           let lastError = "All Imagen prompts failed";
           for (const prompt of allPrompts) {
