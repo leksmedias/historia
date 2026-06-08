@@ -641,10 +641,11 @@ export async function startClipGeneration(projectId: string, resolution: VideoRe
   const subtitleDelay = settings.subtitleDelay ?? 0.8;
   const overlayPosition = settings.overlayPosition ?? "bottom-left";
   const overlayFont = settings.overlayFont ?? "Tox Typewriter";
+  const veoAudioVolume = settings.veoAudioVolume ?? 0.1;
   return apiRequest(`/render/${projectId}/clips`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resolution, subtitleDelay, overlayPosition, overlayFont }),
+    body: JSON.stringify({ resolution, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume }),
   });
 }
 
@@ -668,10 +669,11 @@ export async function startRender(projectId: string, resolution: VideoResolution
   const subtitleDelay = settings.subtitleDelay ?? 0.8;
   const overlayPosition = settings.overlayPosition ?? "bottom-left";
   const overlayFont = settings.overlayFont ?? "Tox Typewriter";
+  const veoAudioVolume = settings.veoAudioVolume ?? 0.1;
   return apiRequest(`/render/${projectId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resolution, subtitleDelay, overlayPosition, overlayFont }),
+    body: JSON.stringify({ resolution, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume }),
   });
 }
 
@@ -693,10 +695,12 @@ export async function startAnimateScenes(
   projectId: string,
   sceneNumbers: number[]
 ): Promise<{ total: number }> {
+  const settings = loadProviderSettings();
+  const veoAudioVolume = settings.veoAudioVolume ?? 0.1;
   return fetch(`${API_BASE}/render/${projectId}/animate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scenes: sceneNumbers }),
+    body: JSON.stringify({ scenes: sceneNumbers, veoAudioVolume }),
   }).then(async r => {
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: r.statusText }));

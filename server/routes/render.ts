@@ -425,12 +425,13 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
     const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
     const overlayPosition = req.body?.overlayPosition || "bottom-left";
     const overlayFont = req.body?.overlayFont || "Tox Typewriter";
+    const veoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.1;
 
     clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
     await upsertJobStatus(projectId, "clip", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
-    generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont).catch(e => {
+    generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume).catch(e => {
       console.error(`[clips] ${projectId} failed:`, e.message);
       clipJobs[projectId] = { ...clipJobs[projectId], status: "failed", error: e.message };
       upsertJobStatus(projectId, "clip", "failed", { error: e.message });
@@ -548,7 +549,8 @@ router.post("/:id/animate", async (req: Request, res: Response) => {
 
     const [veoProject] = await db.select().from(projects).where(eq(projects.id, projectId));
     const veoAR: string = (veoProject?.settings as any)?.aspectRatio || "16:9";
-    runVeoAnimation(projectId, toAnimate, veoAR).catch(e => {
+    const animateVeoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.1;
+    runVeoAnimation(projectId, toAnimate, veoAR, animateVeoAudioVolume > 0).catch(e => {
       console.error(`[veo] ${projectId} failed:`, e.message);
       if (animateJobs[projectId]) {
         animateJobs[projectId] = { ...animateJobs[projectId], status: "failed", error: e.message };
@@ -648,11 +650,12 @@ router.post("/:id/auto", async (req: Request, res: Response) => {
   const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
   const overlayPosition = req.body?.overlayPosition || "bottom-left";
   const overlayFont = req.body?.overlayFont || "Tox Typewriter";
+  const autoVeoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.1;
   const [autoProject] = await db.select().from(projects).where(eq(projects.id, projectId));
   const autoProjectAR: string = (autoProject?.settings as any)?.aspectRatio || "16:9";
   await upsertJobStatus(projectId, "auto", "running", { resolution: resKey });
   res.json({ success: true, message: "Auto pipeline started in background" });
-  runAutoPipeline(projectId, resKey, subtitleDelay, overlayPosition, overlayFont, autoProjectAR).catch(e => {
+  runAutoPipeline(projectId, resKey, subtitleDelay, overlayPosition, overlayFont, autoProjectAR, autoVeoAudioVolume).catch(e => {
     console.error(`[auto] ${projectId} failed:`, e.message);
     if (autoJobs[projectId]) autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: e.message };
     upsertJobStatus(projectId, "auto", "failed", { error: e.message });
@@ -712,12 +715,13 @@ router.post("/:id", async (req: Request, res: Response) => {
     const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
     const overlayPosition = req.body?.overlayPosition || "bottom-left";
     const overlayFont = req.body?.overlayFont || "Tox Typewriter";
+    const mergeVeoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.1;
 
     mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
     await upsertJobStatus(projectId, "merge", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
-    mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont).catch(e => {
+    mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, mergeVeoAudioVolume).catch(e => {
       console.error(`[merge] ${projectId} failed:`, e.message);
       mergeJobs[projectId] = { ...mergeJobs[projectId], status: "failed", error: e.message };
       upsertJobStatus(projectId, "merge", "failed", { error: e.message });
@@ -827,7 +831,8 @@ async function buildVeoClip(
   veoPath: string, audioPath: string, dur: number,
   width: number, height: number, outPath: string,
   overlayText?: string | null, delay?: number,
-  overlayPosition?: string, overlayFont?: string
+  overlayPosition?: string, overlayFont?: string,
+  veoAudioVolume?: number
 ): Promise<void> {
   const veoDur = getAudioDuration(veoPath);
   const speed  = veoDur / dur; // < 1.0 → Veo shorter than audio
@@ -868,10 +873,11 @@ async function buildVeoClip(
   const dValMs = Math.round(dVal * 1000);
 
   if (veoAudio) {
+    const veoVol = (veoAudioVolume ?? 0.1).toFixed(4);
     const atempoSpeed = shouldSlowDown ? Math.max(speed, 0.5).toFixed(4) : "1.0";
     const veoAudioFilter = shouldSlowDown
-      ? `atempo=${atempoSpeed},volume=0.1`
-      : `volume=0.1`;
+      ? `atempo=${atempoSpeed},volume=${veoVol}`
+      : `volume=${veoVol}`;
     if (hasSfx) {
       await ffmpeg([
         "-y", ...veoInputArgs, "-i", audioPath, "-i", sfxPath,
@@ -968,7 +974,7 @@ async function buildImageClip(
  * Phase 1: generate one MP4 per scene, named by scene number (1.mp4, 2.mp4, …).
  * Duration = audio duration. Ken Burns effect applied at random (no repeat).
  */
-async function generateClips(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter") {
+async function generateClips(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter", veoAudioVolume = 0.1) {
   const clipsDir = path.join("uploads", projectId, "clips");
   fs.mkdirSync(clipsDir, { recursive: true });
 
@@ -996,7 +1002,7 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
         try {
           if (fs.existsSync(veoPath)) {
             console.log(`[clips] scene ${num}: using Veo video`);
-            await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath, s.overlay_text, subtitleDelay, overlayPosition, overlayFont);
+            await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath, s.overlay_text, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume);
           } else {
             const effect = KB_EFFECTS[idx % KB_EFFECTS.length];
             console.log(`[clips] scene ${num}: generating locally (${effect}, ${dur}s)`);
@@ -1026,7 +1032,7 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
   console.log(`[clips] ${projectId}: all clips done → ${clipsDir}`);
 }
 
-async function runVeoAnimation(projectId: string, sceneList: any[], veoAspectRatio?: string): Promise<void> {
+async function runVeoAnimation(projectId: string, sceneList: any[], veoAspectRatio?: string, generateAudio?: boolean): Promise<void> {
   const total = sceneList.length;
   let done = 0;
   let head = 0;
@@ -1057,7 +1063,7 @@ async function runVeoAnimation(projectId: string, sceneList: any[], veoAspectRat
           .set({ video_status: "animating", video_error: null })
           .where(eq(scenes.id, s.id));
         console.log(`[veo] ${projectId}: scene ${num} animating`);
-        await generateVeoClip(imgPath, s.motion_prompt || s.image_prompt || "", outPath, veoAspectRatio);
+        await generateVeoClip(imgPath, s.motion_prompt || s.image_prompt || "", outPath, veoAspectRatio, generateAudio);
 
         await db.update(scenes)
           .set({ video_status: "completed", video_error: null })
@@ -1139,7 +1145,7 @@ function buildXfadeFilter(durations: number[], xd: number): string {
  * Phase 2: merge clips into output.mp4 with xfade transitions.
  * Reads from clips/ dir if pre-generated; otherwise generates clips inline.
  */
-async function mergeVideo(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter") {
+async function mergeVideo(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter", veoAudioVolume = 0.1) {
   const clipsDir = path.join("uploads", projectId, "clips");
   const renderDir = path.join("uploads", projectId, "render");
   fs.mkdirSync(renderDir, { recursive: true });
@@ -1185,7 +1191,7 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
       try {
         if (fs.existsSync(veoPath)) {
           console.log(`[merge] scene ${num}: regenerating Veo video clip inline`);
-          await buildVeoClip(veoPath, audioPath, dur, width, height, clip, s.overlay_text, subtitleDelay, overlayPosition, overlayFont);
+          await buildVeoClip(veoPath, audioPath, dur, width, height, clip, s.overlay_text, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume);
         } else {
           const effect = pickEffect(prevEffect);
           prevEffect = effect;
@@ -1294,7 +1300,7 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
  * Full auto-pipeline: poll until all assets ready → generate clips → merge.
  * Runs entirely in-process; browser can be closed.
  */
-async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter", aspectRatio = "16:9") {
+async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter", aspectRatio = "16:9", veoAudioVolume = 0.1) {
   const [W, H] = resolveOutputSize(resKey, aspectRatio);
   autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
   console.log(`[auto] ${projectId}: waiting for assets (${resKey})`);
@@ -1328,12 +1334,12 @@ async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay 
   console.log(`[auto] ${projectId}: ${ready.length} scenes ready → generating clips`);
   autoJobs[projectId].status = "generating_clips";
   clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
-  await generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont);
+  await generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume);
 
   console.log(`[auto] ${projectId}: clips done → merging`);
   autoJobs[projectId].status = "merging";
   mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
-  await mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont);
+  await mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume);
 
   autoJobs[projectId].status = "done";
   await upsertJobStatus(projectId, "auto", "done");

@@ -496,6 +496,27 @@ export default function Settings() {
 
           <Card>
             <CardHeader>
+              <CardTitle className="text-base font-display">Veo Video Animation</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Veo Audio Volume: {Math.round((settings.veoAudioVolume ?? 0.1) * 100)}%
+                </label>
+                <Slider
+                  value={[settings.veoAudioVolume ?? 0.1]}
+                  onValueChange={([v]) => setSettings(s => ({ ...s, veoAudioVolume: v }))}
+                  min={0.0} max={0.5} step={0.05}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Volume of the Veo-generated ambient audio mixed under the narrator voice. Set to 0% to disable Veo audio. Recommended: 10%.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="text-base font-display">Text-to-Speech</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">

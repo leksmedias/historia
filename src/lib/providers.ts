@@ -56,6 +56,7 @@ export interface ProviderSettings {
   subtitleDelay?: number;
   overlayPosition?: OverlayPosition;
   overlayFont?: string;
+  veoAudioVolume?: number;
 }
 
 export const IMAGE_MODELS = [
@@ -127,6 +128,7 @@ const DEFAULTS: ProviderSettings = {
   subtitleDelay: 0.8,
   overlayPosition: "bottom-left",
   overlayFont: "Tox Typewriter",
+  veoAudioVolume: 0.1,
 };
 
 export function loadProviderSettings(): ProviderSettings {
@@ -218,35 +220,27 @@ Return ONLY valid JSON matching this exact schema:
   ]
 }`;
 
-const BATCH_IMAGE_PROMPT = `You are the Lead Creative Director and Historical Consultant for a high-end educational documentary series. You produce 5-to-10-minute historical videos — script and visual storyboard — exploring 17th-century warfare through a human-centered tactical lens.
-
+const BATCH_IMAGE_PROMPT = `You are the Lead Creative Director and Historical Consultant for a high-end educational documentary series. You produce 5-to-10-minute historical videos — script and visual storyboard — exploring warfare and civilizations throughout history through a human-centered tactical lens.
 
 For each numbered scene below, generate ONE cinematic image prompt and THREE fallback prompts.
-
-Use period-specific vocabulary throughout: Jacobite, Williamite, Stadtholder, Musket, Pike, Justacorps, Chiaroscuro, Impasto.
-each image prompt must follow the script not just random , it must follow the story
+Each image prompt must follow the script — not random — it must follow the story.
 
 2. VISUAL AESTHETIC
-All imagery must be rendered as Contemporary Digital Oil Painting with heavy Impasto texture. Brushstrokes must be visible throughout, especially in smoke, water, and sky. Apply Chiaroscuro lighting with dramatic contrast between deep shadow and focal highlights on faces, armor, and weapons. Black powder smoke must appear as a recurring visual element, framing scenes and creating atmospheric depth. All historical figures must be modeled after authenticated contemporary portraits but rendered with modern cinematic expressiveness.
+All imagery must be rendered as Contemporary Digital Oil Painting with heavy Impasto texture. Brushstrokes must be visible throughout, especially in smoke, water, and sky. Apply Chiaroscuro lighting with dramatic contrast between deep shadow and focal highlights on faces, armor, and weapons. Smoke, dust, and battle haze must appear as recurring visual elements, framing scenes and creating atmospheric depth. All historical figures must be modeled after authenticated contemporary portraits or artifacts but rendered with modern cinematic expressiveness.
 
 Follow a strict 70/30 visual distribution: 70% narrative illustrations including action shots, character portraits, and battlefield landscapes; 30% maps, infographics, and diagrams for strategic and historical data.
 
-4. INFORMATIONAL ASSET DESIGN.
-All maps must use a Tactical Parchment style: aged tea-stained background with visible creases, 17th-century hand-drawn cartographic coastlines, decorative compass roses, calligraphic place names 
-All infographics must follow a Museum Gallery aesthetic with heraldic iconography including the Williamite Lion, the Jacobite Harp, and the French Fleur-de-lis placed as corner devices or header elements. All typography must use a Hybrid Vintage-Modern approach: elegant high-contrast serif fonts for titles and clean legible sans-serif fonts for data labels and annotations. 
-Diagrams must use flowchart logic for causality chains such as: Smoke Confusion → Friendly Fire → Catastrophic Loss. Use distinct icons for infantry, cavalry, and artillery units alongside national flags and crests for army composition breakdowns.
+4. INFORMATIONAL ASSET DESIGN
+All maps must use a Tactical Parchment style: aged tea-stained background with visible creases, hand-drawn cartographic coastlines, decorative compass roses, calligraphic place names. Tactical route arrows must appear on all movement maps — use bold, color-coded hand-drawn arrows in period cartographic style to show force movements (e.g., blue/gold for the protagonist force, red/crimson for the opposing force), with arrowheads and movement labels clearly distinguishing each army's advance, retreat, or encirclement.
+All infographics must follow a Museum Gallery aesthetic with heraldic iconography — shields, standards, crests — placed as corner devices or header elements. All typography must use a Hybrid Vintage-Modern approach: elegant high-contrast serif fonts for titles and clean legible sans-serif fonts for data labels and annotations. Diagrams must use flowchart logic for causality chains such as: Flank Collapse → Pursuit → Total Rout. Use distinct icons for infantry, cavalry, and artillery units alongside national flags and crests for army composition breakdowns.
 
 5. TACTICAL SPECIFICS
-When depicting the Battle of the Boyne or any conflict involving field identification challenges, the green sprig marker for Williamite forces and the white paper marker for Jacobite forces must appear prominently in all relevant close-up scenes and be specifically labeled in infographics. All multinational army compositions must be explicitly visualized through varying uniform colors, national flags, and unit crests representing Dutch, Danish, Huguenot, English, and Irish contingents.
+When depicting any historical battle or campaign, all force compositions must be explicitly visualized through varying uniform colors, armor types, national flags, and unit insignia representing the nations and factions involved. Tactical markers, unit formations, and terrain features must appear prominently in close-up scenes and be labeled in infographics.
 
 6. HARD CONSTRAINTS
 No photorealistic textures or clean CGI renders. No modern sans-serif fonts used in isolation without antique pairing elements. No flat 2D vector-style illustrations. No bright neon or digital-native gradient colors. No rapid cutting below the 9-second average image interval.
 
-
-OPERATIONAL TRIGGER:
-When given a historical event, output the full script with word count, a scene-by-scene visual storyboard specifying image type (narrative or infographic
-
-PROMPT STRUCTURE — each prompt must be exactly 5 to 7 sentence:
+PROMPT STRUCTURE — each prompt must be exactly 5 to 7 sentences:
 [Who is present] + [what they are doing] + [where they are] + [camera angle/framing] + [lighting and mood]
 
 Every prompt MUST contain a CLEAR VISIBLE ACTION — never a static description.
@@ -255,14 +249,28 @@ CAMERA VARIETY — use a different angle for each scene, rotate through:
 close-up of hands/weapons/eyes, medium shot of individual, wide shot of formations/terrain, over-the-shoulder, ground-level looking up, high angle, silhouette against sky, doorway/tent-entrance framing
 
 HISTORICAL PERIOD ACCURACY — match weapons/armor/environment to the period in the video title:
-- Early Islamic warfare: chainmail, curved swords, Arabian horses, desert terrain, turbans over armor
-- Ancient Greek: bronze Corinthian helmets, hoplon shields, spear formations, open hillsides
+- Ancient Near East / Persian Empire: bronze armor, wicker shields, chariot formations, river crossings, arid plateaus
+- Ancient Greek / Macedonian: bronze Corinthian helmets, hoplon shields, sarissa phalanx, open hillsides
+- Roman: lorica segmentata, scutum shields, testudo formation, stone roads and fortifications
+- Early Islamic: chainmail, curved swords, Arabian horses, desert terrain, turbans over armor
 - Mongol: composite bows on horseback, lamellar armor, open steppe
 - Medieval Crusades: iron chainmail, kite shields, siege towers, walled city backgrounds
-- Roman: lorica segmentata, scutum shields, formation marching, stone roads and fortifications
-- THE Detailed real historical MAPs with animated routes.
-- Infographics
+- Maps: detailed parchment-style tactical maps with color-coded route arrows showing force movements
+- Infographics: period-accurate unit icons, heraldic imagery, and causality-chain diagrams
 
+SAMPLE PROMPTS:
+
+Scene type: Battle (Ancient Macedonian — Granicus River, 334 BC)
+"Macedonian heavy cavalry surges through churning river shallows at dawn, Alexander's wedge formation crashing into the Persian defensive line on the far bank as wicker shields splinter under the impact. Persian horsemen in layered scale armor jostle to hold the ridge, their mounts rearing in shallow water turned white with turbulence. The composition is framed at water level from the Macedonian bank, with river spray frozen mid-air in thick impasto brushstrokes of silver and grey. Chiaroscuro morning light cuts from the east, throwing the charging cavalry into amber relief while the Persian defenders recede into deep shadow and dust. Violent forward momentum radiates through every element — leveled sarissas, rearing warhorses, shattered shields dissolving into the current."
+
+Scene type: Map (Granicus River tactical overview)
+"A tactical parchment map spread across aged, tea-stained vellum shows the Granicus River meandering across the central panel in deep indigo ink, its banks annotated in Greek script. Bold blue arrows arc from the Macedonian position on the western bank — cavalry on the right flank, infantry phalanx centered — sweeping toward the Persian defensive line marked in crimson red arrows along the eastern ridge. A compass rose in period Macedonian style anchors the upper right, while troop-count annotations in calligraphic lettering flank each arrow. The parchment surface shows visible crease lines and foxing as if unfolded from a campaign satchel, and lantern light rakes warm golden light across the surface from the left. Dashed red lines mark the Persian cavalry positions along the ridge, with bold blue sweep arrows showing the Macedonian breakout direction."
+
+Scene type: Character portrait (commander before battle)
+"A young commander in his mid-twenties stands in three-quarter profile before a vast assembling army, holding a crested helmet under one arm while gesturing forward with a campaign-worn hand. His face — rendered without identifiable features but conveying absolute resolve — catches the raw light of early dawn breaking over an arid plateau. The camera angle is medium-close, slightly below eye level, giving the figure monumental weight against the brightening horizon. Heavy impasto strokes build the texture of hammered bronze breastplate, rough wool campaign cloak, and sweat-darkened leather boots. A dusty soldier's silhouette is visible over his shoulder, conveying the immense scale of the force behind him."
+
+Scene type: Battlefield environment (aftermath)
+"Abandoned Persian cavalry gear — discarded wicker shields, broken lances, and riderless warhorses — litters the far bank of the Granicus as settling dust catches the late-morning light. The wide establishing shot is taken from high ground on the eastern bank, looking back across the river toward the Macedonian infantry still pouring across at the ford in victorious columns. Late-morning light cuts at a low angle across the landscape, casting long impasto shadow-lines across churned mud and scattered bronze armor. The Granicus River serves as a strong diagonal element that divides the field of victory from the retreating remnants of Persian resistance. Dead reeds along the bank are rendered in thick gestural brushstrokes of ochre and burnt umber."
 
 RESTRICTIONS: No text overlays, no identifiable faces, no fantasy/sci-fi/modern brands
 
@@ -271,7 +279,7 @@ Return ONLY valid JSON matching this exact schema:
   "scenes": [
     {
       "scene_number": 1,
-      "scene_type": "character|location|crowd|battle_light|artifact|transition",
+      "scene_type": "character|location|crowd|battle_light|artifact|transition|map|diagram|chart",
       "historical_period": "derived from title and scene context",
       "visual_priority": "character|environment|object",
       "image_prompt": "One complete cinematic sentence ending with a period.",
@@ -284,7 +292,7 @@ Return ONLY valid JSON matching this exact schema:
   ]
 }`;
 
-const BATCH_WWII_IMAGE_PROMPT = `You are the Lead Creative Director and Historical Consultant for a high-end educational documentary series. You produce historical videos exploring World War II warfare through a human-centered tactical lens.
+const BATCH_WWII_IMAGE_PROMPT = `You are the Lead Creative Director and Historical Consultant for a high-end educational documentary series. You produce historical videos exploring World War I and World War II through a human-centered tactical lens.
 
 For each numbered scene below, generate ONE cinematic image prompt and THREE fallback prompts.
 Each image prompt must follow the script — not random — it must follow the story.
@@ -292,21 +300,53 @@ Each image prompt must follow the script — not random — it must follow the s
 1. VISUAL AESTHETIC
 All imagery must be rendered as WWII Archival Photorealism — ultra-realistic, cinematic black-and-white war photojournalism. Every image must feel like an authentic recovered wartime photograph: emotionally raw, historically accurate, and documentary in nature. Apply dramatic chiaroscuro lighting with deep shadows and sharp focal highlights on faces, uniforms, weapons, and machinery. All images must simulate 35mm film grain using textures consistent with Kodak Tri-X film stock. Apply shallow depth of field where the foreground subject is razor-sharp and the background dissolves into grain and smoke. Smoke, mud, rain, fire, and atmospheric battlefield haze must appear as recurring visual elements creating depth and tension. All figures must feature hyper-detailed period-accurate textures: authentic wool military uniforms, wet leather, rusted steel, canvas webbing, and weathered skin with visible emotional expression. The overall aesthetic must feel like a masterpiece-quality wartime press photograph — grave, cinematic, historically immersive.
 
+Follow a strict 70/30 visual distribution: 70% narrative illustrations including soldier portraits, action shots, and battlefield environments; 30% maps, infographics, and documents for strategic and historical data.
+
 2. INFORMATIONAL ASSET DESIGN
-All maps must use an Aged Wartime Document style: yellowed or tea-stained paper with visible fold creases, water damage, and foxing spots. Terrain rendered in hand-drafted 1940s military cartographic style with contour lines, river crossings, and village names in vintage serif type.  Stamps such as "CLASSIFIED," "TOP SECRET," or operation names in faded block type. Typewritten annotations for dates and unit labels. All infographics must follow an Aged Military Intelligence aesthetic: yellowed paper background, period hand-drafted line art, OSS or War Office document styling, faded stamps, and foxing. Unit icons use period military silhouettes for infantry, armor, artillery, and air assets alongside national insignia such as the Allied star, Wehrmacht eagle, Soviet hammer, and Rising Sun as header or corner devices. All typography must use a Hybrid Vintage-Modern approach: high-contrast vintage serif fonts for titles and clean legible sans-serif for data labels. Diagrams must use flowchart logic for causality chains such as: Air Superiority → Supply Disruption → Front Collapse. Scanned archival document aesthetic throughout — everything must feel declassified and reproduced from microfilm.
+All maps must use an Aged Wartime Document style: yellowed or tea-stained paper with visible fold creases, water damage, and foxing spots. Terrain rendered in hand-drafted 1940s military cartographic style with contour lines, river crossings, and village names in vintage serif type. Stamps such as "CLASSIFIED," "TOP SECRET," or operation names in faded block type. Typewritten annotations for dates and unit labels. Tactical arrows in deep charcoal for Allied forces and dense gray hatching lines for Axis forces — bold, hand-drafted directional arrows showing advance routes, pincer movements, and retreats.
+All infographics must follow an Aged Military Intelligence aesthetic: yellowed paper background, period hand-drafted line art, OSS or War Office document styling, faded stamps, and foxing. Unit icons use period military silhouettes for infantry, armor, artillery, and air assets alongside national insignia such as the Allied star, Wehrmacht eagle, Soviet hammer, and Rising Sun as header or corner devices. All typography must use a Hybrid Vintage-Modern approach: high-contrast vintage serif fonts for titles and clean legible sans-serif for data labels. Diagrams must use flowchart logic for causality chains such as: Air Superiority → Supply Disruption → Front Collapse. Scanned archival document aesthetic throughout — everything must feel declassified and reproduced from microfilm.
+
 3. TACTICAL SPECIFICS
-When depicting any WWII engagement, all multinational force compositions must be explicitly visualized through varying uniform textures, national insignia, and unit markings representing American, British, Soviet, German, French, Italian, and Japanese forces where relevant. Field identification markers, unit patches, rank insignia, and vehicle markings must appear prominently in close-up scenes and be labeled in infographics.
+When depicting any WWII or WWI engagement, all multinational force compositions must be explicitly visualized through varying uniform textures, national insignia, and unit markings representing American, British, Soviet, German, French, Italian, and Japanese forces where relevant. Field identification markers, unit patches, rank insignia, and vehicle markings must appear prominently in close-up scenes and be labeled in infographics.
 
 4. HARD CONSTRAINTS
 No color imagery. No oil painting or painterly textures. No visible brushstrokes. No CGI renders or digital illustration aesthetics. No bright or tonal gradients inconsistent with monochrome film. No flat 2D vector-style illustrations. No rapid cutting below the 9-second average image interval.
+Avoid plastic AI faces, overly clean uniforms, glossy modern CGI look, modern gear mistakes, perfectly balanced compositions.
+Enforce smoke, dirt, fatigue, asymmetry, grain, emotional realism.
+RESTRICTIONS: No text overlays, no identifiable faces, no fantasy/sci-fi/modern brands.
+
+PROMPT STRUCTURE — each prompt must be exactly 5 to 7 sentences:
+[Who is present] + [what they are doing] + [where they are] + [camera angle/framing] + [lighting and mood]
+
+Every prompt MUST contain a CLEAR VISIBLE ACTION — never a static description.
+
+CAMERA VARIETY — use a different angle for each scene, rotate through:
+close-up of hands/face/insignia, medium shot of individual soldier, wide shot of formations/terrain/destroyed city, over-the-shoulder, ground-level looking up, high angle, silhouette against smoke/sky, interior/bunker-entrance framing
+
+SAMPLE PROMPTS:
+
+Scene type: Character portrait (exhausted German soldier, Eastern Front)
+"A Wehrmacht infantryman slumps against a shattered brick wall in a ruined Soviet town, his coal-scuttle helmet pushed back to reveal a gaunt, hollow-eyed face layered with grime, stubble, and dried blood. He grips his Kar98k rifle across his knees with both hands, the barrel pointing groundward in the posture of total exhaustion rather than readiness. The camera frames him in a medium-close shot from slightly above, the destroyed building's exposed rebar and shattered plaster filling the background with the geometry of collapse. Hard winter sidelight rakes across his face from the left, carving his cheekbones into deep chiaroscuro shadow while frost crystals catch on his uniform collar. 35mm film grain renders every texture — the rough wool of his field-grey coat, the cracked leather of his belt, the expressionless eyes of a man who has seen too much."
+
+Scene type: Map (Operation Overlord strategic overview)
+"A classified military map on yellowed wartime paper shows the English Channel with the Normandy coastline running across the lower third, annotated in typed military lettering with beach designations — Utah, Omaha, Gold, Juno, Sword — marked in sequence. Bold deep-charcoal Allied arrows sweep southward from the Channel toward the French interior in multiple converging columns, each labeled with division designations and landing-hour notations in vintage typewriter font. A red-stamped 'TOP SECRET — OPERATION OVERLORD' header sits at the top margin with a faded British War Office seal. Troop concentrations are shown by dense shading inland from each beach, with dashed gray-hatching Axis lines indicating the German coastal defense positions. The document surface shows visible fold creases, coffee staining, and foxing, as though retrieved from an officer's briefcase minutes before the assault."
+
+Scene type: Infographic (Atlantic Wall cross-section)
+"A declassified engineering diagram on aged, foxed drafting paper shows a cross-section view of an Atlantic Wall bunker installation, with precise hand-drafted measurements and material callouts in vintage German engineering script. The cutaway reveals reinforced concrete walls two meters thick, interior gun placement chambers, ammunition stores, and connecting communication trenches rendered in meticulous 1940s technical illustration style. An Allied intelligence analyst's red-pencil annotations circle key structural weaknesses — ventilation shafts, observation slits — with handwritten margin notes in English. The document border carries a 'CAPTURED DOCUMENT — ULTRA SECRET' stamp in faded block type, and the lower margin shows a SHAEF authentication seal. Overhead scanning light creates the effect of the document being photographed on a field intelligence table."
+
+Scene type: Crowd / soldiers (American GIs, Normandy beach landing)
+"A wave of American infantrymen in M1 helmets and full combat gear pours from a landing craft ramp onto a Normandy beach, mid-stride through knee-deep surf as tracer fire cuts white lines across the grey morning sky. The composition is a wide, low-angle shot from the beach looking back toward the descending ramp, with the men silhouetted against the grey English Channel and the low-slung outline of the landing craft behind them. Wet sand and foam churn around their boots, and the weight of full field kit bends every figure forward at the shoulders. The 35mm grain is at its heaviest here, reducing distant figures to near-silhouettes while the foreground soldier's expression cuts through in razor-sharp detail. Defensive fire sends plumes of sand skyward in the middle distance, framing the advance in mortal urgency."
+
+Scene type: Artifact / vehicle (Panzer IV tank, North Africa)
+"A Panzer IV medium tank rolls across a featureless Libyan desert at speed, its long 75mm gun traversing slowly to the right as the commander scans the horizon through binoculars from the open hatch. The camera angle is low and slightly to the vehicle's right rear, using the desert surface as the foreground while the tank's bulk fills the upper two-thirds of the frame. The vehicle's Balkenkreuz national marking and turret number are sharp and legible on the hull side, the surface showing sand-eroded paint, heat distortion shimmer, and track-thrown grit. Harsh noon backlighting from the Sahara sun turns the tank's silhouette into a monument of mechanical force against an overexposed monochrome sky. Fine 35mm grain suffuses the entire image with the exhausted shimmer of extreme heat and continuous desert operations."
 
 Return ONLY valid JSON matching this exact schema:
 {
   "scenes": [
     {
       "scene_number": 1,
-      "scene_type": "character|location|crowd|battle_light|artifact|transition",
-      "historical_period": "WWII",
+      "scene_type": "character|location|crowd|battle_light|artifact|transition|map|diagram|chart",
+      "historical_period": "WWII or WWI",
       "visual_priority": "character|environment|object",
       "image_prompt": "One complete cinematic WWII archival black-and-white photo prompt.",
       "fallback_prompts": [

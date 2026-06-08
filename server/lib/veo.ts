@@ -27,7 +27,8 @@ export async function generateVeoClip(
   imagePath: string,
   prompt: string,
   outPath: string,
-  aspectRatio?: string
+  aspectRatio?: string,
+  generateAudio?: boolean
 ): Promise<void> {
   const imageBytes = fs.readFileSync(imagePath);
   const imageBase64 = imageBytes.toString("base64");
@@ -45,7 +46,7 @@ export async function generateVeoClip(
       sampleCount: 1,
       durationSeconds: 8,
       personGeneration: "allow_all",
-      generateAudio: false,
+      generateAudio: generateAudio ?? false,
       ...(aspectRatio === "9:16" ? { aspectRatio: "9:16" } : {}),
     },
   };
