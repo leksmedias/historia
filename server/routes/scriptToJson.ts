@@ -20,6 +20,7 @@ import {
   PASS2_WWII_SYSTEM,
   getGroqModelConfig,
 } from "../../shared/scriptToJsonUtils";
+import { PROJECT_ID, getAccessToken } from "../lib/gemini.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -97,9 +98,8 @@ function loadJobsFromDisk() {
 
 // Load jobs on startup
 loadJobsFromDisk();
-// ── Direct API call ───────────────────────────────────────────────────────────
 
-import { PROJECT_ID, getAccessToken } from "../lib/gemini.js";
+// ── Direct API call ───────────────────────────────────────────────────────────
 
 async function callApi(
   provider: "groq" | "inworld" | "claude" | "gemini",
@@ -108,11 +108,14 @@ async function callApi(
 ): Promise<{ status: number; data: any }> {
   if (provider === "gemini") {
     try {
-      const gCloudKey = apiKey || process.env.GOOGLE_CLOUD_API_KEY;
-      const ai = new GoogleGenAI({
-        apiKey: gCloudKey,
-        vertexai: true,
-      });
+      const geminiKey = apiKey || process.env.GEMINI_API_KEY;
+      const ai = geminiKey
+        ? new GoogleGenAI({ apiKey: geminiKey })
+        : new GoogleGenAI({
+            vertexai: true,
+            project: PROJECT_ID,
+            location: process.env.VERTEX_LOCATION_ID || "europe-west4",
+          });
 
       const model = payload?.model || "gemini-3.1-pro-preview";
       const systemInstruction = payload.systemInstruction?.parts?.[0]?.text || payload.systemInstruction;

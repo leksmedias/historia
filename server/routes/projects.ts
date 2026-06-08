@@ -398,7 +398,6 @@ async function runMissingImageGeneration(projectId: string) {
         const num = scene.scene_number;
         try {
           throw new Error("Server-side image generation not supported. Use the project page to regenerate images via Gemini.");
-          console.log(`${projectId}: generate-missing scene ${num} image done`);
         } catch (e: any) {
           console.error(`${projectId} scene ${num}: generate-missing failed: ${e.message}`);
           await db.update(scenes)
@@ -717,11 +716,12 @@ router.post("/:id/sync-audio-status", async (req: Request, res: Response) => {
       .set({
         status: newStatus,
         stats: {
-          totalScenes: finalScenes.length,
+          sceneCount: finalScenes.length,
           imagesCompleted: imageCompleted,
           audioCompleted,
           imagesFailed: finalScenes.filter(s => s.image_status === "failed").length,
           audioFailed: finalScenes.filter(s => s.audio_status === "failed").length,
+          needsReviewCount: finalScenes.filter(s => s.needs_review).length,
         },
       })
       .where(eq(projects.id, projectId));
