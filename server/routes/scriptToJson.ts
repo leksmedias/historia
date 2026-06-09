@@ -52,6 +52,7 @@ interface JobParams {
   claudeModel?: string;
   groqModel?: string;
   geminiModel?: string;
+  stylePrompt?: string;
 }
 
 // ── Job store ─────────────────────────────────────────────────────────────────
@@ -391,10 +392,14 @@ async function callPass2Batch(
   groqModel?: string,
   rateLimitRetries = 3,
   retryOnParseFailure = true,
-  geminiModel?: string
+  geminiModel?: string,
+  stylePrompt?: string
 ): Promise<Array<{ id: number; prompt: string }>> {
   const baseSystem = style === "ww2" ? PASS2_WWII_SYSTEM : PASS2_IMPASTO_SYSTEM;
-  const systemPrompt = continuityAnchor ? `${baseSystem}\n\n${continuityAnchor}` : baseSystem;
+  const systemPromptPrompt = stylePrompt
+    ? `${baseSystem}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
+    : baseSystem;
+  const systemPrompt = continuityAnchor ? `${systemPromptPrompt}\n\n${continuityAnchor}` : systemPromptPrompt;
 
   const scenesText = scenes.map((s) => `Scene ${s.id}: "${s.script}"`).join("\n");
   const firstId = scenes[0].id;
@@ -472,7 +477,7 @@ async function callPass2Batch(
       const waitTime = (4 - rateLimitRetries) * baseWait;
       console.log(`[${provider}] Pass2 rate limited or transient error (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel, stylePrompt);
     }
     if (result.status === 401)
       throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : provider === "gemini" ? "Gemini" : "Inworld"} API key is invalid.`);
@@ -515,7 +520,7 @@ async function callPass2Batch(
     }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass2 JSON parse failed — retrying`);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries, false, geminiModel);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, claudeModel, groqModel, rateLimitRetries, false, geminiModel, stylePrompt);
     }
     console.error(`[${provider}] Pass2 JSON parse failed twice — using placeholders. Error: ${err.message}`);
     return scenes.map((s) => ({ id: s.id, prompt: "[generation failed]" }));
@@ -525,7 +530,7 @@ async function callPass2Batch(
 // ── Pipeline runner ───────────────────────────────────────────────────────────
 
 async function runJob(job: Job, params: JobParams): Promise<void> {
-  const { title, script, secondsPerScene, style, provider, apiKey, groqApiKeys: rawGroqKeys, claudeModel, groqModel, geminiModel } = params;
+  const { title, script, secondsPerScene, style, provider, apiKey, groqApiKeys: rawGroqKeys, claudeModel, groqModel, geminiModel, stylePrompt } = params;
 
   const groqKeyPool = provider === "groq"
     ? (rawGroqKeys?.filter(k => k?.trim()) ?? (apiKey ? [apiKey] : []))
@@ -629,7 +634,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
       }
       const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);
       const anchor = buildContinuityAnchor(completedForAnchor);
-      const results = await withGroqRotation(key => callPass2Batch(title, batch, style, provider, key, anchor, claudeModel, groqModel, 3, true, geminiModel));
+      const results = await withGroqRotation(key => callPass2Batch(title, batch, style, provider, key, anchor, claudeModel, groqModel, 3, true, geminiModel, stylePrompt));
 
       for (const r of results) {
         const idVal = r.id ?? r.scene_number ?? r.sceneNumber ?? r.scene_id ?? r.scene_Id;
@@ -685,7 +690,7 @@ router.get("/", (_req: Request, res: Response) => {
 });
 
 router.post("/", (req: Request, res: Response) => {
-  const { title, script, secondsPerScene, style, provider, apiKey, groqApiKeys, claudeModel, groqModel, geminiModel } = req.body as JobParams;
+  const { title, script, secondsPerScene, style, provider, apiKey, groqApiKeys, claudeModel, groqModel, geminiModel, stylePrompt } = req.body as JobParams;
 
   if (!title || !script || !provider) {
     return res.status(400).json({ error: "title, script, and provider are required" });
@@ -723,13 +728,14 @@ router.post("/", (req: Request, res: Response) => {
       claudeModel,
       groqModel,
       geminiModel,
+      stylePrompt: stylePrompt?.trim(),
     }
   };
   jobs.set(jobId, job);
   saveJobsToDisk();
 
   // Fire and forget — runs in background
-  runJob(job, { title, script, secondsPerScene: secondsPerScene ?? 15, style: style ?? "impasto", provider, apiKey: apiKey ?? "", groqApiKeys, claudeModel, groqModel, geminiModel });
+  runJob(job, { title, script, secondsPerScene: secondsPerScene ?? 15, style: style ?? "impasto", provider, apiKey: apiKey ?? "", groqApiKeys, claudeModel, groqModel, geminiModel, stylePrompt });
 
   res.json({ jobId });
 });

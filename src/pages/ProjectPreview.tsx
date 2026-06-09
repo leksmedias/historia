@@ -21,6 +21,7 @@ export default function ProjectPreview() {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [projectTitle, setProjectTitle] = useState("");
   const [visualTheme, setVisualTheme] = useState<"impasto" | "ww2">("impasto");
+  const [stylePrompt, setStylePrompt] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -161,6 +162,7 @@ export default function ProjectPreview() {
       setProjectStatus(data.project.status);
       setScenes(data.scenes);
       setVisualTheme(data.project.settings?.visualTheme || "impasto");
+      setStylePrompt(data.project.settings?.stylePrompt);
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -368,7 +370,9 @@ export default function ProjectPreview() {
         settings.claudeModel,
         settings.inworldApiKey,
         settings.textProvider,
-        visualTheme
+        visualTheme,
+        settings.geminiModel,
+        stylePrompt
       );
       setEditPrompt(newPrompt);
       toast.success("New prompt generated");

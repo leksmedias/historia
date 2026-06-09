@@ -4,7 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Copy, Download, CheckCircle2, AlertCircle, X, Trash2, History, PlusCircle } from "lucide-react";
-import { loadProviderSettings } from "@/lib/providers";
+import { loadProviderSettings, COMPACT_STYLE_SUFFIX, COMPACT_WWII_STYLE_SUFFIX } from "@/lib/providers";
 import { estimateSceneCount, type OutputScene } from "@/lib/scriptToJson";
 
 const DURATION_OPTIONS = [
@@ -77,7 +77,17 @@ export default function ScriptToJson() {
   const [script, setScript] = useState("");
   const [secondsPerScene, setSecondsPerScene] = useState<10 | 15 | 20 | 30>(15);
   const [style, setStyle] = useState<Style>("impasto");
+  const [stylePrompt, setStylePrompt] = useState(COMPACT_STYLE_SUFFIX);
   const [provider, setProvider] = useState<Provider>("groq");
+
+  const handleStyleChange = (s: Style) => {
+    setStyle(s);
+    if (s === "ww2") {
+      setStylePrompt(COMPACT_WWII_STYLE_SUFFIX);
+    } else {
+      setStylePrompt(COMPACT_STYLE_SUFFIX);
+    }
+  };
 
   const [jobsList, setJobsList] = useState<Job[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -221,6 +231,7 @@ export default function ScriptToJson() {
           claudeModel: settings.claudeModel,
           geminiModel: settings.geminiModel,
           groqModel: settings.groqModel,
+          stylePrompt: stylePrompt.trim(),
         }),
       });
       if (!res.ok) {
@@ -238,11 +249,12 @@ export default function ScriptToJson() {
 
   const handleLoadAndRetry = useCallback(() => {
     if (!selectedJob?.params) return;
-    const { title, script, secondsPerScene, style, provider } = selectedJob.params;
+    const { title, script, secondsPerScene, style, provider, stylePrompt } = selectedJob.params as any;
     setTitle(title || "");
     setScript(script || "");
     setSecondsPerScene((secondsPerScene as 10 | 15 | 20 | 30) || 15);
     setStyle(style || "impasto");
+    setStylePrompt(stylePrompt || (style === "ww2" ? COMPACT_WWII_STYLE_SUFFIX : COMPACT_STYLE_SUFFIX));
     setProvider(provider || "groq");
     setActiveTab("new");
     toast({
@@ -403,7 +415,7 @@ export default function ScriptToJson() {
                 {(["impasto", "ww2"] as const).map((s) => (
                   <button
                     key={s}
-                    onClick={() => setStyle(s)}
+                    onClick={() => handleStyleChange(s)}
                     disabled={generating}
                     className={`rounded-lg border p-3 text-left transition-colors ${
                       style === s
@@ -422,6 +434,24 @@ export default function ScriptToJson() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Style Prompt Textarea */}
+            <div>
+              <label className="text-xs font-medium text-primary uppercase tracking-wide block mb-1.5">
+                Style Prompt Suffix
+              </label>
+              <Textarea
+                value={stylePrompt}
+                onChange={(e) => setStylePrompt(e.target.value)}
+                className="bg-secondary border-border min-h-[90px] font-mono text-[10px] leading-normal"
+                rows={4}
+                placeholder="Describe the visual style suffix..."
+                disabled={generating}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1 leading-normal">
+                This suffix is appended to the system prompts for scene generation.
+              </p>
             </div>
 
             {/* AI Provider */}

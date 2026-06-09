@@ -978,9 +978,10 @@ export async function regenerateImagePrompt(
   inworldApiKey?: string,
   textProvider?: "groq" | "claude" | "inworld" | "gemini",
   visualTheme?: "impasto" | "ww2",
-  geminiModel?: string
+  geminiModel?: string,
+  stylePrompt?: string
 ): Promise<string> {
-  const systemPrompt = visualTheme === "ww2"
+  const baseSystem = visualTheme === "ww2"
     ? `You are a visual content director generating a single image prompt for a WWII documentary scene.
 
 PROMPT STRUCTURE (exactly one sentence):
@@ -1012,6 +1013,10 @@ STYLE RULES:
 RESTRICTIONS: No text overlays, no identifiable faces, no fantasy/sci-fi/modern elements.
 
 Return ONLY the prompt text — one sentence ending with a period. No JSON, no markdown, no explanation.`;
+
+  const systemPrompt = stylePrompt
+    ? `${baseSystem}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
+    : baseSystem;
 
   const userPrompt = `Script text to visualize:\n${scriptText}\n\nGenerate one cinematic image prompt for this scene.`;
 

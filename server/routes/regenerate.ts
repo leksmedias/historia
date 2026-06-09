@@ -47,13 +47,9 @@ router.post("/", async (req: Request, res: Response) => {
       const imgDir = path.join("uploads", projectId, "images");
       fs.mkdirSync(imgDir, { recursive: true });
 
-      const regenStylePrompt: string | undefined = settings.stylePrompt;
-
       try {
         const rawPrompts = [scene.image_prompt, ...(scene.fallback_prompts as string[] || [])];
-        const prompt = regenStylePrompt
-          ? `${rawPrompts[0]}, ${regenStylePrompt}`
-          : rawPrompts[0];
+        const prompt = rawPrompts[0];
         const base64 = await generateGeminiImage(prompt);
         const bytes = Buffer.from(base64, "base64");
         fs.writeFileSync(path.join(imgDir, `${sceneNumber}.png`), bytes);

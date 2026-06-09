@@ -37,6 +37,7 @@ export interface ScriptToJsonParams {
   groqModel?: string;
   claudeModel?: string;
   geminiModel?: string;
+  stylePrompt?: string;
 }
 
 export interface GroqModelConfig {

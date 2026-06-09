@@ -212,10 +212,14 @@ async function callPass2Batch(
   claudeModel?: string,
   rateLimitRetries = 3,
   retryOnParseFailure = true,
-  geminiModel?: string
+  geminiModel?: string,
+  stylePrompt?: string
 ): Promise<Array<{ id: number; prompt: string }>> {
   const baseSystem = style === "ww2" ? PASS2_WWII_SYSTEM : PASS2_IMPASTO_SYSTEM;
-  const systemPrompt = continuityAnchor ? `${baseSystem}\n\n${continuityAnchor}` : baseSystem;
+  const systemPromptPrompt = stylePrompt
+    ? `${baseSystem}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
+    : baseSystem;
+  const systemPrompt = continuityAnchor ? `${systemPromptPrompt}\n\n${continuityAnchor}` : systemPromptPrompt;
 
   const scenesText = scenes.map((s) => `Scene ${s.id}: "${s.script}"`).join("\n");
   const firstId = scenes[0].id;
@@ -296,7 +300,7 @@ async function callPass2Batch(
       const waitTime = (4 - rateLimitRetries) * baseWait;
       console.log(`[${provider}] Pass2 rate limited (${result.status}) — waiting ${waitTime / 1000}s (attempts left: ${rateLimitRetries})...`);
       await delay(waitTime);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, groqModel, claudeModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, groqModel, claudeModel, rateLimitRetries - 1, retryOnParseFailure, geminiModel, stylePrompt);
     }
     if (result.status === 401)
       throw new Error(`${provider === "groq" ? "Groq" : provider === "claude" ? "Claude" : "gemini" ? "Gemini" : "Inworld"} API key is invalid.`);
@@ -339,7 +343,7 @@ async function callPass2Batch(
     }
     if (retryOnParseFailure) {
       console.warn(`[${provider}] Pass2 JSON parse failed — retrying`);
-      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, groqModel, claudeModel, rateLimitRetries, false, geminiModel);
+      return callPass2Batch(title, scenes, style, provider, apiKey, continuityAnchor, groqModel, claudeModel, rateLimitRetries, false, geminiModel, stylePrompt);
     }
     console.error(`[${provider}] Pass2 JSON parse failed twice — using placeholders. Error: ${err.message}`);
     return scenes.map((s) => ({ id: s.id, prompt: "[generation failed]" }));
@@ -472,7 +476,7 @@ export async function runScriptToJson(
     const batch = allSplitScenes.slice(b * batchSize, (b + 1) * batchSize);
     const anchor = buildContinuityAnchor(completedForAnchor);
 
-    const results = await withGroqRotation(key => callPass2Batch(title, batch, style, provider, key, anchor, params.groqModel, params.claudeModel, 3, true, params.geminiModel));
+    const results = await withGroqRotation(key => callPass2Batch(title, batch, style, provider, key, anchor, params.groqModel, params.claudeModel, 3, true, params.geminiModel, params.stylePrompt));
 
     for (const r of results) {
       const idVal = r.id ?? r.scene_number ?? r.sceneNumber ?? r.scene_id ?? r.scene_Id;
