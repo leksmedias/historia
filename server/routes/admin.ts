@@ -17,9 +17,9 @@ function scanDir(dirPath: string): { files: number; bytes: number } {
       try {
         const stat = fs.statSync(fullPath);
         if (stat.isFile()) { files++; bytes += stat.size; }
-      } catch {}
+      } catch (_e) { /* skip unreadable entry */ }
     }
-  } catch {}
+  } catch (_e) { /* skip unreadable dir */ }
   return { files, bytes };
 }
 
@@ -37,9 +37,9 @@ function purgeDir(dirPath: string): { files: number; bytes: number } {
           fs.unlinkSync(fullPath);
           files++;
         }
-      } catch {}
+      } catch (_e) { /* skip unreadable/locked file */ }
     }
-  } catch {}
+  } catch (_e) { /* skip unreadable dir */ }
   return { files, bytes };
 }
 
@@ -70,27 +70,24 @@ router.get("/storage", (_req: Request, res: Response) => {
 
     for (const projDir of projectDirs) {
       const base = path.join(uploadsDir, projDir);
-      const add = (key: keyof typeof totals, sub: string) => {
-        if (typeof totals[key] === "object" && "files" in (totals[key] as object)) {
-          const t = totals[key] as { files: number; bytes: number };
-          const r = scanDir(path.join(base, sub));
-          t.files += r.files;
-          t.bytes += r.bytes;
-        }
+
+      const addTo = (bucket: { files: number; bytes: number }, sub: string) => {
+        const r = scanDir(path.join(base, sub));
+        bucket.files += r.files;
+        bucket.bytes += r.bytes;
       };
-      add("images",  "images");
-      add("audio",   "audio");
-      add("videos",  "videos");
-      // renders = clips + render (final per-scene clips + merged output)
-      const clips  = scanDir(path.join(base, "clips"));
-      const render = scanDir(path.join(base, "render"));
-      totals.renders.files += clips.files + render.files;
-      totals.renders.bytes += clips.bytes + render.bytes;
+
+      addTo(totals.images,  "images");
+      addTo(totals.audio,   "audio");
+      addTo(totals.videos,  "videos");
+      // renders = clips (per-scene Ken Burns) + render (merged output.mp4)
+      addTo(totals.renders, "clips");
+      addTo(totals.renders, "render");
     }
 
     res.json(totals);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
 });
 
@@ -138,7 +135,7 @@ router.post("/purge", async (req: Request, res: Response) => {
       await db.update(scenes).set({ video_status: "none", video_error: null });
     }
 
-    // Reset project status for projects that had content deleted
+    // Reset project status for projects that had content-bearing assets deleted
     if (scope === "images" || scope === "audio" || scope === "all") {
       await db.update(projects)
         .set({ status: "partial" })
@@ -150,8 +147,8 @@ router.post("/purge", async (req: Request, res: Response) => {
     }
 
     res.json({ deleted: { files: totalFiles, bytes: totalBytes } });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
   }
 });
 
