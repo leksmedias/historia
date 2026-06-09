@@ -74,6 +74,9 @@ export default function SceneCard({ scene, projectId, onRefresh, onAnimate, isAn
 
   const audioUrl = scene.audio_status === "completed" ? getAssetUrl(projectId, "audio", scene.audio_file) : null;
 
+  const isSceneAnimated = isAnimated || scene.video_status === "completed";
+  const isSceneAnimating = isAnimating || scene.video_status === "animating";
+
   const startEdit = (field: "script" | "tts" | "prompt") => {
     setEditingField(field);
     setEditValue(
@@ -247,20 +250,35 @@ export default function SceneCard({ scene, projectId, onRefresh, onAnimate, isAn
                 <span className="text-xs text-muted-foreground">{scene.image_attempts} attempt{scene.image_attempts !== 1 ? "s" : ""}</span>
               </div>
               {onAnimate && scene.image_status === "completed" && (
-                <Button
-                  size="sm"
-                  variant={isAnimated ? "secondary" : "outline"}
-                  disabled={isAnimating}
-                  onClick={() => onAnimate(scene.scene_number)}
-                  className="text-xs w-full"
-                >
-                  {isAnimating
-                    ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Animating…</>
-                    : isAnimated
-                      ? <><Video className="h-3 w-3 mr-1 text-emerald-400" />Re-animate with Veo</>
-                      : <><Video className="h-3 w-3 mr-1" />Animate with Veo</>
-                  }
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    size="sm"
+                    variant={isSceneAnimated ? "secondary" : "outline"}
+                    disabled={isSceneAnimating}
+                    onClick={() => onAnimate(scene.scene_number)}
+                    className="text-xs w-full"
+                  >
+                    {isSceneAnimating
+                      ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Animating…</>
+                      : isSceneAnimated
+                        ? <><Video className="h-3 w-3 mr-1 text-emerald-400" />Re-animate with Veo</>
+                        : <><Video className="h-3 w-3 mr-1" />Animate with Veo</>
+                    }
+                  </Button>
+                  {scene.video_status === "failed" && (
+                    <div className="rounded bg-destructive/10 border border-destructive/20 p-2 text-xs space-y-1">
+                      <div className="text-destructive font-medium flex items-center gap-1">
+                        <VideoOff className="h-3.5 w-3.5" /> Animation failed: {scene.video_error || "Unknown error"}
+                      </div>
+                      <div className="text-muted-foreground">
+                        <span className="font-semibold">Prompt: </span>
+                        <code className="font-mono bg-secondary px-1 rounded block mt-1 overflow-x-auto whitespace-pre-wrap">
+                          {scene.motion_prompt || scene.image_prompt || "No prompt"}
+                        </code>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
               {scene.image_error && <p className="text-xs text-destructive">{scene.image_error}</p>}
             </div>

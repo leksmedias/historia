@@ -240,8 +240,10 @@ export default function ProjectStatus() {
       }
       setAnimatedScenes(prev => new Set(prev).add(sceneNumber));
       toast.success(`Scene ${sceneNumber} animated with Veo`);
+      fetchData();
     } catch (e: any) {
       toast.error(e.message);
+      fetchData();
     } finally {
       setAnimatingScenes(prev => { const n = new Set(prev); n.delete(sceneNumber); return n; });
     }
