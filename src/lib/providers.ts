@@ -56,6 +56,7 @@ export interface ProviderSettings {
   subtitleDelay?: number;
   overlayPosition?: OverlayPosition;
   overlayFont?: string;
+  overlayFontSize?: number;
   veoAudioVolume?: number;
 }
 
@@ -128,6 +129,7 @@ const DEFAULTS: ProviderSettings = {
   subtitleDelay: 0.8,
   overlayPosition: "bottom-left",
   overlayFont: "Tox Typewriter",
+  overlayFontSize: 36,
   veoAudioVolume: 0.1,
 };
 
@@ -931,7 +933,7 @@ export async function generateInworldAudio(
   inworldApiKey: string,
   voiceId = "Dennis",
   modelId = "inworld-tts-1.5-max"
-): Promise<Blob> {
+): Promise<{ blob: Blob; timestampInfo?: any }> {
   const response = await fetch("https://api.inworld.ai/tts/v1/voice", {
     method: "POST",
     headers: {
@@ -943,6 +945,7 @@ export async function generateInworldAudio(
       voiceId,
       modelId,
       audioConfig: { audioEncoding: "MP3", sampleRateHertz: 22050 },
+      timestampType: "WORD",
       temperature: 1.0,
       applyTextNormalization: "ON",
     }),
@@ -962,7 +965,10 @@ export async function generateInworldAudio(
   const binary = atob(audioContent);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: "audio/mpeg" });
+  return {
+    blob: new Blob([bytes], { type: "audio/mpeg" }),
+    timestampInfo: data.timestampInfo,
+  };
 }
 
 // ========================

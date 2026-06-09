@@ -294,11 +294,14 @@ async function runAssetPipeline(projectId: string) {
         if (ttsProvider === "inworld" && inworldKey) {
           const text = scene.tts_text || scene.script_text || "";
           let bytes: Buffer | null = null;
+          let ttsTimestampInfo: any = null;
           let lastAudioError = "";
           const MAX_AUDIO_ATTEMPTS = 3;
           for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
             try {
-              bytes = await generateInworldAudio(text, inworldKey, voiceId, modelId);
+              const resObj = await generateInworldAudio(text, inworldKey, voiceId, modelId);
+              bytes = resObj.audio;
+              ttsTimestampInfo = resObj.timestampInfo;
               break;
             } catch (e: any) {
               lastAudioError = e.message;
@@ -311,6 +314,9 @@ async function runAssetPipeline(projectId: string) {
           }
           if (!bytes) throw new Error(lastAudioError);
           fs.writeFileSync(path.join(audioDir, `${num}.mp3`), bytes);
+          if (ttsTimestampInfo) {
+            fs.writeFileSync(path.join(audioDir, `${num}.json`), JSON.stringify(ttsTimestampInfo));
+          }
         } else {
           throw new Error("No TTS provider configured. Set ttsProvider to 'inworld' in project settings.");
         }
@@ -338,7 +344,7 @@ async function runAssetPipeline(projectId: string) {
   }
 }
 
-async function generateInworldAudio(text: string, apiKey: string, voiceId: string, modelId: string): Promise<Buffer> {
+async function generateInworldAudio(text: string, apiKey: string, voiceId: string, modelId: string): Promise<{ audio: Buffer; timestampInfo?: any }> {
   const res = await fetch("https://api.inworld.ai/tts/v1/voice", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Basic ${apiKey}` },
@@ -347,6 +353,7 @@ async function generateInworldAudio(text: string, apiKey: string, voiceId: strin
       voiceId: voiceId || "Dennis",
       modelId: modelId || "inworld-tts-1.5-max",
       audioConfig: { audioEncoding: "MP3", sampleRateHertz: 22050 },
+      timestampType: "WORD",
       temperature: 1.0,
       applyTextNormalization: "ON",
     }),
@@ -354,7 +361,10 @@ async function generateInworldAudio(text: string, apiKey: string, voiceId: strin
   if (!res.ok) throw new Error(`Inworld TTS failed: ${res.status}`);
   const data = await res.json();
   if (!data.audioContent) throw new Error("No audioContent in Inworld response");
-  return Buffer.from(data.audioContent, "base64");
+  return {
+    audio: Buffer.from(data.audioContent, "base64"),
+    timestampInfo: data.timestampInfo,
+  };
 }
 
 

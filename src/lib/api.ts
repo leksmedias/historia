@@ -321,13 +321,16 @@ export async function runClientSidePipeline(
       callbacks.onSceneProgress(num, "audio", "generating");
       try {
         let audioBlob: Blob;
+        let ttsTimestampInfo: any = null;
         if (settings.ttsProvider === "inworld" && settings.inworldApiKey) {
           const text = scene.tts_text || scene.script_text || "";
           let lastAudioError = "";
           const MAX_AUDIO_ATTEMPTS = 3;
           for (let attempt = 1; attempt <= MAX_AUDIO_ATTEMPTS; attempt++) {
             try {
-              audioBlob = await generateInworldAudio(text, settings.inworldApiKey, options.voiceId || settings.voiceId, settings.modelId);
+              const resObj = await generateInworldAudio(text, settings.inworldApiKey, options.voiceId || settings.voiceId, settings.modelId);
+              audioBlob = resObj.blob;
+              ttsTimestampInfo = resObj.timestampInfo;
               break;
             } catch (e: any) {
               lastAudioError = e.message;
@@ -346,6 +349,13 @@ export async function runClientSidePipeline(
         const fd = new FormData();
         fd.append("file", audioBlob!, `${num}.mp3`);
         await fetch(`${API_BASE}/assets/${serverProjectId}/audio/${num}.mp3`, { method: "POST", body: fd });
+
+        if (ttsTimestampInfo) {
+          const jsonBlob = new Blob([JSON.stringify(ttsTimestampInfo)], { type: "application/json" });
+          const jsonFd = new FormData();
+          jsonFd.append("file", jsonBlob, `${num}.json`);
+          await fetch(`${API_BASE}/assets/${serverProjectId}/audio/${num}.json`, { method: "POST", body: jsonFd });
+        }
 
         await fetch(`${API_BASE}/projects/${serverProjectId}/scenes/${num}`, {
           method: "PATCH",
@@ -444,13 +454,16 @@ export async function regenerateAssetFrontend(
   } else {
     try {
       let audioBlob: Blob;
+      let ttsTimestampInfo: any = null;
       if (settings.ttsProvider === "inworld" && settings.inworldApiKey) {
-        audioBlob = await generateInworldAudio(
+        const resObj = await generateInworldAudio(
           scene.tts_text || scene.script_text || "",
           settings.inworldApiKey,
           voiceOverride || (scene as any).voice_id || settings.voiceId || "Dennis",
           settings.modelId || "inworld-tts-1.5-max"
         );
+        audioBlob = resObj.blob;
+        ttsTimestampInfo = resObj.timestampInfo;
       } else {
         throw new Error("No TTS provider configured. Please set up Inworld in Settings.");
       }
@@ -458,6 +471,13 @@ export async function regenerateAssetFrontend(
       const fd = new FormData();
       fd.append("file", audioBlob, `${sceneNumber}.mp3`);
       await fetch(`${API_BASE}/assets/${projectId}/audio/${sceneNumber}.mp3`, { method: "POST", body: fd });
+
+      if (ttsTimestampInfo) {
+        const jsonBlob = new Blob([JSON.stringify(ttsTimestampInfo)], { type: "application/json" });
+        const jsonFd = new FormData();
+        jsonFd.append("file", jsonBlob, `${sceneNumber}.json`);
+        await fetch(`${API_BASE}/assets/${projectId}/audio/${sceneNumber}.json`, { method: "POST", body: jsonFd });
+      }
 
       await fetch(`${API_BASE}/projects/${projectId}/scenes/${sceneNumber}`, {
         method: "PATCH",
@@ -641,11 +661,12 @@ export async function startClipGeneration(projectId: string, resolution: VideoRe
   const subtitleDelay = settings.subtitleDelay ?? 0.8;
   const overlayPosition = settings.overlayPosition ?? "bottom-left";
   const overlayFont = settings.overlayFont ?? "Tox Typewriter";
+  const overlayFontSize = settings.overlayFontSize ?? 36;
   const veoAudioVolume = settings.veoAudioVolume ?? 0.1;
   return apiRequest(`/render/${projectId}/clips`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resolution, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume }),
+    body: JSON.stringify({ resolution, subtitleDelay, overlayPosition, overlayFont, overlayFontSize, veoAudioVolume }),
   });
 }
 
@@ -669,11 +690,12 @@ export async function startRender(projectId: string, resolution: VideoResolution
   const subtitleDelay = settings.subtitleDelay ?? 0.8;
   const overlayPosition = settings.overlayPosition ?? "bottom-left";
   const overlayFont = settings.overlayFont ?? "Tox Typewriter";
+  const overlayFontSize = settings.overlayFontSize ?? 36;
   const veoAudioVolume = settings.veoAudioVolume ?? 0.1;
   return apiRequest(`/render/${projectId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resolution, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume }),
+    body: JSON.stringify({ resolution, subtitleDelay, overlayPosition, overlayFont, overlayFontSize, veoAudioVolume }),
   });
 }
 
@@ -815,19 +837,29 @@ export async function resumeProject(projectId: string, callbacks: PipelineCallba
       callbacks.onSceneProgress(num, "audio", "generating");
       try {
         let audioBlob: Blob;
+        let ttsTimestampInfo: any = null;
         if (settings.ttsProvider === "inworld" && settings.inworldApiKey) {
-          audioBlob = await generateInworldAudio(
+          const resObj = await generateInworldAudio(
             scene.tts_text || scene.script_text || "",
             settings.inworldApiKey,
             (scene as any).voice_id || settings.voiceId,
             settings.modelId
           );
+          audioBlob = resObj.blob;
+          ttsTimestampInfo = resObj.timestampInfo;
         } else {
           audioBlob = generateMockAudio();
         }
         const fd = new FormData();
         fd.append("file", audioBlob, `${num}.mp3`);
         const uploadAudRes = await fetch(`${API_BASE}/assets/${projectId}/audio/${num}.mp3`, { method: "POST", body: fd });
+
+        if (ttsTimestampInfo) {
+          const jsonBlob = new Blob([JSON.stringify(ttsTimestampInfo)], { type: "application/json" });
+          const jsonFd = new FormData();
+          jsonFd.append("file", jsonBlob, `${num}.json`);
+          await fetch(`${API_BASE}/assets/${projectId}/audio/${num}.json`, { method: "POST", body: jsonFd });
+        }
         if (!uploadAudRes.ok) {
           const errText = await uploadAudRes.text();
           throw new Error(`Failed to upload audio asset (HTTP ${uploadAudRes.status}): ${errText}`);

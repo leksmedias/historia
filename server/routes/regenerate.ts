@@ -8,7 +8,7 @@ import { generateGeminiImage } from "../lib/gemini.js";
 
 const router = Router();
 
-async function generateInworldAudio(text: string, apiKey: string, voiceId: string, modelId: string): Promise<Buffer> {
+async function generateInworldAudio(text: string, apiKey: string, voiceId: string, modelId: string): Promise<{ audio: Buffer; timestampInfo?: any }> {
   const res = await fetch("https://api.inworld.ai/tts/v1/voice", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Basic ${apiKey}` },
@@ -17,6 +17,7 @@ async function generateInworldAudio(text: string, apiKey: string, voiceId: strin
       voiceId: voiceId || "Dennis",
       modelId: modelId || "inworld-tts-1.5-max",
       audioConfig: { audioEncoding: "MP3", sampleRateHertz: 22050 },
+      timestampType: "WORD",
       temperature: 1.0,
       applyTextNormalization: "ON",
     }),
@@ -24,7 +25,10 @@ async function generateInworldAudio(text: string, apiKey: string, voiceId: strin
   if (!res.ok) throw new Error(`Inworld TTS failed: ${res.status}`);
   const data = await res.json();
   if (!data.audioContent) throw new Error("No audioContent in Inworld response");
-  return Buffer.from(data.audioContent, "base64");
+  return {
+    audio: Buffer.from(data.audioContent, "base64"),
+    timestampInfo: data.timestampInfo,
+  };
 }
 
 
@@ -75,12 +79,18 @@ router.post("/", async (req: Request, res: Response) => {
       try {
         const inworldKey = process.env.INWORLD_API_KEY;
         let bytes: Buffer;
+        let ttsTimestampInfo: any = null;
         if (ttsProvider === "inworld" && inworldKey) {
-          bytes = await generateInworldAudio(scene.tts_text || scene.script_text || "", inworldKey, voiceId, modelId);
+          const resObj = await generateInworldAudio(scene.tts_text || scene.script_text || "", inworldKey, voiceId, modelId);
+          bytes = resObj.audio;
+          ttsTimestampInfo = resObj.timestampInfo;
         } else {
           throw new Error("No TTS provider configured. Set ttsProvider to 'inworld' in project settings.");
         }
         fs.writeFileSync(path.join(audioDir, `${sceneNumber}.mp3`), bytes);
+        if (ttsTimestampInfo) {
+          fs.writeFileSync(path.join(audioDir, `${sceneNumber}.json`), JSON.stringify(ttsTimestampInfo));
+        }
         await db.update(scenes).set({
           audio_status: "completed",
           audio_attempts: (scene.audio_attempts || 0) + 1,

@@ -251,22 +251,83 @@ function escapeDrawtextText(s: string): string {
   return s
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/:/g, "\\:")
     .replace(/%/g, "%%")
     .replace(/\n/g, "\\n");
 }
 
-function overlayXY(position: string): string {
-  switch (position) {
-    case "top-left":      return "x=w*0.04:y=h*0.08";
-    case "top-center":    return "x=(w-tw)/2:y=h*0.08";
-    case "top-right":     return "x=w-tw-w*0.04:y=h*0.08";
-    case "center-left":   return "x=w*0.04:y=(h-th)/2";
-    case "center":        return "x=(w-tw)/2:y=(h-th)/2";
-    case "center-right":  return "x=w-tw-w*0.04:y=(h-th)/2";
-    case "bottom-center": return "x=(w-tw)/2:y=h-th-h*0.12";
-    case "bottom-right":  return "x=w-tw-w*0.04:y=h-th-h*0.12";
-    default:              return "x=w*0.04:y=h-th-h*0.12"; // bottom-left
+function getOverlayX(position: string, width: number): string {
+  const marginX = Math.round(width * 0.04);
+  if (position.includes("center") && !position.includes("left") && !position.includes("right")) {
+    return `x=(w-tw)/2`;
   }
+  if (position.includes("right")) {
+    return `x=w-tw-${marginX}`;
+  }
+  return `x=${marginX}`; // default left
+}
+
+function getOverlayYForWrappedItems(
+  position: string,
+  height: number,
+  itemLineCounts: number[],
+  itemIdx: number,
+  fontSize: number
+): number {
+  const lineSpacing = fontSize * 1.4;
+  const totalLines = itemLineCounts.reduce((a, b) => a + b, 0);
+  const precedingLines = itemLineCounts.slice(0, itemIdx).reduce((a, b) => a + b, 0);
+
+  if (position.includes("top")) {
+    const startY = Math.round(height * 0.08);
+    return Math.round(startY + precedingLines * lineSpacing);
+  }
+  if (position.includes("center")) {
+    const blockHeight = totalLines * lineSpacing;
+    const startY = (height - blockHeight) / 2;
+    return Math.round(startY + precedingLines * lineSpacing);
+  }
+  // default bottom
+  const blockHeight = totalLines * lineSpacing;
+  const startY = height - blockHeight - Math.round(height * 0.12);
+  return Math.round(startY + precedingLines * lineSpacing);
+}
+
+interface OverlayItem {
+  text: string;
+  trigger?: string;
+}
+
+function parseOverlayText(overlayText: string): OverlayItem[] {
+  const trimmed = overlayText.trim();
+  if (!trimmed) return [];
+
+  // Try parsing as JSON array
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map(item => {
+          if (typeof item === "string") {
+            return { text: item };
+          }
+          if (item && typeof item === "object") {
+            return {
+              text: String(item.text || ""),
+              trigger: item.trigger !== undefined ? String(item.trigger) : undefined
+            };
+          }
+          return { text: "" };
+        }).filter(item => item.text.trim().length > 0);
+      }
+    } catch {
+      // If parsing fails, fall back to treating it as plain text
+    }
+  }
+
+  // Treat as plain text
+  return [{ text: trimmed }];
 }
 
 function buildTypewriterFilter(
@@ -274,25 +335,127 @@ function buildTypewriterFilter(
   fontFile: string | null,
   fontSize: number,
   dVal: number,
-  position = "bottom-left"
-): string {
-  const text = wordWrap(overlayText.trim().toUpperCase());
-  const N = text.length;
-  const charDelaySec = Math.max(0.030, Math.min(0.080, 1.4 / N));
-  const totalVisible = 4.0;
-  const fontOpt = fontFile ? `fontfile='${escapeFFmpegPath(fontFile)}':` : "";
-  const xy = overlayXY(position);
-
-  let chain = "";
-  for (let i = 0; i < N; i++) {
-    const charStart = (dVal + i * charDelaySec).toFixed(3);
-    const charEnd = i < N - 1
-      ? (dVal + (i + 1) * charDelaySec).toFixed(3)
-      : (dVal + totalVisible).toFixed(3);
-    const partial = escapeDrawtextText(text.slice(0, i + 1));
-    chain += `,drawtext=${fontOpt}text='${partial}':fontcolor=white:fontsize=${fontSize}:shadowcolor=black@0.9:shadowx=3:shadowy=3:${xy}:enable='between(t,${charStart},${charEnd})'`;
+  position: string,
+  width: number,
+  height: number,
+  audioPath: string,
+  dur: number
+): { drawtextFilter: string; sfxFilterComplex: string; sfxOutputLabels: string[] } {
+  const items = parseOverlayText(overlayText);
+  if (items.length === 0) {
+    return { drawtextFilter: "", sfxFilterComplex: "", sfxOutputLabels: [] };
   }
-  return chain;
+
+  // 1. Load alignment JSON
+  let wordsList: { word: string; start: number }[] = [];
+  const jsonPath = audioPath.replace(/\.mp3$/i, ".json");
+  if (fs.existsSync(jsonPath)) {
+    try {
+      const alignmentData = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+      const wa = alignmentData?.wordAlignment || alignmentData;
+      if (Array.isArray(wa)) {
+        wordsList = wa.map((item: any) => {
+          let startSec = 0;
+          if (item.startOffset !== undefined) {
+            if (typeof item.startOffset === "string") {
+              startSec = parseFloat(item.startOffset.replace("s", ""));
+            } else {
+              startSec = item.startOffset;
+              if (startSec > 100) startSec = startSec / 1000;
+            }
+          } else if (item.startTime !== undefined) {
+            if (typeof item.startTime === "string") {
+              startSec = parseFloat(item.startTime.replace("s", ""));
+            } else {
+              startSec = item.startTime;
+              if (startSec > 100) startSec = startSec / 1000;
+            }
+          }
+          return { word: item.word || "", start: startSec };
+        });
+      } else if (wa && typeof wa === "object") {
+        const words = wa.words || [];
+        const starts = wa.wordStartTimeSeconds || wa.wordStartTimes || [];
+        wordsList = words.map((w: string, idx: number) => {
+          let startSec = starts[idx] || 0;
+          if (typeof startSec === "string") {
+            startSec = parseFloat(startSec.replace("s", ""));
+          } else if (startSec > 100) {
+            startSec = startSec / 1000;
+          }
+          return { word: w, start: startSec };
+        });
+      }
+    } catch (e) {
+      console.error(`[typewriter] Failed to parse alignment JSON at ${jsonPath}:`, e);
+    }
+  }
+
+  const cleanWord = (w: string) => w.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").trim();
+
+  // Helper to match a trigger
+  function findTriggerTime(trigger: string | undefined, defaultTime: number): number {
+    if (!trigger) return defaultTime;
+    const target = cleanWord(trigger);
+    if (!target) return defaultTime;
+    for (const item of wordsList) {
+      if (cleanWord(item.word) === target || cleanWord(item.word).includes(target) || target.includes(cleanWord(item.word))) {
+        return item.start;
+      }
+    }
+    return defaultTime;
+  }
+
+  const fontOpt = fontFile ? `fontfile='${escapeFFmpegPath(fontFile)}':` : "";
+  const xy = getOverlayX(position, width);
+
+  const wrappedItems = items.map(item => wordWrap(item.text.trim().toUpperCase()));
+  const itemLineCounts = wrappedItems.map(text => text.split("\n").length);
+
+  let drawtextFilter = "";
+  const sfxParts: string[] = [];
+  const sfxOutputLabels: string[] = [];
+
+  // For asplit of [2:a]
+  sfxParts.push(`[2:a]asplit=${items.length}${items.map((_, idx) => `[sfx_in_${idx}]`).join("")}`);
+
+  for (let idx = 0; idx < items.length; idx++) {
+    const item = items[idx];
+    const wrappedText = wrappedItems[idx];
+    const triggerTime = findTriggerTime(item.trigger, dVal + idx * 1.5);
+    const charDelaySec = Math.max(0.030, Math.min(0.080, 1.4 / wrappedText.length));
+
+    // Compute coordinate starting y for this item block
+    const lineY = getOverlayYForWrappedItems(position, height, itemLineCounts, idx, fontSize);
+
+    // Render characters
+    for (let charIdx = 0; charIdx < wrappedText.length; charIdx++) {
+      const charStart = (triggerTime + charIdx * charDelaySec).toFixed(3);
+      const charEnd = charIdx < wrappedText.length - 1
+        ? (triggerTime + (charIdx + 1) * charDelaySec).toFixed(3)
+        : (dur).toFixed(3); // Keep visible until the end of the clip duration
+
+      // Extract slice of text up to charIdx + 1
+      const partialRaw = wrappedText.slice(0, charIdx + 1);
+      
+      // Escape for drawtext text parameter
+      const escapedText = escapeDrawtextText(partialRaw);
+
+      drawtextFilter += `,drawtext=${fontOpt}text='${escapedText}':fontcolor=white:fontsize=${fontSize}:shadowcolor=black@0.9:shadowx=3:shadowy=3:${xy}:y=${lineY}:enable='between(t,${charStart},${charEnd})'`;
+    }
+
+    // Typewriter SFX audio stream trim and delay
+    const typingDuration = wrappedText.length * charDelaySec;
+    const startMs = Math.round(triggerTime * 1000);
+    sfxParts.push(`[sfx_in_${idx}]atrim=end=${typingDuration.toFixed(3)},asetpts=PTS-STARTPTS,volume=0.4,adelay=${startMs}|${startMs}[sfx_del_${idx}]`);
+    sfxOutputLabels.push(`[sfx_del_${idx}]`);
+  }
+
+  return {
+    drawtextFilter,
+    sfxFilterComplex: sfxParts.join(";"),
+    sfxOutputLabels
+  };
 }
 
 function wordWrap(text: string, maxLen = 50): string {
@@ -422,16 +585,17 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
     const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
     const projectAR: string = (project.settings as any)?.aspectRatio || "16:9";
     const [W, H] = resolveOutputSize(resKey, projectAR);
-    const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
+        const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
     const overlayPosition = req.body?.overlayPosition || "bottom-left";
     const overlayFont = req.body?.overlayFont || "Tox Typewriter";
+    const overlayFontSize = req.body?.overlayFontSize !== undefined ? parseInt(req.body.overlayFontSize, 10) : 36;
     const veoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.1;
 
     clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
     await upsertJobStatus(projectId, "clip", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
-    generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume).catch(e => {
+    generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, overlayFontSize, veoAudioVolume).catch(e => {
       console.error(`[clips] ${projectId} failed:`, e.message);
       clipJobs[projectId] = { ...clipJobs[projectId], status: "failed", error: e.message };
       upsertJobStatus(projectId, "clip", "failed", { error: e.message });
@@ -647,15 +811,16 @@ router.get("/:id/animate/zip", (req: Request, res: Response) => {
 router.post("/:id/auto", async (req: Request, res: Response) => {
   const projectId = (req.params.id as string);
   const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
-  const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
+    const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
   const overlayPosition = req.body?.overlayPosition || "bottom-left";
   const overlayFont = req.body?.overlayFont || "Tox Typewriter";
+  const overlayFontSize = req.body?.overlayFontSize !== undefined ? parseInt(req.body.overlayFontSize, 10) : 36;
   const autoVeoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.1;
   const [autoProject] = await db.select().from(projects).where(eq(projects.id, projectId));
   const autoProjectAR: string = (autoProject?.settings as any)?.aspectRatio || "16:9";
   await upsertJobStatus(projectId, "auto", "running", { resolution: resKey });
   res.json({ success: true, message: "Auto pipeline started in background" });
-  runAutoPipeline(projectId, resKey, subtitleDelay, overlayPosition, overlayFont, autoProjectAR, autoVeoAudioVolume).catch(e => {
+  runAutoPipeline(projectId, resKey, subtitleDelay, overlayPosition, overlayFont, overlayFontSize, autoProjectAR, autoVeoAudioVolume).catch(e => {
     console.error(`[auto] ${projectId} failed:`, e.message);
     if (autoJobs[projectId]) autoJobs[projectId] = { ...autoJobs[projectId], status: "failed", error: e.message };
     upsertJobStatus(projectId, "auto", "failed", { error: e.message });
@@ -712,16 +877,17 @@ router.post("/:id", async (req: Request, res: Response) => {
     const resKey = RESOLUTIONS[req.body?.resolution] ? req.body.resolution : "720p";
     const projectAR: string = (project.settings as any)?.aspectRatio || "16:9";
     const [W, H] = resolveOutputSize(resKey, projectAR);
-    const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
+        const subtitleDelay = req.body?.subtitleDelay !== undefined ? parseFloat(req.body.subtitleDelay) : 0.8;
     const overlayPosition = req.body?.overlayPosition || "bottom-left";
     const overlayFont = req.body?.overlayFont || "Tox Typewriter";
+    const overlayFontSize = req.body?.overlayFontSize !== undefined ? parseInt(req.body.overlayFontSize, 10) : 36;
     const mergeVeoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.1;
 
     mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
     await upsertJobStatus(projectId, "merge", "running", { resolution: resKey, total: ready.length });
     res.json({ success: true, total: ready.length, resolution: resKey });
 
-    mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, mergeVeoAudioVolume).catch(e => {
+    mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, overlayFontSize, mergeVeoAudioVolume).catch(e => {
       console.error(`[merge] ${projectId} failed:`, e.message);
       mergeJobs[projectId] = { ...mergeJobs[projectId], status: "failed", error: e.message };
       upsertJobStatus(projectId, "merge", "failed", { error: e.message });
@@ -832,6 +998,7 @@ async function buildVeoClip(
   width: number, height: number, outPath: string,
   overlayText?: string | null, delay?: number,
   overlayPosition?: string, overlayFont?: string,
+  overlayFontSize = 36,
   veoAudioVolume?: number
 ): Promise<void> {
   const veoDur = getAudioDuration(veoPath);
@@ -857,10 +1024,11 @@ async function buildVeoClip(
     : `fps=${FPS},${scaleFilter}`;
 
   const dVal = delay ?? 0.8;
-  const drawtextFilter = overlayText?.trim()
-    ? buildTypewriterFilter(overlayText, findFontFile(overlayFont), Math.round(height * 0.045), dVal, overlayPosition)
-    : "";
+  const typewriter = overlayText?.trim()
+    ? buildTypewriterFilter(overlayText, findFontFile(overlayFont), overlayFontSize, dVal, overlayPosition, width, height, audioPath, dur)
+    : null;
 
+  const drawtextFilter = typewriter ? typewriter.drawtextFilter : "";
   const vFilter = `${vBase},fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5${drawtextFilter}`;
 
   const encArgs = [
@@ -869,8 +1037,7 @@ async function buildVeoClip(
   ];
 
   const sfxPath = path.join(process.cwd(), "sfx", "whoosh.MP3");
-  const hasSfx = !!(overlayText?.trim()) && fs.existsSync(sfxPath);
-  const dValMs = Math.round(dVal * 1000);
+  const hasSfx = !!(typewriter && typewriter.sfxOutputLabels.length > 0) && fs.existsSync(sfxPath);
 
   if (veoAudio) {
     const veoVol = (veoAudioVolume ?? 0.1).toFixed(4);
@@ -878,14 +1045,15 @@ async function buildVeoClip(
     const veoAudioFilter = shouldSlowDown
       ? `atempo=${atempoSpeed},volume=${veoVol}`
       : `volume=${veoVol}`;
-    if (hasSfx) {
+    if (hasSfx && typewriter) {
+      const aFilter =
+        `[0:a]${veoAudioFilter}[va];` +
+        `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[na];` +
+        `${typewriter.sfxFilterComplex};` +
+        `[va][na]${typewriter.sfxOutputLabels.join("")}amix=inputs=${2 + typewriter.sfxOutputLabels.length}:duration=first,afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`;
       await ffmpeg([
         "-y", ...veoInputArgs, "-i", audioPath, "-i", sfxPath,
-        "-filter_complex",
-          `[0:v]${vFilter}[v];` +
-          `[0:a]${veoAudioFilter}[va];[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[na];` +
-          `[2:a]adelay=${dValMs}|${dValMs},volume=0.4[sfx];` +
-          `[va][na][sfx]amix=inputs=3:duration=first,afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[a]`,
+        "-filter_complex", `[0:v]${vFilter}[v];${aFilter}`,
         "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
         ...encArgs, outPath,
       ]);
@@ -900,14 +1068,14 @@ async function buildVeoClip(
       ]);
     }
   } else {
-    if (hasSfx) {
+    if (hasSfx && typewriter) {
+      const aFilter =
+        `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[na];` +
+        `${typewriter.sfxFilterComplex};` +
+        `[na]${typewriter.sfxOutputLabels.join("")}amix=inputs=${1 + typewriter.sfxOutputLabels.length}:duration=first[a]`;
       await ffmpeg([
         "-y", ...veoInputArgs, "-i", audioPath, "-i", sfxPath,
-        "-filter_complex",
-          `[0:v]${vFilter}[v];` +
-          `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[na];` +
-          `[2:a]adelay=${dValMs}|${dValMs},volume=0.4[sfx];` +
-          `[na][sfx]amix=inputs=2:duration=first[a]`,
+        "-filter_complex", `[0:v]${vFilter}[v];${aFilter}`,
         "-map", "[v]", "-map", "[a]", "-t", `${dur}`,
         ...encArgs, outPath,
       ]);
@@ -926,7 +1094,8 @@ async function buildImageClip(
   imagePath: string, audioPath: string, dur: number,
   width: number, height: number, outPath: string, effect: KBEffect,
   overlayText?: string | null, delay?: number,
-  overlayPosition?: string, overlayFont?: string
+  overlayPosition?: string, overlayFont?: string,
+  overlayFontSize = 36
 ): Promise<void> {
   const FPS = 25;
   const kbFilter = buildKB(effect, dur, width, height, 1.3);
@@ -937,22 +1106,22 @@ async function buildImageClip(
   ];
 
   const dVal = delay ?? 0.8;
-  const drawtextFilter = overlayText?.trim()
-    ? buildTypewriterFilter(overlayText, findFontFile(overlayFont), Math.round(height * 0.045), dVal, overlayPosition)
-    : "";
+  const typewriter = overlayText?.trim()
+    ? buildTypewriterFilter(overlayText, findFontFile(overlayFont), overlayFontSize, dVal, overlayPosition, width, height, audioPath, dur)
+    : null;
 
+  const drawtextFilter = typewriter ? typewriter.drawtextFilter : "";
   const fadeOutStart = Math.max(0, dur - 0.5).toFixed(3);
   const vFilter = `[0:v]${kbFilter},fps=${FPS},setsar=1,format=yuv420p,fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5${drawtextFilter}[v]`;
 
   const sfxPath = path.join(process.cwd(), "sfx", "whoosh.MP3");
-  const hasSfx = !!(overlayText?.trim()) && fs.existsSync(sfxPath);
-  const dValMs = Math.round(dVal * 1000);
+  const hasSfx = !!(typewriter && typewriter.sfxOutputLabels.length > 0) && fs.existsSync(sfxPath);
 
-  if (hasSfx) {
+  if (hasSfx && typewriter) {
     const aFilter =
       `[1:a]${AUDIO_FILTER},afade=t=in:st=0:d=0.5,afade=t=out:st=${fadeOutStart}:d=0.5[na];` +
-      `[2:a]adelay=${dValMs}|${dValMs},volume=0.4[sfx];` +
-      `[na][sfx]amix=inputs=2:duration=first[a]`;
+      `${typewriter.sfxFilterComplex};` +
+      `[na]${typewriter.sfxOutputLabels.join("")}amix=inputs=${1 + typewriter.sfxOutputLabels.length}:duration=first[a]`;
     await ffmpeg([
       "-y", "-loop", "1", "-framerate", `${FPS}`, "-i", imagePath, "-i", audioPath, "-i", sfxPath,
       "-filter_complex", `${vFilter};${aFilter}`,
@@ -974,7 +1143,17 @@ async function buildImageClip(
  * Phase 1: generate one MP4 per scene, named by scene number (1.mp4, 2.mp4, …).
  * Duration = audio duration. Ken Burns effect applied at random (no repeat).
  */
-async function generateClips(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter", veoAudioVolume = 0.1) {
+async function generateClips(
+  projectId: string,
+  sceneList: any[],
+  width: number,
+  height: number,
+  subtitleDelay = 0.8,
+  overlayPosition = "bottom-left",
+  overlayFont = "Tox Typewriter",
+  overlayFontSize = 36,
+  veoAudioVolume = 0.1
+) {
   const clipsDir = path.join("uploads", projectId, "clips");
   fs.mkdirSync(clipsDir, { recursive: true });
 
@@ -1002,11 +1181,11 @@ async function generateClips(projectId: string, sceneList: any[], width: number,
         try {
           if (fs.existsSync(veoPath)) {
             console.log(`[clips] scene ${num}: using Veo video`);
-            await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath, s.overlay_text, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume);
+            await buildVeoClip(veoPath, audioPath, dur, width, height, clipPath, s.overlay_text, subtitleDelay, overlayPosition, overlayFont, overlayFontSize, veoAudioVolume);
           } else {
             const effect = KB_EFFECTS[idx % KB_EFFECTS.length];
             console.log(`[clips] scene ${num}: generating locally (${effect}, ${dur}s)`);
-            await buildImageClip(img, audioPath, dur, width, height, clipPath, effect, s.overlay_text, subtitleDelay, overlayPosition, overlayFont);
+            await buildImageClip(img, audioPath, dur, width, height, clipPath, effect, s.overlay_text, subtitleDelay, overlayPosition, overlayFont, overlayFontSize);
           }
 
           if (!isValidVideoClip(clipPath)) {
@@ -1145,7 +1324,17 @@ function buildXfadeFilter(durations: number[], xd: number): string {
  * Phase 2: merge clips into output.mp4 with xfade transitions.
  * Reads from clips/ dir if pre-generated; otherwise generates clips inline.
  */
-async function mergeVideo(projectId: string, sceneList: any[], width: number, height: number, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter", veoAudioVolume = 0.1) {
+async function mergeVideo(
+  projectId: string,
+  sceneList: any[],
+  width: number,
+  height: number,
+  subtitleDelay = 0.8,
+  overlayPosition = "bottom-left",
+  overlayFont = "Tox Typewriter",
+  overlayFontSize = 36,
+  veoAudioVolume = 0.1
+) {
   const clipsDir = path.join("uploads", projectId, "clips");
   const renderDir = path.join("uploads", projectId, "render");
   fs.mkdirSync(renderDir, { recursive: true });
@@ -1191,12 +1380,12 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
       try {
         if (fs.existsSync(veoPath)) {
           console.log(`[merge] scene ${num}: regenerating Veo video clip inline`);
-          await buildVeoClip(veoPath, audioPath, dur, width, height, clip, s.overlay_text, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume);
+          await buildVeoClip(veoPath, audioPath, dur, width, height, clip, s.overlay_text, subtitleDelay, overlayPosition, overlayFont, overlayFontSize, veoAudioVolume);
         } else {
           const effect = pickEffect(prevEffect);
           prevEffect = effect;
           console.log(`[merge] scene ${num}: regenerating Ken Burns clip inline (${effect}, ${dur}s)`);
-          await buildImageClip(img, audioPath, dur, width, height, clip, effect, s.overlay_text, subtitleDelay, overlayPosition, overlayFont);
+          await buildImageClip(img, audioPath, dur, width, height, clip, effect, s.overlay_text, subtitleDelay, overlayPosition, overlayFont, overlayFontSize);
         }
         isValid = true;
       } catch (e: any) {
@@ -1300,7 +1489,16 @@ async function mergeVideo(projectId: string, sceneList: any[], width: number, he
  * Full auto-pipeline: poll until all assets ready → generate clips → merge.
  * Runs entirely in-process; browser can be closed.
  */
-async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay = 0.8, overlayPosition = "bottom-left", overlayFont = "Tox Typewriter", aspectRatio = "16:9", veoAudioVolume = 0.1) {
+async function runAutoPipeline(
+  projectId: string,
+  resKey: string,
+  subtitleDelay = 0.8,
+  overlayPosition = "bottom-left",
+  overlayFont = "Tox Typewriter",
+  overlayFontSize = 36,
+  aspectRatio = "16:9",
+  veoAudioVolume = 0.1
+) {
   const [W, H] = resolveOutputSize(resKey, aspectRatio);
   autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
   console.log(`[auto] ${projectId}: waiting for assets (${resKey})`);
@@ -1334,12 +1532,12 @@ async function runAutoPipeline(projectId: string, resKey: string, subtitleDelay 
   console.log(`[auto] ${projectId}: ${ready.length} scenes ready → generating clips`);
   autoJobs[projectId].status = "generating_clips";
   clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
-  await generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume);
+  await generateClips(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, overlayFontSize, veoAudioVolume);
 
   console.log(`[auto] ${projectId}: clips done → merging`);
   autoJobs[projectId].status = "merging";
   mergeJobs[projectId] = { status: "rendering", progress: 0, total: ready.length, resolution: resKey };
-  await mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, veoAudioVolume);
+  await mergeVideo(projectId, ready, W, H, subtitleDelay, overlayPosition, overlayFont, overlayFontSize, veoAudioVolume);
 
   autoJobs[projectId].status = "done";
   await upsertJobStatus(projectId, "auto", "done");

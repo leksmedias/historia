@@ -672,6 +672,21 @@ export default function Settings() {
 
               <div className="border-t border-border" />
 
+              {/* Font Size */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Overlay Font Size: {settings.overlayFontSize ?? 36} px
+                </label>
+                <Slider
+                  value={[settings.overlayFontSize ?? 36]}
+                  onValueChange={([v]) => setSettings(s => ({ ...s, overlayFontSize: v }))}
+                  min={12} max={80} step={1}
+                />
+                <p className="text-xs text-muted-foreground">Size of the overlay text (defaults to 36 px).</p>
+              </div>
+
+              <div className="border-t border-border" />
+
               {/* Position grid */}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Overlay Position</label>
