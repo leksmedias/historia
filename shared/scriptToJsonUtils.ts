@@ -611,6 +611,20 @@ close-up of hands/weapons/eyes, medium shot of individual, wide shot of formatio
 No photorealistic textures or clean CGI renders. No modern sans-serif fonts used in isolation. No flat 2D vector-style illustrations. No bright neon or digital-native gradient colors.
 RESTRICTIONS: No text overlays, no identifiable faces, no fantasy/sci-fi/modern brands.
 
+7. STYLE REFERENCE EXAMPLES (FOLLOW THIS EXACT PHRASING AND STYLE IN YOUR GENERATED PROMPTS):
+
+Example 1 (Illustration):
+Digital oil painting, heavy impasto. Black void frame, ancient Near Eastern landscape emerging from total darkness. A river surface occupies the lower third, catching gold late-afternoon light in broken, textured brushstrokes. The far bank is a steep dark mass, barely visible, with the silhouettes of Persian horsemen massed on the ridge like a wall. Deep chiaroscuro. No faces visible yet. Atmospheric, ominous. Title treatment: "GRANICUS" in high-contrast serif over the composition.
+
+Example 2 (Tactical Map):
+Tactical Parchment map. Tea-stained aged vellum with visible creases. The Aegean coast of Asia Minor rendered in 17th-century cartographic hand with decorative compass rose lower right. The Hellespont crossing marked with a bold arrow in Williamite blue. Alexander's march route traced in blue from the crossing south to the Granicus River, marked with a crossed-lance icon. Hand-calligraphic place names: "Hellespont," "Granicus River," "Zelia," "Troy." Decorative border with Macedonian star motif. Clean sans-serif annotation: "Alexander's advance, Spring 334 BCE."
+
+Example 3 (Illustration - Mid-shot):
+Digital oil painting, visible brushwork throughout. Mid-shot of Alexander of Macedon standing at the river's edge, back three-quarters to the viewer, surveying the far bank. He wears a Hellenistic bronze breastplate with detailed impasto highlighting, a white-plumed Boeotian helmet. His posture is still, deliberate, charged with suppressed energy. The Granicus River fills the middle ground, swirling current rendered in thick fluid brushstrokes of gray-green and gold. The far bank is a dark, chaotic mass of Persian cavalry silhouettes. Late afternoon light from the upper left. Heavy shadow across the lower composition.
+
+Example 4 (Illustration - Establishing Shot):
+Digital oil painting, panoramic establishing shot from the Macedonian bank looking east. The Granicus River in full turbulent spring flow, rendered in thick impasto white-capped brushstrokes. The eastern bank rises steeply in shadow, brown clay and dark mud. Above the bank on high ground, the Persian cavalry formation fills the ridge from left to right of frame. Persian banners in crimson and gold are barely distinguishable through dust haze. The sky above is a dramatic chiaroscuro: deep orange and black from the west. Scale deliberately overwhelming.
+
 Return ONLY valid JSON:
 {"scenes":[{"id":1,"prompt":"..."},{"id":2,"prompt":"..."}]}`;
 
@@ -641,6 +655,23 @@ No color imagery. No oil painting or painterly textures. No visible brushstrokes
 Avoid plastic AI faces, overly clean uniforms, glossy modern CGI look, modern gear mistakes, perfectly balanced compositions.
 Enforce smoke, dirt, fatigue, asymmetry, grain, emotional realism.
 RESTRICTIONS: No text overlays, no identifiable faces, no fantasy/sci-fi/modern brands.
+
+7. STYLE REFERENCE EXAMPLES (FOLLOW THIS EXACT PHRASING AND STYLE IN YOUR GENERATED PROMPTS):
+
+Example 1 (Photograph - Trench Scene):
+Ultra-realistic WWII archival photograph, cinematic black-and-white war photojournalism, 1944. An exhausted German soldier sitting inside a destroyed trench during heavy rain, mud covering his uniform, smoke rising behind him from burning tanks. Dramatic chiaroscuro lighting, deep shadows, sharp facial detail, emotional expression, authentic wool military uniform, wet textures, realistic battlefield debris, shallow depth of field, captured on vintage 35mm Kodak Tri-X film, subtle film grain, documentary realism, historically accurate, cinematic composition, masterpiece quality.
+
+Example 2 (Aged Tactical Map):
+Aged wartime tactical map, monochrome archival reproduction. Tea-stained yellowed paper with visible fold creases and water damage along the edges. Northern France terrain rendered in hand-drafted 1940s military cartographic style — contour lines, hedgerow markings, river crossings, village names in vintage serif type. Allied advance marked with bold charcoal arrows sweeping inland from the Normandy coastline. German defensive lines marked with dense hatching in deep gray. Compass rose upper left corner. Stamped "CLASSIFIED — OPERATION OVERLORD" in faded block type. Typewritten annotation: "Allied beach assault, June 6, 1944." Scanned archival document aesthetic, full monochrome.
+
+Example 3 (Aged Infographic):
+Aged wartime infographic, military intelligence document aesthetic. Yellowed paper background with foxing spots and corner wear. Header reads "GERMAN ATLANTIC WALL — DEFENSIVE LAYERING" in high-contrast vintage serif type. Cross-section diagram shows beach obstacles, wire entanglements, concrete bunkers, and machine gun nests rendered in precise hand-drafted line art. Unit icons use period military silhouettes — infantry, artillery, armored emplacement. Causality flowchart: Beach Obstacle → Landing Delay → Concentrated Fire → Catastrophic Casualties. Wehrmacht eagle placed as header device. Monochrome throughout. Clean sans-serif data labels. Feels like a declassified OSS intelligence briefing reproduced from microfilm.
+
+Example 4 (Photograph - Village Street):
+Ultra-realistic WWII archival photograph, cinematic black-and-white war photojournalism, 1944. A squad of American GIs in M1 helmets and wool field jackets advance in a low crouch through a bombed-out French village street. Rubble and shattered timber fill the foreground. Artillery smoke drifts thick across the middle ground. Dramatic side lighting cuts harsh shadows across every face and uniform. Hyper-detailed textures on canvas webbing, leather boots, and rifle barrels. Shallow depth of field — the lead soldier razor-sharp, the men behind dissolving into smoke and grain. Subtle film grain, documentary realism, masterpiece quality. Shot on a Speed Graphic press camera.
+
+Example 5 (Photograph - Tank & Infantry):
+Ultra-realistic WWII archival photograph, cinematic black-and-white combat photojournalism, 1943. Low-angle shot of a German Panzer IV tank grinding forward through a muddy Eastern Front field, exhaust smoke rising in dark columns against a flat winter sky. A Wehrmacht soldier in a greatcoat and steel helmet crouches in the foreground beside a shattered fence post. Deep chiaroscuro — the tank hull catches a sharp strip of cold light against vast surrounding shadow. Hyper-detailed texture on riveted steel plating, worn boot leather, and frozen mud. Subtle Kodak Tri-X film grain. Cinematic, grave, utterly documentary. Masterpiece quality.
 
 Return ONLY valid JSON:
 {"scenes":[{"id":1,"prompt":"..."},{"id":2,"prompt":"..."}]}`;
