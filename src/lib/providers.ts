@@ -252,7 +252,6 @@ Return ONLY valid JSON matching this exact schema:
       "historical_period": "derived from title and scene context",
       "visual_priority": "character|environment|object",
       "image_prompt": "Full cinematic prompt, 5–7 sentences.",
-      "fallback_prompt": "One alternative framing, different camera angle or focal point, one sentence.",
       "overlay_text": "Max 3 words or null"
     }
   ]
@@ -320,7 +319,6 @@ Return ONLY valid JSON matching this exact schema:
       "historical_period": "WWII or WWI",
       "visual_priority": "character|environment|object",
       "image_prompt": "Full cinematic prompt, 5–7 sentences.",
-      "fallback_prompt": "One alternative framing, different camera angle or focal point, one sentence.",
       "overlay_text": "Max 3 words or null"
     }
   ]
@@ -462,7 +460,6 @@ interface BatchPromptResult {
   historical_period: string;
   visual_priority: string;
   image_prompt: string;
-  fallback_prompt: string;
   overlay_text: string | null;
 }
 
@@ -790,7 +787,7 @@ export async function generateScenesForChunk(
       script_text: sc.script_text,
       tts_text: sc.script_text,
       image_prompt: p.image_prompt || "",
-      fallback_prompts: p.fallback_prompt ? [p.fallback_prompt] : [],
+      fallback_prompts: [],
       overlay_text: p.overlay_text ?? null,
       image_file: `${sc.scene_number}.png`,
       audio_file: `${sc.scene_number}.mp3`,
@@ -846,7 +843,7 @@ export async function generateSceneManifest(
         script_text: sc.script_text,
         tts_text: sc.script_text,
         image_prompt: p.image_prompt || "",
-        fallback_prompts: p.fallback_prompt ? [p.fallback_prompt] : [],
+        fallback_prompts: [],
         overlay_text: p.overlay_text ?? null,
         image_file: `${sc.scene_number}.png`,
         audio_file: `${sc.scene_number}.mp3`,

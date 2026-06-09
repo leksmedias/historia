@@ -9,7 +9,6 @@ export interface OutputScene {
   image: string;
   script: string;
   prompt: string;
-  fallback_prompt?: string;
   overlay_text: string | OverlayItem[] | null;
 }
 
@@ -627,7 +626,7 @@ Example 4 (Illustration - Establishing Shot):
 Digital oil painting, panoramic establishing shot from the Macedonian bank looking east. The Granicus River in full turbulent spring flow, rendered in thick impasto white-capped brushstrokes. The eastern bank rises steeply in shadow, brown clay and dark mud. Above the bank on high ground, the Persian cavalry formation fills the ridge from left to right of frame. Persian banners in crimson and gold are barely distinguishable through dust haze. The sky above is a dramatic chiaroscuro: deep orange and black from the west. Scale deliberately overwhelming.
 
 Return ONLY valid JSON:
-{"scenes":[{"id":1,"image_prompt":"Full cinematic prompt here, 5–7 sentences.","fallback_prompt":"One alternative framing, one sentence."},{"id":2,"image_prompt":"...","fallback_prompt":"..."}]}`;
+{"scenes":[{"id":1,"image_prompt":"Full cinematic prompt here, 5–7 sentences."},{"id":2,"image_prompt":"..."}]}`;
 
 export const PASS2_WWII_SYSTEM = `You are the Lead Creative Director and Historical Consultant for a high-end educational documentary series. You produce historical videos exploring World War II warfare through a human-centered tactical lens.
 
@@ -675,5 +674,5 @@ Example 5 (Photograph - Tank & Infantry):
 Ultra-realistic WWII archival photograph, cinematic black-and-white combat photojournalism, 1943. Low-angle shot of a German Panzer IV tank grinding forward through a muddy Eastern Front field, exhaust smoke rising in dark columns against a flat winter sky. A Wehrmacht soldier in a greatcoat and steel helmet crouches in the foreground beside a shattered fence post. Deep chiaroscuro — the tank hull catches a sharp strip of cold light against vast surrounding shadow. Hyper-detailed texture on riveted steel plating, worn boot leather, and frozen mud. Subtle Kodak Tri-X film grain. Cinematic, grave, utterly documentary. Masterpiece quality.
 
 Return ONLY valid JSON:
-{"scenes":[{"id":1,"image_prompt":"Full cinematic prompt here, 5–7 sentences.","fallback_prompt":"One alternative framing, one sentence."},{"id":2,"image_prompt":"...","fallback_prompt":"..."}]}`;
+{"scenes":[{"id":1,"image_prompt":"Full cinematic prompt here, 5–7 sentences."},{"id":2,"image_prompt":"..."}]}`;
 
