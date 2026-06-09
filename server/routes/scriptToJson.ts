@@ -394,7 +394,7 @@ async function callPass2Batch(
   retryOnParseFailure = true,
   geminiModel?: string,
   stylePrompt?: string
-): Promise<Array<{ id: number; prompt: string }>> {
+): Promise<Array<{ id?: number; scene_number?: number; prompt?: string; image_prompt?: string; fallback_prompt?: string }>> {
   const baseSystem = style === "ww2" ? PASS2_WWII_SYSTEM : PASS2_IMPASTO_SYSTEM;
   const systemPromptPrompt = stylePrompt
     ? `${baseSystem}\n\n---\nADDITIONAL STYLE DIRECTION (follow these instructions for all image prompts):\n${stylePrompt}`
@@ -402,9 +402,7 @@ async function callPass2Batch(
   const systemPrompt = continuityAnchor ? `${systemPromptPrompt}\n\n${continuityAnchor}` : systemPromptPrompt;
 
   const scenesText = scenes.map((s) => `Scene ${s.id}: "${s.script}"`).join("\n");
-  const firstId = scenes[0].id;
-  const secondId = scenes.length > 1 ? scenes[1].id : firstId + 1;
-  const userPrompt = `Documentary title: "${title}"\n\nGenerate ONE image prompt for each scene below. Return ONLY a JSON object with a "scenes" array:\n\n${scenesText}\n\nReturn format: {"scenes":[{"id":${firstId},"prompt":"..."},{"id":${secondId},"prompt":"..."}]}`;
+  const userPrompt = `Documentary title: "${title}"\n\nGenerate ONE image prompt and ONE fallback prompt for each scene below. Return ONLY the JSON object.\n\n${scenesText}`;
 
   const groqConfig = getGroqModelConfig(groqModel || "llama-3.3-70b-versatile");
   const promptTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 3.8);
@@ -619,7 +617,7 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
     job.progress = { phase: "pass2", done: 0, total: allSplitScenes.length };
     saveJobsToDisk();
 
-    const promptMap = new Map<number, string>();
+    const promptMap = new Map<number, { prompt: string; fallback_prompt?: string }>();
     const completedForAnchor: Array<{ script: string; prompt: string }> = [];
 
     for (let b = 0; b < totalBatches; b++) {
@@ -637,15 +635,15 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
       const results = await withGroqRotation(key => callPass2Batch(title, batch, style, provider, key, anchor, claudeModel, groqModel, 3, true, geminiModel, stylePrompt));
 
       for (const r of results) {
-        const idVal = r.id ?? r.scene_number ?? r.sceneNumber ?? r.scene_id ?? r.scene_Id;
-        const promptVal = r.prompt ?? r.image_prompt ?? r.description ?? r.imagePrompt;
+        const idVal = r.id ?? r.scene_number ?? (r as any).sceneNumber ?? (r as any).scene_id ?? (r as any).scene_Id;
+        const promptVal = r.prompt ?? r.image_prompt ?? (r as any).description ?? (r as any).imagePrompt;
         if (idVal !== undefined && promptVal !== undefined) {
-          promptMap.set(Number(idVal), promptVal);
+          promptMap.set(Number(idVal), { prompt: promptVal, fallback_prompt: r.fallback_prompt });
         }
       }
       for (const scene of batch) {
-        const prompt = promptMap.get(scene.id) ?? "[generation failed]";
-        completedForAnchor.push({ script: scene.script, prompt });
+        const entry = promptMap.get(scene.id);
+        completedForAnchor.push({ script: scene.script, prompt: entry?.prompt ?? "[generation failed]" });
       }
 
       const doneSoFar = Math.min((b + 1) * batchSize, allSplitScenes.length);
@@ -654,19 +652,24 @@ async function runJob(job: Job, params: JobParams): Promise<void> {
         .map((s) => ({
           image: `${s.id}.png`,
           script: s.script,
-          prompt: promptMap.get(s.id)!,
+          prompt: promptMap.get(s.id)!.prompt,
+          fallback_prompt: promptMap.get(s.id)!.fallback_prompt,
           overlay_text: s.overlay_text,
         }));
       job.progress = { phase: "pass2", done: doneSoFar, total: allSplitScenes.length, partialScenes };
       saveJobsToDisk();
     }
 
-    const scenes: OutputScene[] = allSplitScenes.map((s) => ({
-      image: `${s.id}.png`,
-      script: s.script,
-      prompt: promptMap.get(s.id) ?? "[generation failed]",
-      overlay_text: s.overlay_text,
-    }));
+    const scenes: OutputScene[] = allSplitScenes.map((s) => {
+      const entry = promptMap.get(s.id);
+      return {
+        image: `${s.id}.png`,
+        script: s.script,
+        prompt: entry?.prompt ?? "[generation failed]",
+        fallback_prompt: entry?.fallback_prompt,
+        overlay_text: s.overlay_text,
+      };
+    });
 
     job.status = "completed";
     job.result = { title, scenes };

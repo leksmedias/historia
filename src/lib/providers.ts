@@ -184,47 +184,9 @@ export const COMPACT_STYLE_SUFFIX =
 export const COMPACT_WWII_STYLE_SUFFIX =
   `in an ultra-realistic WWII archival photograph, cinematic black-and-white war photojournalism, dramatic chiaroscuro lighting, deep shadows, authentic wool military uniforms, shallow depth of field, captured on vintage 35mm Kodak Tri-X film, subtle film grain, documentary realism, historically accurate, cinematic composition, masterpiece quality, 16:9`;
 
-/** System prompt used when project has a stylePrompt — Groq generates ONLY the [Subject] part. */
-const STYLE_PROMPT_BATCH_IMAGE_PROMPT = `You are a visual content director for a historical epic documentary.
-
-For each numbered scene below, generate ONE short subject description and THREE fallback descriptions.
-
-PURPOSE: These will be combined with a style suffix later. Generate ONLY the [Subject] part.
-Do NOT include any style, mood, aesthetic, or quality words — those are added automatically.
-sample .
-
-
-Digital oil painting, heavy impasto. Black void frame, ancient Near Eastern landscape emerging from total darkness. A river surface occupies the lower third, catching gold late-afternoon light in broken, textured brushstrokes. The far bank is a steep dark mass, barely visible, with the silhouettes of Persian horsemen massed on the ridge like a wall. Deep chiaroscuro. No faces visible yet. Atmospheric, ominous. Title treatment: "GRANICUS" in high-contrast serif over the composition.
- 
-Tactical Parchment map. Tea-stained aged vellum with visible creases. The Aegean coast of Asia Minor rendered in 17th-century cartographic hand with decorative compass rose lower right. The Hellespont crossing marked with a bold arrow in Williamite blue. Alexander's march route traced in blue from the crossing south to the Granicus River, marked with a crossed-lance icon. Hand-calligraphic place names: "Hellespont," "Granicus River," "Zelia," "Troy." Decorative border with Macedonian star motif. Clean sans-serif annotation: "Alexander's advance, Spring 334 BCE."
- 
-Digital oil painting, visible brushwork throughout. Mid-shot of Alexander of Macedon standing at the river's edge, back three-quarters to the viewer, surveying the far bank. He wears a Hellenistic bronze breastplate with detailed impasto highlighting, a white-plumed Boeotian helmet. His posture is still, deliberate, charged with suppressed energy. The Granicus River fills the middle ground, swirling current rendered in thick fluid brushstrokes of gray-green and gold. The far bank is a dark, chaotic mass of Persian cavalry silhouettes. Late afternoon light from the upper left. Heavy shadow across the lower composition.
- 
-
-HISTORICAL ACCURACY: Match uniforms, weapons, terrain, and props to the historical period in the video title.
-PEOPLE: Anonymous figures only — no identifiable faces. Silhouettes, backs turned, obscured by helmets/smoke/shadow.
-
-Return ONLY valid JSON matching this exact schema:
-{
-  "scenes": [
-    {
-      "scene_number": 1,
-      "scene_type": "character|location|crowd|battle_light|artifact|transition|map|diagram|chart",
-      "historical_period": "derived from title and scene context",
-      "visual_priority": "character|environment|object",
-      "image_prompt": "Short subject description only, no style words.",
-      "fallback_prompts": [
-        "Alternative subject angle or framing.",
-        "Different focal point or camera distance.",
-        "Symbolic or aftermath perspective."
-      ]
-    }
-  ]
-}`;
-
 const BATCH_IMAGE_PROMPT = `You are the Lead Creative Director and Historical Consultant for a high-end educational documentary series. You produce 5-to-10-minute historical videos — script and visual storyboard — exploring warfare and civilizations throughout history through a human-centered tactical lens.
 
-For each numbered scene below, generate ONE cinematic image prompt and THREE fallback prompts.
+For each numbered scene below, generate ONE cinematic image prompt, ONE fallback prompt, and ONE overlay text label.
 Each image prompt must follow the script — not random — it must follow the story.
 
 2. VISUAL AESTHETIC
@@ -276,6 +238,11 @@ Scene type: Battlefield environment (aftermath)
 
 RESTRICTIONS: No text overlays, no identifiable faces, no fantasy/sci-fi/modern brands
 
+OVERLAY TEXT RULES:
+- Maximum 3 words, factual, adds context not visible in the image
+- Use for: specific date ("September 1683"), location ("Vienna, Austria"), force size ("40,000 troops"), commander name ("Sobieski"), casualties ("12,000 dead"), strategic fact ("40-day siege"), status ("Day 43"), outcome ("Ottoman retreat")
+- Set to null if nothing meaningful to add
+
 Return ONLY valid JSON matching this exact schema:
 {
   "scenes": [
@@ -284,19 +251,16 @@ Return ONLY valid JSON matching this exact schema:
       "scene_type": "character|location|crowd|battle_light|artifact|transition|map|diagram|chart",
       "historical_period": "derived from title and scene context",
       "visual_priority": "character|environment|object",
-      "image_prompt": "One complete cinematic sentence ending with a period.",
-      "fallback_prompts": [
-        "Fallback with different camera angle, one sentence.",
-        "Fallback focusing on environment, one sentence.",
-        "Fallback symbolic/aftermath angle, one sentence."
-      ]
+      "image_prompt": "Full cinematic prompt, 5–7 sentences.",
+      "fallback_prompt": "One alternative framing, different camera angle or focal point, one sentence.",
+      "overlay_text": "Max 3 words or null"
     }
   ]
 }`;
 
 const BATCH_WWII_IMAGE_PROMPT = `You are the Lead Creative Director and Historical Consultant for a high-end educational documentary series. You produce historical videos exploring World War I and World War II through a human-centered tactical lens.
 
-For each numbered scene below, generate ONE cinematic image prompt and THREE fallback prompts.
+For each numbered scene below, generate ONE cinematic image prompt, ONE fallback prompt, and ONE overlay text label.
 Each image prompt must follow the script — not random — it must follow the story.
 
 1. VISUAL AESTHETIC
@@ -316,6 +280,11 @@ No color imagery. No oil painting or painterly textures. No visible brushstrokes
 Avoid plastic AI faces, overly clean uniforms, glossy modern CGI look, modern gear mistakes, perfectly balanced compositions.
 Enforce smoke, dirt, fatigue, asymmetry, grain, emotional realism.
 RESTRICTIONS: No text overlays, no identifiable faces, no fantasy/sci-fi/modern brands.
+
+OVERLAY TEXT RULES:
+- Maximum 3 words, factual, adds context not visible in the image
+- Use for: specific date ("June 6 1944"), location ("Normandy, France"), unit ("101st Airborne"), operation ("Operation Overlord"), casualty count ("10,000 casualties"), strategic fact ("5 beaches"), status ("H-Hour"), outcome ("Allied breakout")
+- Set to null if nothing meaningful to add
 
 PROMPT STRUCTURE — each prompt must be exactly 5 to 7 sentences:
 [Who is present] + [what they are doing] + [where they are] + [camera angle/framing] + [lighting and mood]
@@ -350,12 +319,9 @@ Return ONLY valid JSON matching this exact schema:
       "scene_type": "character|location|crowd|battle_light|artifact|transition|map|diagram|chart",
       "historical_period": "WWII or WWI",
       "visual_priority": "character|environment|object",
-      "image_prompt": "One complete cinematic WWII archival black-and-white photo prompt.",
-      "fallback_prompts": [
-        "Fallback with different camera angle, one sentence.",
-        "Fallback focusing on environment, one sentence.",
-        "Fallback symbolic/aftermath angle, one sentence."
-      ]
+      "image_prompt": "Full cinematic prompt, 5–7 sentences.",
+      "fallback_prompt": "One alternative framing, different camera angle or focal point, one sentence.",
+      "overlay_text": "Max 3 words or null"
     }
   ]
 }`;
@@ -373,6 +339,7 @@ export interface SceneManifest {
   tts_text: string;
   image_prompt: string;
   fallback_prompts: string[];
+  overlay_text?: string | null;
   image_file: string;
   audio_file: string;
 }
@@ -495,7 +462,8 @@ interface BatchPromptResult {
   historical_period: string;
   visual_priority: string;
   image_prompt: string;
-  fallback_prompts: string[];
+  fallback_prompt: string;
+  overlay_text: string | null;
 }
 
 async function callGroqForBatch(
@@ -568,7 +536,7 @@ async function callGroqForBatch(
 /** Extract complete scene objects from a truncated JSON string */
 function recoverPartialScenes(raw: string): BatchPromptResult[] {
   const results: BatchPromptResult[] = [];
-  const sceneRegex = /\{\s*"scene_number"\s*:\s*(\d+)[\s\S]*?"fallback_prompts"\s*:\s*\[[^\]]*\]\s*\}/g;
+  const sceneRegex = /\{\s*"scene_number"\s*:\s*(\d+)[\s\S]*?"overlay_text"\s*:\s*(?:"[^"]*"|null)\s*\}/g;
   let m: RegExpExecArray | null;
   while ((m = sceneRegex.exec(raw)) !== null) {
     try { results.push(JSON.parse(m[0]) as BatchPromptResult); } catch { /* skip malformed */ }
@@ -822,7 +790,8 @@ export async function generateScenesForChunk(
       script_text: sc.script_text,
       tts_text: sc.script_text,
       image_prompt: p.image_prompt || "",
-      fallback_prompts: p.fallback_prompts || [],
+      fallback_prompts: p.fallback_prompt ? [p.fallback_prompt] : [],
+      overlay_text: p.overlay_text ?? null,
       image_file: `${sc.scene_number}.png`,
       audio_file: `${sc.scene_number}.mp3`,
     };
@@ -877,7 +846,8 @@ export async function generateSceneManifest(
         script_text: sc.script_text,
         tts_text: sc.script_text,
         image_prompt: p.image_prompt || "",
-        fallback_prompts: p.fallback_prompts || [],
+        fallback_prompts: p.fallback_prompt ? [p.fallback_prompt] : [],
+        overlay_text: p.overlay_text ?? null,
         image_file: `${sc.scene_number}.png`,
         audio_file: `${sc.scene_number}.mp3`,
       };
