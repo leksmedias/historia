@@ -7,12 +7,28 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Plus, Trash2, Key, Server, Mic } from "lucide-react";
+import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Wifi, Plus, Trash2, Key, Server, Mic, HardDrive, RefreshCw, AlertTriangle } from "lucide-react";
 import { loadProviderSettings, saveProviderSettings, INWORLD_VOICES, IMAGE_MODELS, ASPECT_RATIOS, OVERLAY_POSITIONS, OVERLAY_FONTS, type ProviderSettings, type OverlayPosition } from "@/lib/providers";
 import { GROQ_MODELS } from "../../shared/scriptToJsonUtils";
 
 type HealthStatus = "idle" | "checking" | "ok" | "error";
-type Tab = "connections" | "providers" | "voices";
+type Tab = "connections" | "providers" | "voices" | "maintenance";
+
+type StorageInfo = {
+  projectCount: number;
+  images:  { files: number; bytes: number };
+  audio:   { files: number; bytes: number };
+  videos:  { files: number; bytes: number };
+  renders: { files: number; bytes: number };
+};
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
 
 function StatusIndicator({ status, message }: { status: HealthStatus; message?: string }) {
   if (status === "idle") return null;
@@ -43,6 +59,11 @@ export default function Settings() {
   const [inworldMsg, setInworldMsg] = useState("");
   const [renderStatus, setRenderStatus] = useState<HealthStatus>("idle");
   const [renderMsg, setRenderMsg] = useState("");
+
+  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [confirmPurge, setConfirmPurge] = useState<string | null>(null);
+  const [purgeLoading, setPurgeLoading] = useState(false);
 
   const save = () => {
     saveProviderSettings(settings);
@@ -137,10 +158,49 @@ export default function Settings() {
 
   const testAll = () => { testGroq(); testGoogleCloud(); testInworld(); testRenderApi(); };
 
+  const fetchStorage = async () => {
+    setStorageLoading(true);
+    try {
+      const res = await fetch("/api/admin/storage");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setStorageInfo(await res.json());
+    } catch (e: any) {
+      toast.error(`Storage scan failed: ${e.message}`);
+    } finally {
+      setStorageLoading(false);
+    }
+  };
+
+  const executePurge = async (scope: string) => {
+    if (confirmPurge !== scope) {
+      setConfirmPurge(scope);
+      setTimeout(() => setConfirmPurge(c => c === scope ? null : c), 6000);
+      return;
+    }
+    setConfirmPurge(null);
+    setPurgeLoading(true);
+    try {
+      const res = await fetch("/api/admin/purge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      toast.success(`Purged ${data.deleted.files} file(s) (${formatBytes(data.deleted.bytes)})`);
+      fetchStorage();
+    } catch (e: any) {
+      toast.error(`Purge failed: ${e.message}`);
+    } finally {
+      setPurgeLoading(false);
+    }
+  };
+
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "connections", label: "Connections", icon: <Key className="h-4 w-4" /> },
-    { id: "providers",   label: "Providers",   icon: <Server className="h-4 w-4" /> },
-    { id: "voices",      label: "Voices",      icon: <Mic className="h-4 w-4" /> },
+    { id: "connections",  label: "Connections",  icon: <Key className="h-4 w-4" /> },
+    { id: "providers",    label: "Providers",    icon: <Server className="h-4 w-4" /> },
+    { id: "voices",       label: "Voices",       icon: <Mic className="h-4 w-4" /> },
+    { id: "maintenance",  label: "Maintenance",  icon: <HardDrive className="h-4 w-4" /> },
   ];
 
   return (
@@ -635,6 +695,137 @@ export default function Settings() {
                 </div>
                 <p className="text-xs text-muted-foreground">Where the overlay text appears in the frame.</p>
               </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── MAINTENANCE TAB ──────────────────────────────────────────── */}
+      {activeTab === "maintenance" && (
+        <div className="space-y-6">
+          {/* Storage Overview */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-display">Storage Overview</CardTitle>
+                <Button
+                  variant="outline" size="sm"
+                  onClick={fetchStorage}
+                  disabled={storageLoading}
+                  className="text-xs h-7"
+                >
+                  {storageLoading
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <><RefreshCw className="h-3 w-3 mr-1" />Scan</>
+                  }
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {storageInfo === null ? (
+                <p className="text-sm text-muted-foreground">Click Scan to check server storage usage.</p>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">{storageInfo.projectCount} project folder(s) on server</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { key: "images",  label: "Images",         ext: "PNG/JPG" },
+                      { key: "audio",   label: "TTS Audio",      ext: "MP3" },
+                      { key: "videos",  label: "Veo Videos",     ext: "MP4" },
+                      { key: "renders", label: "Render Outputs", ext: "Clips + Output" },
+                    ] as const).map(({ key, label, ext }) => {
+                      const info = storageInfo[key];
+                      return (
+                        <div key={key} className="bg-secondary rounded p-3 space-y-1">
+                          <p className="text-xs font-medium text-foreground">{label}</p>
+                          <p className="text-xs text-muted-foreground">{ext}</p>
+                          <p className="text-sm font-mono">{info.files} files · {formatBytes(info.bytes)}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Total generated: {formatBytes(
+                      storageInfo.images.bytes + storageInfo.audio.bytes +
+                      storageInfo.videos.bytes + storageInfo.renders.bytes
+                    )}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Purge Controls */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+                <CardTitle className="text-base font-display">Purge Generated Assets</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <p className="text-xs text-muted-foreground mb-4">
+                Permanently deletes generated files from the server. Project records, settings, and style reference images are preserved. Scene statuses reset so assets can be regenerated.
+              </p>
+
+              {([
+                {
+                  scope: "images",
+                  label: "Purge Images",
+                  description: "All generated scene images (PNG/JPG). Resets image status to pending.",
+                },
+                {
+                  scope: "audio",
+                  label: "Purge Audio",
+                  description: "All TTS narration tracks (MP3). Resets audio status to pending.",
+                },
+                {
+                  scope: "videos",
+                  label: "Purge Veo Videos + Renders",
+                  description: "All Veo-animated clips, Ken Burns clips, and merged output.mp4.",
+                },
+                {
+                  scope: "renders",
+                  label: "Purge Render Outputs Only",
+                  description: "Only final clips and output.mp4 — keeps Veo-animated source videos.",
+                },
+                {
+                  scope: "all",
+                  label: "Purge Everything",
+                  description: "All images, audio, videos, and render outputs across all projects.",
+                  danger: true,
+                },
+              ] as const).map(({ scope, label, description, danger }) => {
+                const isArmed = confirmPurge === scope;
+                return (
+                  <div key={scope} className="flex items-center justify-between py-3 border-b border-border last:border-0">
+                    <div className="flex-1 pr-4">
+                      <p className="text-sm font-medium text-foreground">{label}</p>
+                      <p className="text-xs text-muted-foreground">{description}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={isArmed ? "destructive" : (danger ? "outline" : "outline")}
+                      className={`text-xs shrink-0 ${danger && !isArmed ? "border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground" : ""}`}
+                      disabled={purgeLoading}
+                      onClick={() => executePurge(scope)}
+                    >
+                      {purgeLoading && confirmPurge === null
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : isArmed
+                          ? "Confirm Delete"
+                          : <><Trash2 className="h-3 w-3 mr-1" />{scope === "all" ? "Purge All" : "Purge"}</>
+                      }
+                    </Button>
+                  </div>
+                );
+              })}
+
+              {confirmPurge && (
+                <p className="text-xs text-destructive pt-2">
+                  Click "Confirm Delete" to proceed, or wait 6 seconds to cancel.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
