@@ -130,7 +130,7 @@ const DEFAULTS: ProviderSettings = {
   overlayPosition: "bottom-left",
   overlayFont: "Tox Typewriter",
   overlayFontSize: 36,
-  veoAudioVolume: 0.1,
+  veoAudioVolume: 0.03,
 };
 
 export function loadProviderSettings(): ProviderSettings {

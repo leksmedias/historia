@@ -662,7 +662,7 @@ export async function startClipGeneration(projectId: string, resolution: VideoRe
   const overlayPosition = settings.overlayPosition ?? "bottom-left";
   const overlayFont = settings.overlayFont ?? "Tox Typewriter";
   const overlayFontSize = settings.overlayFontSize ?? 36;
-  const veoAudioVolume = settings.veoAudioVolume ?? 0.1;
+  const veoAudioVolume = settings.veoAudioVolume ?? 0.03;
   return apiRequest(`/render/${projectId}/clips`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -691,7 +691,7 @@ export async function startRender(projectId: string, resolution: VideoResolution
   const overlayPosition = settings.overlayPosition ?? "bottom-left";
   const overlayFont = settings.overlayFont ?? "Tox Typewriter";
   const overlayFontSize = settings.overlayFontSize ?? 36;
-  const veoAudioVolume = settings.veoAudioVolume ?? 0.1;
+  const veoAudioVolume = settings.veoAudioVolume ?? 0.03;
   return apiRequest(`/render/${projectId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -718,7 +718,7 @@ export async function startAnimateScenes(
   sceneNumbers: number[]
 ): Promise<{ total: number }> {
   const settings = loadProviderSettings();
-  const veoAudioVolume = settings.veoAudioVolume ?? 0.1;
+  const veoAudioVolume = settings.veoAudioVolume ?? 0.03;
   return fetch(`${API_BASE}/render/${projectId}/animate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

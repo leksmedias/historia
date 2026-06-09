@@ -589,7 +589,7 @@ router.post("/:id/clips", async (req: Request, res: Response) => {
     const overlayPosition = req.body?.overlayPosition || "bottom-left";
     const overlayFont = req.body?.overlayFont || "Tox Typewriter";
     const overlayFontSize = req.body?.overlayFontSize !== undefined ? parseInt(req.body.overlayFontSize, 10) : 36;
-    const veoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.1;
+    const veoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.03;
 
     clipJobs[projectId] = { status: "generating", progress: 0, done: 0, total: ready.length, resolution: resKey };
     await upsertJobStatus(projectId, "clip", "running", { resolution: resKey, total: ready.length });
@@ -713,7 +713,7 @@ router.post("/:id/animate", async (req: Request, res: Response) => {
 
     const [veoProject] = await db.select().from(projects).where(eq(projects.id, projectId));
     const veoAR: string = (veoProject?.settings as any)?.aspectRatio || "16:9";
-    const animateVeoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.1;
+    const animateVeoAudioVolume = req.body?.veoAudioVolume !== undefined ? parseFloat(req.body.veoAudioVolume) : 0.03;
     runVeoAnimation(projectId, toAnimate, veoAR, animateVeoAudioVolume > 0).catch(e => {
       console.error(`[veo] ${projectId} failed:`, e.message);
       if (animateJobs[projectId]) {
@@ -1004,11 +1004,10 @@ async function buildVeoClip(
   const veoDur = getAudioDuration(veoPath);
   const speed  = veoDur / dur; // < 1.0 → Veo shorter than audio
 
-  // Strategy:
-  //   speed >= 1.0  → Veo longer than audio: trim with -t (no extra work)
-  //   speed <  1.0  → Veo shorter than audio: stretch with setpts (slow motion)
+  // If Veo is shorter than audio: loop + slow-motion stretch to fill the duration.
+  // If Veo is longer than audio: trim with -t (no extra work needed).
   const shouldSlowDown = speed < 1.0;
-  const shouldLoop     = false;
+  const shouldLoop     = shouldSlowDown; // enable stream loop so we never run out of frames
 
   const veoInputArgs: string[] = shouldLoop
     ? ["-stream_loop", "-1", "-i", veoPath]
@@ -1040,10 +1039,17 @@ async function buildVeoClip(
   const hasSfx = !!(typewriter && typewriter.sfxOutputLabels.length > 0) && fs.existsSync(sfxPath);
 
   if (veoAudio) {
-    const veoVol = (veoAudioVolume ?? 0.1).toFixed(4);
-    const atempoSpeed = shouldSlowDown ? Math.max(speed, 0.5).toFixed(4) : "1.0";
+    const veoVol = (veoAudioVolume ?? 0.03).toFixed(4);
+    // atempo range is [0.5, 2.0] per stage — chain stages for extreme slow-down
+    const buildAtempo = (s: number): string => {
+      const stages: string[] = [];
+      let r = s;
+      while (r < 0.5) { stages.push("atempo=0.5"); r /= 0.5; }
+      stages.push(`atempo=${r.toFixed(4)}`);
+      return stages.join(",");
+    };
     const veoAudioFilter = shouldSlowDown
-      ? `atempo=${atempoSpeed},volume=${veoVol}`
+      ? `${buildAtempo(speed)},volume=${veoVol}`
       : `volume=${veoVol}`;
     if (hasSfx && typewriter) {
       const aFilter =
@@ -1152,7 +1158,7 @@ async function generateClips(
   overlayPosition = "bottom-left",
   overlayFont = "Tox Typewriter",
   overlayFontSize = 36,
-  veoAudioVolume = 0.1
+  veoAudioVolume = 0.03
 ) {
   const clipsDir = path.join("uploads", projectId, "clips");
   fs.mkdirSync(clipsDir, { recursive: true });
@@ -1333,7 +1339,7 @@ async function mergeVideo(
   overlayPosition = "bottom-left",
   overlayFont = "Tox Typewriter",
   overlayFontSize = 36,
-  veoAudioVolume = 0.1
+  veoAudioVolume = 0.03
 ) {
   const clipsDir = path.join("uploads", projectId, "clips");
   const renderDir = path.join("uploads", projectId, "render");
@@ -1497,7 +1503,7 @@ async function runAutoPipeline(
   overlayFont = "Tox Typewriter",
   overlayFontSize = 36,
   aspectRatio = "16:9",
-  veoAudioVolume = 0.1
+  veoAudioVolume = 0.03
 ) {
   const [W, H] = resolveOutputSize(resKey, aspectRatio);
   autoJobs[projectId] = { status: "waiting_assets", resolution: resKey };
